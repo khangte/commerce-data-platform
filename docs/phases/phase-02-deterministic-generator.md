@@ -176,8 +176,8 @@ AC-20과 AC-21의 전체 E2E 판정은 Phase 3의 Ingestion과 결합해 완료�
 | `src/generator/scenarios.py`                               | 생성 | Late Order·Delayed Payment·Late Update·Membership Change Scenario를 추가했다.           |
 | `src/generator/lease.py`                                   | 생성 | Generator·Warehouse Global Lease의 획득·갱신·Fencing·해제를 추가했다.                    |
 | `src/generator/service.py`                                 | 생성 | Seed Snapshot 검증, Lease 보호 Source 생성, 실행 결과 재사용과 Fixture Profile 경계를 추가했다. |
-| `src/generator/__main__.py`                                | 수정 | 기본 실행 시 Generator 적재를 수행하고 `--validate-only`와 실행 가능 Profile 선택을 지원하도록 변경했다. |
-| `sql/metadata/002_create_generator_metadata.sql`           | 수정 | 성공 실행 입력만 Unique하게 보관해 실패 실행의 재시도를 허용하도록 변경했다.             |
+| `src/generator/__main__.py`                                | 생성·수정 | Generator CLI 기반을 만들고, 기본 실행 적재·`--validate-only`·실행 가능 Profile 선택을 지원하도록 변경했다. |
+| `sql/metadata/002_create_generator_metadata.sql`           | 생성·수정 | Generator 실행 Metadata Schema를 만들고, 성공 실행 입력만 Unique하게 보관해 실패 실행의 재시도를 허용하도록 변경했다. |
 | `sql/metadata/003_create_source_mutation_leases.sql`       | 생성 | `commerce_source` Global Source Mutation Lease Table을 추가했다.                         |
 | `src/generator/__init__.py`                                | 수정 | Generator Config와 현재 구현 Version을 Package API로 노출했다.                          |
 | `tests/generator/`                                         | 생성·수정 | Config, 결정적 ID/Hash, Metadata 입력과 동일 Snapshot 입력의 Bundle 재현 단위 테스트를 추가했다. |
