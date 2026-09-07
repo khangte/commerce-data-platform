@@ -115,11 +115,11 @@ Commit Prefix가 아닌 `_smoke/{uuid}/`에서만 수행한다.
 
 ### 3A-5. Commit Protocol
 
-- [ ] `P3-06` Manifest 생성 및 `object_state=VERIFIED` 기록
-- [ ] `P3-07` `bronze_objects=COMMITTED` Metadata Commit 구현
-- [ ] `P3-08` Watermark Compare-and-swap 구현
-- [ ] Final Object HEAD/Size/Checksum/Row Count 검증
-- [ ] 각 실패 지점에서 Watermark가 유지되는지 검증
+- [x] `P3-06` Manifest 생성 및 `object_state=VERIFIED` 기록
+- [x] `P3-07` `bronze_objects=COMMITTED` Metadata Commit 구현
+- [x] `P3-08` Watermark Compare-and-swap 구현
+- [x] Final Object HEAD/Size/Checksum/Row Count 검증
+- [x] Final Key 충돌 실패와 Empty Batch에서 Watermark 유지 검증
 
 Commit 순서:
 
@@ -139,6 +139,12 @@ Global Source Lease
 → Table Lease 해제
 → 모든 Table 종료 후 Global Source Lease 해제
 ```
+
+현재 `orders` 구현은 Final Object에 조건부 PUT을 사용하고, 기존 Key는 업로드 전에
+명시적으로 거부한다. Parquet는 Local 파일에서 SHA-256을 스트리밍 계산해 업로드한 뒤,
+HEAD의 Size·사용자 Metadata Checksum과 재수신한 Parquet의 Row Count를 확인한다. Metadata
+Commit 전 Manifest는 `VERIFIED` 상태로만 작성하며, Commit 실패 후 남은 Object의 정리는
+Phase 3D `P3-23` Orphan Reconciliation 범위다.
 
 ## Phase 3B. 전체 Table 일반화
 
@@ -277,25 +283,29 @@ Phase 3에서는 Framework-independent Python Pipeline을 완성하고 Phase 4�
 
 ## 파일·폴더별 변경 요약
 
-| 경로 | 변경 | 요약 |
-| ---- | ---- | ---- |
-| `sql/metadata/004_create_ingestion_metadata.sql` | 생성 | Watermark, 수집 실행, Bronze Object, Quarantine Batch의 상태·제약조건·Index를 추가했다. |
-| `src/ingestion/metadata.py` | 생성 | 초기 Watermark, RUNNING/FAILED 상태 전이, Object·Run·Watermark CAS의 원자적 Commit을 추가했다. |
-| `src/ingestion/config.py` | 생성 | `INGESTION_PAGE_SIZE` 환경 설정과 기본값 50,000 검증을 추가했다. |
-| `src/ingestion/orders.py` | 생성 | 동일 Read-only Snapshot에서 `orders` Upper Bound 고정과 Keyset Pagination을 추가했다. |
-| `src/ingestion/bronze.py` | 생성 | `orders` Page의 명시적 Arrow Schema, 기술 컬럼, Zstandard Local Parquet Writer를 추가했다. |
-| `src/ingestion/storage.py` | 생성 | SeaweedFS Path-style S3 Client, Bucket 준비와 Bronze·Quarantine·Staging Prefix를 추가했다. |
-| `compose.yaml` | 수정 | SeaweedFS 4.45 S3 API Service, 영속 Volume과 Master Healthcheck를 추가했다. |
-| `.env.example` | 수정 | SeaweedFS Host 환경 변수 Key를 추가했다. |
-| `src/common/database.py` | 수정 | 공통 환경 변수 Reader를 공개해 수집 설정도 로컬 `.env`를 사용할 수 있게 했다. |
-| `tests/ingestion/test_config.py` | 생성 | Page Size 기본값과 유효하지 않은 환경 변수 값을 검증한다. |
-| `tests/ingestion/test_bronze.py` | 생성 | Local Parquet Schema, UTC microsecond Timestamp, 기술 컬럼, 압축·Row Group을 검증한다. |
-| `tests/ingestion/test_storage.py` | 생성 | SeaweedFS 연결 설정과 Object Storage Prefix 계약을 검증한다. |
-| `tests/integration/test_ingestion_metadata_integration.py` | 생성 | 성공 Commit과 Watermark 충돌 시 Rollback·실패 상태 전이를 PostgreSQL에서 검증했다. |
-| `tests/integration/test_orders_incremental_integration.py` | 생성 | `orders` Composite Cursor의 같은 Timestamp Page 경계와 Empty Range를 검증한다. |
-| `tests/integration/test_orders_bronze_integration.py` | 생성 | 실제 Source Page가 하나의 Local Bronze Parquet으로 기록되는지 검증한다. |
-| `tests/integration/test_seaweedfs_s3_integration.py` | 생성 | SeaweedFS S3 Lifecycle과 DuckDB Parquet Read 호환성을 검증한다. |
-| `docs/phases/phase-03-incremental-ingestion.md` | 수정 | Phase 3 상태, P3-01~05 진행 상태와 파일별 변경 요약을 기록했다. |
+| 경로                                                             | 변경 | 요약                                                                                                                  |
+| ---------------------------------------------------------------- | ---- | --------------------------------------------------------------------------------------------------------------------- |
+| `sql/metadata/004_create_ingestion_metadata.sql`                 | 생성 | Watermark, 수집 실행, Bronze Object, Quarantine Batch의 상태·제약조건·Index를 추가했다.                               |
+| `src/ingestion/metadata.py`                                      | 생성 | 초기 Watermark, RUNNING/FAILED/SUCCESS_NO_DATA 상태 전이, Object·Run·Watermark CAS의 원자적 Commit을 추가했다.        |
+| `src/ingestion/config.py`                                        | 생성 | `INGESTION_PAGE_SIZE` 환경 설정과 기본값 50,000 검증을 추가했다.                                                      |
+| `src/ingestion/orders.py`                                        | 생성 | 동일 Read-only Snapshot에서 `orders` Upper Bound 고정과 Keyset Pagination을 추가했다.                                 |
+| `src/ingestion/bronze.py`                                        | 생성 | `orders` Page의 명시적 Arrow Schema, 기술 컬럼, Zstandard Local Parquet Writer와 PK 기준 Logical Hash를 추가했다.     |
+| `src/ingestion/storage.py`                                       | 생성 | SeaweedFS Path-style S3 Client, Bucket 준비, Final Object의 조건부 PUT·HEAD·Parquet 검증을 추가했다.                  |
+| `src/ingestion/manifest.py`                                      | 생성 | Credential·Local 경로·Metadata Commit 상태 없이 `VERIFIED` Object 증적을 기록하는 Canonical JSON Manifest를 추가했다. |
+| `src/ingestion/service.py`                                       | 생성 | 고정 `orders` 범위를 Local Parquet, Final Object, Manifest, Metadata CAS까지 연결하는 실행 API를 추가했다.            |
+| `compose.yaml`                                                   | 수정 | SeaweedFS 4.45 S3 API Service, 영속 Volume과 Master Healthcheck를 추가했다.                                           |
+| `.env.example`                                                   | 수정 | SeaweedFS Host 환경 변수 Key를 추가했다.                                                                              |
+| `src/common/database.py`                                         | 수정 | 공통 환경 변수 Reader를 공개해 수집 설정도 로컬 `.env`를 사용할 수 있게 했다.                                         |
+| `tests/ingestion/test_config.py`                                 | 생성 | Page Size 기본값과 유효하지 않은 환경 변수 값을 검증한다.                                                             |
+| `tests/ingestion/test_bronze.py`                                 | 생성 | Local Parquet Schema, UTC microsecond Timestamp, 기술 컬럼, 압축·Row Group을 검증한다.                                |
+| `tests/ingestion/test_storage.py`                                | 생성 | SeaweedFS 연결 설정과 Object Storage Prefix 계약을 검증한다.                                                          |
+| `tests/ingestion/test_manifest.py`                               | 생성 | VERIFIED Manifest의 공개 필드와 Metadata Commit 경계를 검증한다.                                                      |
+| `tests/integration/test_ingestion_metadata_integration.py`       | 생성 | 성공 Commit과 Watermark 충돌 시 Rollback·실패 상태 전이를 PostgreSQL에서 검증했다.                                    |
+| `tests/integration/test_orders_incremental_integration.py`       | 생성 | `orders` Composite Cursor의 같은 Timestamp Page 경계와 Empty Range를 검증한다.                                        |
+| `tests/integration/test_orders_bronze_integration.py`            | 생성 | 실제 Source Page가 하나의 Local Bronze Parquet으로 기록되는지 검증한다.                                               |
+| `tests/integration/test_seaweedfs_s3_integration.py`             | 생성 | SeaweedFS S3 Lifecycle과 DuckDB Parquet Read 호환성을 검증한다.                                                       |
+| `tests/integration/test_orders_ingestion_service_integration.py` | 생성 | 실제 컨테이너에서 성공 Commit, Final Key 충돌 시 Watermark 유지, Empty Batch 종료를 검증한다.                         |
+| `docs/phases/phase-03-incremental-ingestion.md`                  | 수정 | Phase 3A P3-01~08 진행 상태와 파일별 변경 요약을 기록했다.                                                            |
 
 ## Definition of Done
 

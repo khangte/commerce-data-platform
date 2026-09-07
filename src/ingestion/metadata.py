@@ -13,6 +13,7 @@ from src.common.database import PostgresSettings, apply_sql_file
 
 RUNNING = "RUNNING"
 SUCCESS = "SUCCESS"
+SUCCESS_NO_DATA = "SUCCESS_NO_DATA"
 FAILED = "FAILED"
 
 
@@ -138,7 +139,9 @@ class TableCommit:
         if self.expected_watermark.cursor != self.run.watermark_before:
             raise ValueError("Expected watermark cursor differs from the pipeline run")
         counts = (self.rows_extracted, self.rows_valid, self.rows_rejected, self.rows_loaded)
-        if any(isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in counts):
+        if any(
+            isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in counts
+        ):
             raise ValueError("Commit row counts must be non-negative integers")
 
 
@@ -149,7 +152,11 @@ def ensure_ingestion_metadata(settings: PostgresSettings) -> None:
 
 
 def get_or_create_watermark(
-    settings: PostgresSettings, pipeline_name: str, source_table: str, *, now: datetime | None = None
+    settings: PostgresSettings,
+    pipeline_name: str,
+    source_table: str,
+    *,
+    now: datetime | None = None,
 ) -> Watermark:
     """초기 Watermark를 필요할 때 만들고 현재 CAS Snapshot을 반환한다."""
     _assert_nonempty(pipeline_name, "pipeline_name", 128)
@@ -160,7 +167,9 @@ def get_or_create_watermark(
         return _get_or_create_watermark(connection, pipeline_name, source_table, current_time)
 
 
-def record_started_run(settings: PostgresSettings, run: PipelineRun, *, now: datetime | None = None) -> None:
+def record_started_run(
+    settings: PostgresSettings, run: PipelineRun, *, now: datetime | None = None
+) -> None:
     """수집 시작 전 RUNNING 상태와 고정 범위 Metadata를 기록한다."""
     current_time = _utc_now(now)
     with settings.pipeline_connection() as connection, connection.transaction():
@@ -188,7 +197,9 @@ def record_started_run(settings: PostgresSettings, run: PipelineRun, *, now: dat
         )
 
 
-def commit_table_run(settings: PostgresSettings, commit: TableCommit, *, now: datetime | None = None) -> None:
+def commit_table_run(
+    settings: PostgresSettings, commit: TableCommit, *, now: datetime | None = None
+) -> None:
     """Object·성공 Run·Watermark CAS를 하나의 Metadata Transaction으로 Commit한다."""
     current_time = _utc_now(now)
     with settings.pipeline_connection() as connection, connection.transaction():
@@ -292,6 +303,27 @@ def record_failed_run(
         )
         if updated_run.rowcount != 1:
             raise PipelineRunStateError("Only a RUNNING pipeline run can fail")
+
+
+def record_success_no_data_run(
+    settings: PostgresSettings, run: PipelineRun, *, now: datetime | None = None
+) -> None:
+    """빈 고정 범위의 RUNNING 수집을 Object·Watermark 없이 성공 종료한다."""
+    if run.extract_upper_bound is not None:
+        raise ValueError("SUCCESS_NO_DATA requires an empty extract_upper_bound")
+    current_time = _utc_now(now)
+    with settings.pipeline_connection() as connection, connection.transaction():
+        updated_run = connection.execute(
+            """
+            UPDATE pipeline_runs
+            SET finished_at = %s,
+                status = 'SUCCESS_NO_DATA'
+            WHERE run_id = %s AND source_table = %s AND status = 'RUNNING'
+            """,
+            (current_time, run.run_id, run.source_table),
+        )
+        if updated_run.rowcount != 1:
+            raise PipelineRunStateError("Only a RUNNING pipeline run can finish with no data")
 
 
 def _get_or_create_watermark(

@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+import duckdb
 import pyarrow as pa
 import pyarrow.parquet as pq
 
@@ -14,6 +17,18 @@ from src.ingestion.orders import OrdersPage, SourceOrderRecord
 
 BRONZE_SCHEMA_VERSION = 1
 ROW_GROUP_TARGET_ROWS = 128_000
+ORDERS_BUSINESS_COLUMNS = (
+    "order_id",
+    "customer_id",
+    "order_status",
+    "order_purchase_timestamp",
+    "order_approved_at",
+    "order_delivered_carrier_date",
+    "order_delivered_customer_date",
+    "order_estimated_delivery_date",
+    "created_at",
+    "updated_at",
+)
 ORDERS_BRONZE_SCHEMA = pa.schema(
     [
         pa.field("order_id", pa.string(), nullable=False),
@@ -161,3 +176,41 @@ def _order_row(record: SourceOrderRecord, context: BronzeWriteContext) -> dict[s
         "_source_table": context.source_table,
         "_schema_version": context.schema_version,
     }
+
+
+def orders_logical_hash(path: Path) -> str:
+    """Local Bronze를 PK 순서 Business Column Canonical JSON으로 Hash한다."""
+    digest = hashlib.sha256()
+    column_list = ", ".join(ORDERS_BUSINESS_COLUMNS)
+    connection = duckdb.connect()
+    try:
+        batches = connection.execute(
+            f"SELECT {column_list} FROM read_parquet(?) ORDER BY order_id", [str(path)]
+        ).to_arrow_reader(batch_size=50_000)
+        for batch in batches:
+            for row in batch.to_pylist():
+                digest.update(_canonical_business_json(row).encode("utf-8"))
+                digest.update(b"\n")
+    finally:
+        connection.close()
+    return digest.hexdigest()
+
+
+def _canonical_business_json(row: dict[str, object]) -> str:
+    """Timestamp를 UTC ISO 문자열로 통일한 Business Row JSON을 반환한다."""
+    return json.dumps(
+        row,
+        default=_json_default,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+
+
+def _json_default(value: object) -> str:
+    """Business Hash JSON의 UTC Timestamp 표현을 결정적으로 변환한다."""
+    if isinstance(value, datetime):
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("Business timestamp must include a UTC offset")
+        return value.astimezone(UTC).isoformat()
+    raise TypeError(f"Unsupported business value: {type(value).__name__}")

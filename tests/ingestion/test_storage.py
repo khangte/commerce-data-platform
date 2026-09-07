@@ -14,7 +14,11 @@ from src.ingestion.storage import (
 
 def test_object_storage_prefixes_match_the_bronze_layout_contract() -> None:
     """Object Storage는 Bronze·Quarantine과 선택적 Staging Prefix를 구분한다."""
-    assert (STAGING_PREFIX, BRONZE_PREFIX, QUARANTINE_PREFIX) == ("_staging", "bronze", "quarantine")
+    assert (STAGING_PREFIX, BRONZE_PREFIX, QUARANTINE_PREFIX) == (
+        "_staging",
+        "bronze",
+        "quarantine",
+    )
 
 
 def test_seaweedfs_settings_uses_default_local_host() -> None:
