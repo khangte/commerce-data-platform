@@ -93,10 +93,16 @@ Pipeline 검증용 Duplicate/NULL Key/Broken FK 같은 Corruption은 정상 OLTP
 
 ### 6. Source Mutation 동시성
 
-- [ ] `P2-19` `source_mutation_leases` DDL과 Global Lease 조회/획득 로직
-- [ ] `P2-20` Lease 획득 실패 시 Source 변경 전 안전하게 종료
-- [ ] `P2-21` Generator Transaction 종료 후 Lease 해제
-- [ ] `P2-22` 만료/소유권 상실 시 변경을 중단하는 Fencing 검증
+- [x] `P2-19` `source_mutation_leases` DDL과 Global Lease 조회/획득 로직
+- [x] `P2-20` Lease 획득 실패 시 Source 변경 전 안전하게 종료
+- [x] `P2-21` Generator Transaction 종료 후 Lease 해제
+- [x] `P2-22` 만료/소유권 상실 시 변경을 중단하는 Fencing 검증
+
+### 실행 통합
+
+- [x] 현재 성공 Seed Snapshot을 자동 식별하는 Generator 실행 서비스
+- [x] Lease 보호 아래 결정적 Order Bundle 생성과 `generator_runs` 결과 기록
+- [x] 동일 성공 입력의 결과 재사용과 Warehouse Lease 중 Source 변경 0 검증
 
 ## 범위 밖
 
@@ -164,16 +170,21 @@ AC-20과 AC-21의 전체 E2E 판정은 Phase 3의 Ingestion과 결합해 완료�
 | `src/generator/orders.py`                                  | 생성 | Order·Item·Payment Bundle 생성, Seed Catalog 선택, 원자적 멱등 저장을 추가했다.          |
 | `src/generator/transitions.py`                             | 생성 | Order·Payment 허용 상태 전이, 기대 Version, Mutation Time 검증을 추가했다.              |
 | `src/generator/scenarios.py`                               | 생성 | Late Order·Delayed Payment·Late Update·Membership Change Scenario를 추가했다.           |
-| `src/generator/__main__.py`                                | 생성 | Source를 변경하지 않고 Generator 입력과 Metadata 초기화를 검증하는 CLI를 추가했다.      |
+| `src/generator/lease.py`                                   | 생성 | Generator·Warehouse Global Lease의 획득·갱신·Fencing·해제를 추가했다.                    |
+| `src/generator/service.py`                                 | 생성 | Seed Snapshot 검증, Lease 보호 Source 생성, 실행 결과 재사용을 추가했다.                 |
+| `src/generator/__main__.py`                                | 수정 | 기본 실행 시 Generator 적재를 수행하고 `--validate-only`를 지원하도록 변경했다.         |
+| `sql/metadata/002_create_generator_metadata.sql`           | 수정 | 성공 실행 입력만 Unique하게 보관해 실패 실행의 재시도를 허용하도록 변경했다.             |
+| `sql/metadata/003_create_source_mutation_leases.sql`       | 생성 | `commerce_source` Global Source Mutation Lease Table을 추가했다.                         |
 | `src/generator/__init__.py`                                | 수정 | Generator Config와 현재 구현 Version을 Package API로 노출했다.                          |
-| `sql/metadata/002_create_generator_metadata.sql`           | 생성 | 결정성 입력, 결과 Count/Hash, 실행 상태를 보관하는 `generator_runs` 테이블을 추가했다.  |
 | `tests/generator/`                                         | 생성 | Config, 결정적 ID/Hash, Metadata 입력 기록 단위 테스트를 추가했다.                      |
 | `tests/integration/test_generator_metadata_integration.py` | 생성 | 실제 PostgreSQL에 Generator 실행 이력이 저장되는지 검증하는 통합 테스트를 추가했다.     |
 | `tests/integration/test_generator_customer_integration.py` | 생성 | Customer Record 저장 멱등성과 Membership 변경 시각을 검증하는 통합 테스트를 추가했다.   |
 | `tests/integration/test_generator_order_integration.py`    | 생성 | Order Bundle의 Insert/Skip, FK 오류 Rollback 통합 테스트를 추가했다.                    |
 | `tests/integration/test_generator_transition_integration.py` | 생성 | 상태 전이 재실행, Business Timestamp, 오래된 Version 거부를 검증하는 통합 테스트를 추가했다. |
 | `tests/integration/test_generator_scenario_integration.py` | 생성 | Service-level Scenario의 Business Event와 Mutation Time 분리를 검증하는 통합 테스트를 추가했다. |
-| `docs/phases/phase-02-deterministic-generator.md`          | 수정 | Phase 진행 상태와 P2-01~11 완료, 파일별 변경 요약을 기록했다.                           |
+| `tests/integration/test_source_mutation_lease_integration.py` | 생성 | Generator·Warehouse Lease 배타성, 해제, 만료 인수 Fencing을 검증하는 통합 테스트를 추가했다. |
+| `tests/integration/test_generator_service_integration.py`  | 생성 | 실제 Generator 적재, 성공 결과 재사용, Warehouse Lease 차단을 검증하는 통합 테스트를 추가했다. |
+| `docs/phases/phase-02-deterministic-generator.md`          | 수정 | P2-01~22와 실행 통합 진행 상태, 파일별 변경 요약을 기록했다.                            |
 
 ## Definition of Done
 
