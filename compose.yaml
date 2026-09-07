@@ -1,4 +1,33 @@
 name: commerce-data-platform
 
-# Phase 0 skeleton. Service definitions are added in their owning phases.
-services: {}
+services:
+  postgres:
+    image: postgres:18.6
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: postgres
+      COMMERCE_SOURCE_DB: ${COMMERCE_SOURCE_DB}
+      AIRFLOW_METADATA_DB: ${AIRFLOW_METADATA_DB}
+      PIPELINE_METADATA_DB: ${PIPELINE_METADATA_DB}
+      SOURCE_DB_USER: ${SOURCE_DB_USER}
+      SOURCE_DB_PASSWORD: ${SOURCE_DB_PASSWORD}
+      AIRFLOW_DB_USER: ${AIRFLOW_DB_USER}
+      AIRFLOW_DB_PASSWORD: ${AIRFLOW_DB_PASSWORD}
+      PIPELINE_DB_USER: ${PIPELINE_DB_USER}
+      PIPELINE_DB_PASSWORD: ${PIPELINE_DB_PASSWORD}
+    ports:
+      - "${POSTGRES_PORT}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql
+      - ./sql/bootstrap:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
