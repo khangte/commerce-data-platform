@@ -101,6 +101,22 @@ AC-16의 전체 E2E/dbt 검증은 Phase 6 이후 완료하며, 이 Phase에서�
 | Dataset Download CLI | Help/Argument 검증 가능      |
 | Bootstrap README     | 새 Clone 재현 가능           |
 
+## 파일·폴더별 변경 요약
+
+| 경로                                                           | 변경              | 요약                                                                           |
+| -------------------------------------------------------------- | ----------------- | ------------------------------------------------------------------------------ |
+| `.python-version`                                              | 생성              | Python 실행 버전을 `3.12`로 고정했다.                                          |
+| `pyproject.toml`, `uv.lock`                                    | 생성              | Python 의존성, Ruff, pytest 설정과 재현 가능한 Lockfile을 추가했다.            |
+| `.gitignore`                                                   | 생성·수정         | Secret, Runtime Data, IDE 파일과 로컬 작업 지침 파일을 추적 대상에서 제외했다. |
+| `.env.example`                                                 | 생성              | Secret 없이 필요한 환경 변수 Key와 기본값 계약을 추가했다.                     |
+| `compose.yaml`                                                 | 생성              | 후속 서비스가 확장할 수 있는 Compose Skeleton을 추가했다.                      |
+| `airflow/`, `dbt/`, `data/`, `sql/`, `src/`, `tests/`, `docs/` | 생성              | 후속 Phase의 기본 디렉터리 구조와 필요한 `.gitkeep` 파일을 추가했다.           |
+| `scripts/download_dataset.py`                                  | 생성              | Olist Raw Dataset 다운로드 CLI를 추가했다.                                     |
+| `scripts/init.sh`                                              | 생성              | 환경 초기화와 기본 검증을 수행하는 Bootstrap 스크립트를 추가했다.              |
+| `tests/test_bootstrap.py`                                      | 생성              | 프로젝트 골격과 Bootstrap 계약을 확인하는 Smoke Test를 추가했다.               |
+| `README.md`                                                    | 생성·수정         | 사전 조건, 설치, 검증, Dataset 다운로드 방법을 추가했다.                       |
+| `AGENTS.md`                                                    | 생성 후 추적 제외 | 로컬 작업 규칙을 추가했으며 현재 Git에는 포함하지 않는다.                      |
+
 ## Definition of Done
 
 - [x] 모든 `P0-*` Task가 완료됐다.

@@ -10,20 +10,22 @@
 
 ROADMAP은 전체 순서와 범위를 관리하고, 아래 문서는 Phase별 Task, 산출물, 검증 Evidence, Definition of Done을 관리한다. 공통 Architecture와 데이터 계약의 Source of Truth는 [PRD v1.4](../../PRD_v1.4.md)다.
 
-| Phase | 실행 문서 | 주요 Gate |
-| --- | --- | --- |
-| 0 | [Bootstrap](phase-00-bootstrap.md) | 환경/구조 재현 |
-| 1 | [Source Environment](phase-01-source-environment.md) | AC-14, AC-18 |
-| 2 | [Deterministic Generator](phase-02-deterministic-generator.md) | AC-15, AC-20/21 생성 측 |
-| 3 | [Incremental Ingestion](phase-03-incremental-ingestion.md) | AC-02~06, 08, 20, 21, 23, 24 |
-| 4 | [Airflow Orchestration](phase-04-airflow-orchestration.md) | E2E, Retry, 부분 성공 재사용 |
-| 5 | [dbt + DuckDB Modeling](phase-05-dbt-duckdb-modeling.md) | AC-01, 09~12, 19, 22 |
-| 6 | [Data Quality & Publish](phase-06-data-quality-publish.md) | AC-01, 08, 12, 13, 16 |
-| 7 | [Reliability Scenarios](phase-07-reliability.md) | 실패/충돌/재처리 복구 Evidence |
-| 8 | [Benchmark](phase-08-benchmark.md) | AC-17 |
-| 9 | [BI](phase-09-bi.md) | Mart-only Dashboard, Serving ADR |
+| Phase | 실행 문서                                                      | 주요 Gate                        |
+| ----- | -------------------------------------------------------------- | -------------------------------- |
+| 0     | [Bootstrap](phase-00-bootstrap.md)                             | 환경/구조 재현                   |
+| 1     | [Source Environment](phase-01-source-environment.md)           | AC-14, AC-18                     |
+| 2     | [Deterministic Generator](phase-02-deterministic-generator.md) | AC-15, AC-20/21 생성 측          |
+| 3     | [Incremental Ingestion](phase-03-incremental-ingestion.md)     | AC-02~06, 08, 20, 21, 23, 24     |
+| 4     | [Airflow Orchestration](phase-04-airflow-orchestration.md)     | E2E, Retry, 부분 성공 재사용     |
+| 5     | [dbt + DuckDB Modeling](phase-05-dbt-duckdb-modeling.md)       | AC-01, 09~12, 19, 22             |
+| 6     | [Data Quality & Publish](phase-06-data-quality-publish.md)     | AC-01, 08, 12, 13, 16            |
+| 7     | [Reliability Scenarios](phase-07-reliability.md)               | 실패/충돌/재처리 복구 Evidence   |
+| 8     | [Benchmark](phase-08-benchmark.md)                             | AC-17                            |
+| 9     | [BI](phase-09-bi.md)                                           | Mart-only Dashboard, Serving ADR |
 
 Phase 문서의 상태는 `Planned → In Progress → Done`으로 변경한다. `Done`은 체크박스 개수가 아니라 해당 문서의 Definition of Done과 Acceptance Gate가 모두 통과했음을 뜻한다.
+
+각 Phase 문서에는 `파일·폴더별 변경 요약` 섹션을 유지한다. 구현 중 생성·수정·삭제한 파일 또는 폴더와 변경 목적을 한 줄씩 기록하고, 해당 Phase 완료 전에 최신 상태로 갱신한다. 이 요약은 상세 Diff가 아니라 구현 범위를 빠르게 확인하기 위한 목록이다.
 
 ---
 
