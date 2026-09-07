@@ -19,19 +19,24 @@ from src.ingestion.tables import TableConfig, table_config
 
 @dataclass(frozen=True)
 class SourceRecord:
-    """Table Config 순서대로 읽은 한 Raw-compatible Source Row와 Cursor다."""
+    """- Table Config 순서대로 읽은 Raw-compatible Source Row와 Cursor를 보관한다."""
 
     config: TableConfig
     values: Mapping[str, object]
+    cursor_override: CursorPosition | None = None
 
     def __post_init__(self) -> None:
-        """읽은 값이 Config의 모든 Source Column을 정확히 포함하는지 검증한다."""
+        """- 읽은 값이 Config의 Source Column을 정확히 포함하고 Cursor Override가 맞는지 검증한다."""
         if tuple(self.values) != self.config.source_column_names:
             raise ValueError("Source record columns must match the configured source column order")
+        if self.cursor_override is not None:
+            _assert_cursor(self.config, self.cursor_override)
 
     @property
     def cursor(self) -> CursorPosition:
-        """Config의 Timestamp와 전체 PK Tie-breaker로 Composite Cursor를 만든다."""
+        """- Config의 Timestamp와 전체 PK Tie-breaker 또는 보존된 Cursor를 반환한다."""
+        if self.cursor_override is not None:
+            return self.cursor_override
         timestamp = self.values[self.config.cursor_timestamp_column]
         if not isinstance(timestamp, datetime):
             raise TypeError("Source cursor timestamp must be a datetime")

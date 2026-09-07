@@ -6,13 +6,21 @@ import os
 import uuid
 from datetime import UTC, datetime
 
+import pyarrow as pa
+import pyarrow.parquet as pq
 import pytest
 from psycopg.types.json import Jsonb
 
 from src.common.database import PostgresSettings
 from src.ingestion.batch import BatchIdentityConflictError
+from src.ingestion.corruption import INVALID_STATUS, CorruptionPlan
 from src.ingestion.metadata import CursorPosition, get_or_create_watermark
-from src.ingestion.service import OrdersIngestionRequest, ingest_orders, orders_object_keys
+from src.ingestion.service import (
+    OrdersIngestionRequest,
+    ingest_orders,
+    orders_object_keys,
+    quarantine_object_keys,
+)
 from src.ingestion.storage import SeaweedFSSettings, ensure_bucket, seaweedfs_s3_client
 
 pytestmark = pytest.mark.integration
@@ -311,6 +319,69 @@ def test_orders_service_rejects_a_standard_batch_when_the_current_range_differs(
         _delete_test_rows_and_objects(postgres, storage, pipeline_name, request)
 
 
+@pytest.mark.skipif(
+    os.environ.get("RUN_POSTGRES_INTEGRATION") != "1"
+    or os.environ.get("RUN_SEAWEEDFS_INTEGRATION") != "1",
+    reason="Set PostgreSQL and SeaweedFS integration environment flags after starting containers.",
+)
+def test_orders_service_commits_valid_rows_and_verified_quarantine_metadata_for_low_reject_rate(
+    tmp_path,
+) -> None:
+    """- 20개 중 1개 복제본 오류는 Valid Bronze·Quarantine·Count를 함께 Commit한다."""
+    postgres = PostgresSettings.from_environment()
+    storage = SeaweedFSSettings.from_environment()
+    now = datetime(2026, 9, 7, tzinfo=UTC)
+    pipeline_name = f"test_orders_quarantine_{uuid.uuid4().hex}"
+    request = OrdersIngestionRequest.for_dag_run(
+        dag_id=f"warehouse_{uuid.uuid4().hex}",
+        logical_date=now,
+        pipeline_name=pipeline_name,
+        page_size=7,
+        corruption_plan=CorruptionPlan({0: INVALID_STATUS}),
+    )
+    _set_watermark(postgres, pipeline_name, _lower_bound_before_twenty_latest_rows(postgres), now)
+
+    try:
+        result = ingest_orders(postgres, storage, request, local_directory=tmp_path, now=now)
+
+        assert result.status == "SUCCESS"
+        assert result.row_count == 19
+        assert result.rows_rejected == 1
+        assert result.rows_corrupted == 1
+        assert result.quarantine_object_key is not None
+        raw_quarantine = (
+            seaweedfs_s3_client(storage)
+            .get_object(Bucket=storage.bucket, Key=result.quarantine_object_key)["Body"]
+            .read()
+        )
+        quarantine_row = pq.ParquetFile(pa.BufferReader(raw_quarantine)).read().to_pylist()[0]
+        with postgres.pipeline_connection() as connection:
+            run_row = connection.execute(
+                """
+                SELECT rows_extracted, rows_valid, rows_rejected, rows_loaded, status
+                FROM pipeline_runs WHERE run_id = %s AND source_table = 'orders'
+                """,
+                (result.run.run_id,),
+            ).fetchone()
+            quarantine_row_metadata = connection.execute(
+                """
+                SELECT object_key, row_count, error_counts
+                FROM quarantine_batches WHERE table_batch_id = %s
+                """,
+                (f"{request.batch_id}__orders",),
+            ).fetchone()
+
+        assert run_row == (20, 19, 1, 19, "SUCCESS")
+        assert quarantine_row["_error_codes"] == ["STATUS_DOMAIN_INVALID"]
+        assert quarantine_row_metadata == (
+            result.quarantine_object_key,
+            1,
+            {"STATUS_DOMAIN_INVALID": 1},
+        )
+    finally:
+        _delete_test_rows_and_objects(postgres, storage, pipeline_name, request)
+
+
 def _lower_bound_before_five_latest_rows(settings: PostgresSettings) -> CursorPosition:
     """작고 여러 Page인 실제 범위를 만들 최신 다섯 Row 직전 Cursor를 읽는다."""
     with settings.source_connection() as connection:
@@ -322,6 +393,20 @@ def _lower_bound_before_five_latest_rows(settings: PostgresSettings) -> CursorPo
         ).fetchone()
     if row is None:
         raise RuntimeError("The seeded source must contain at least six orders")
+    return CursorPosition(row[0], (row[1],))
+
+
+def _lower_bound_before_twenty_latest_rows(settings: PostgresSettings) -> CursorPosition:
+    """- Threshold 이하 Reject 통합 검증용 최신 20개 Row 직전 Cursor를 읽는다."""
+    with settings.source_connection() as connection:
+        row = connection.execute(
+            """
+            SELECT updated_at, order_id FROM orders
+            ORDER BY updated_at DESC, order_id COLLATE "C" DESC OFFSET 20 LIMIT 1
+            """
+        ).fetchone()
+    if row is None:
+        raise RuntimeError("The seeded source must contain at least 21 orders")
     return CursorPosition(row[0], (row[1],))
 
 
@@ -364,10 +449,17 @@ def _delete_test_rows_and_objects(
 ) -> None:
     """테스트가 만든 정확한 Metadata와 Final Object만 역순으로 정리한다."""
     object_key, manifest_key = orders_object_keys(request.batch_id, request.logical_date)
+    quarantine_key, quarantine_manifest_key = quarantine_object_keys(
+        "orders", request.batch_id, request.logical_date
+    )
     client = seaweedfs_s3_client(storage)
-    for key in (manifest_key, object_key):
+    for key in (manifest_key, object_key, quarantine_manifest_key, quarantine_key):
         client.delete_object(Bucket=storage.bucket, Key=key)
     with postgres.pipeline_connection() as connection:
+        connection.execute(
+            "DELETE FROM quarantine_batches WHERE table_batch_id = %s",
+            (f"{request.batch_id}__orders",),
+        )
         connection.execute(
             "DELETE FROM bronze_objects WHERE table_batch_id = %s", (f"{request.batch_id}__orders",)
         )

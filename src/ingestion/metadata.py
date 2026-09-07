@@ -120,6 +120,23 @@ class VerifiedBronzeObject:
 
 
 @dataclass(frozen=True)
+class QuarantineBatch:
+    """- Metadata Commit에 함께 기록할 검증된 Quarantine Object 증적이다."""
+
+    table_batch_id: str
+    object_key: str
+    row_count: int
+    error_counts: dict[str, int]
+
+    def __post_init__(self) -> None:
+        """- Table Batch·Object Key·Row Count·오류 집계의 유효성을 검증한다."""
+        _assert_nonempty(self.table_batch_id, "table_batch_id", 320)
+        _assert_nonempty(self.object_key, "object_key")
+        if self.row_count < 0 or any(not code or count < 0 for code, count in self.error_counts.items()):
+            raise ValueError("Quarantine counts must be non-negative and named")
+
+
+@dataclass(frozen=True)
 class TableCommit:
     """검증된 Object, 실행 성공, Watermark CAS를 함께 Commit할 입력이다."""
 
@@ -130,6 +147,7 @@ class TableCommit:
     rows_valid: int
     rows_rejected: int
     rows_loaded: int
+    quarantine: QuarantineBatch | None = None
 
     def __post_init__(self) -> None:
         """Commit Count와 Watermark가 실행의 시작 Cursor에 대응하는지 검증한다."""
@@ -144,6 +162,11 @@ class TableCommit:
             isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in counts
         ):
             raise ValueError("Commit row counts must be non-negative integers")
+        if self.quarantine is not None:
+            if self.quarantine.table_batch_id != self.object.table_batch_id:
+                raise ValueError("Quarantine table_batch_id differs from the Bronze object")
+            if self.quarantine.row_count != self.rows_rejected:
+                raise ValueError("Quarantine row_count must equal rows_rejected")
 
 
 def ensure_ingestion_metadata(settings: PostgresSettings) -> None:
@@ -204,6 +227,20 @@ def commit_table_run(
     """Object·성공 Run·Watermark CAS를 하나의 Metadata Transaction으로 Commit한다."""
     current_time = _utc_now(now)
     with settings.pipeline_connection() as connection, connection.transaction():
+        if commit.quarantine is not None:
+            connection.execute(
+                """
+                INSERT INTO quarantine_batches (table_batch_id, object_key, row_count, error_counts, created_at)
+                VALUES (%s, %s, %s, %s, %s)
+                """,
+                (
+                    commit.quarantine.table_batch_id,
+                    commit.quarantine.object_key,
+                    commit.quarantine.row_count,
+                    Jsonb(commit.quarantine.error_counts),
+                    current_time,
+                ),
+            )
         connection.execute(
             """
             INSERT INTO bronze_objects (
