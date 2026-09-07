@@ -14,8 +14,8 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from src.ingestion.orders import OrdersPage, SourceOrderRecord
+from src.ingestion.tables import BRONZE_SCHEMA_VERSION, ORDERS_TABLE
 
-BRONZE_SCHEMA_VERSION = 1
 ROW_GROUP_TARGET_ROWS = 128_000
 ORDERS_BUSINESS_COLUMNS = (
     "order_id",
@@ -29,25 +29,7 @@ ORDERS_BUSINESS_COLUMNS = (
     "created_at",
     "updated_at",
 )
-ORDERS_BRONZE_SCHEMA = pa.schema(
-    [
-        pa.field("order_id", pa.string(), nullable=False),
-        pa.field("customer_id", pa.string(), nullable=False),
-        pa.field("order_status", pa.string(), nullable=False),
-        pa.field("order_purchase_timestamp", pa.timestamp("us", tz="UTC"), nullable=False),
-        pa.field("order_approved_at", pa.timestamp("us", tz="UTC")),
-        pa.field("order_delivered_carrier_date", pa.timestamp("us", tz="UTC")),
-        pa.field("order_delivered_customer_date", pa.timestamp("us", tz="UTC")),
-        pa.field("order_estimated_delivery_date", pa.timestamp("us", tz="UTC")),
-        pa.field("created_at", pa.timestamp("us", tz="UTC"), nullable=False),
-        pa.field("updated_at", pa.timestamp("us", tz="UTC"), nullable=False),
-        pa.field("_batch_id", pa.string(), nullable=False),
-        pa.field("_run_id", pa.string(), nullable=False),
-        pa.field("_ingested_at", pa.timestamp("us", tz="UTC"), nullable=False),
-        pa.field("_source_table", pa.string(), nullable=False),
-        pa.field("_schema_version", pa.int32(), nullable=False),
-    ]
-)
+ORDERS_BRONZE_SCHEMA = ORDERS_TABLE.bronze_schema
 
 
 @dataclass(frozen=True)

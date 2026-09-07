@@ -10,6 +10,7 @@ import pytest
 from psycopg.types.json import Jsonb
 
 from src.common.database import PostgresSettings
+from src.ingestion.batch import BatchIdentityConflictError
 from src.ingestion.metadata import CursorPosition, get_or_create_watermark
 from src.ingestion.service import OrdersIngestionRequest, ingest_orders, orders_object_keys
 from src.ingestion.storage import SeaweedFSSettings, ensure_bucket, seaweedfs_s3_client
@@ -28,8 +29,8 @@ def test_orders_service_commits_verified_manifest_object_run_and_watermark(tmp_p
     storage = SeaweedFSSettings.from_environment()
     now = datetime(2026, 9, 7, tzinfo=UTC)
     pipeline_name = f"test_orders_service_{uuid.uuid4().hex}"
-    request = OrdersIngestionRequest(
-        batch_id=f"warehouse__{uuid.uuid4().hex}",
+    request = OrdersIngestionRequest.for_dag_run(
+        dag_id=f"warehouse_{uuid.uuid4().hex}",
         logical_date=now,
         pipeline_name=pipeline_name,
         page_size=2,
@@ -97,8 +98,8 @@ def test_orders_service_keeps_watermark_when_final_object_already_exists(tmp_pat
     storage = SeaweedFSSettings.from_environment()
     now = datetime(2026, 9, 7, tzinfo=UTC)
     pipeline_name = f"test_orders_failure_{uuid.uuid4().hex}"
-    request = OrdersIngestionRequest(
-        batch_id=f"warehouse__{uuid.uuid4().hex}",
+    request = OrdersIngestionRequest.for_dag_run(
+        dag_id=f"warehouse_{uuid.uuid4().hex}",
         logical_date=now,
         pipeline_name=pipeline_name,
         page_size=2,
@@ -153,8 +154,8 @@ def test_orders_service_finishes_an_empty_range_without_object_or_watermark_chan
     storage = SeaweedFSSettings.from_environment()
     now = datetime(2026, 9, 7, tzinfo=UTC)
     pipeline_name = f"test_orders_empty_{uuid.uuid4().hex}"
-    request = OrdersIngestionRequest(
-        batch_id=f"warehouse__{uuid.uuid4().hex}",
+    request = OrdersIngestionRequest.for_dag_run(
+        dag_id=f"warehouse_{uuid.uuid4().hex}",
         logical_date=now,
         pipeline_name=pipeline_name,
     )
@@ -189,6 +190,123 @@ def test_orders_service_finishes_an_empty_range_without_object_or_watermark_chan
         assert run_row == ("SUCCESS_NO_DATA", 0)
         assert object_count == 0
         assert watermark_row == (maximum_cursor.timestamp, maximum_cursor.as_json(), 0)
+    finally:
+        _delete_test_rows_and_objects(postgres, storage, pipeline_name, request)
+
+
+@pytest.mark.skipif(
+    os.environ.get("RUN_POSTGRES_INTEGRATION") != "1"
+    or os.environ.get("RUN_SEAWEEDFS_INTEGRATION") != "1",
+    reason="Set PostgreSQL and SeaweedFS integration environment flags after starting containers.",
+)
+def test_orders_service_reuses_a_committed_standard_batch_without_new_object_or_watermark(
+    tmp_path,
+) -> None:
+    """같은 표준 Batch 재실행은 Source 추출·Object 생성 없이 Catalog Object를 재사용한다."""
+    postgres = PostgresSettings.from_environment()
+    storage = SeaweedFSSettings.from_environment()
+    now = datetime(2026, 9, 7, tzinfo=UTC)
+    pipeline_name = f"test_orders_reuse_{uuid.uuid4().hex}"
+    request = OrdersIngestionRequest.for_dag_run(
+        dag_id=f"warehouse_{uuid.uuid4().hex}",
+        logical_date=now,
+        pipeline_name=pipeline_name,
+        page_size=2,
+    )
+    _set_watermark(postgres, pipeline_name, _lower_bound_before_five_latest_rows(postgres), now)
+
+    try:
+        first = ingest_orders(postgres, storage, request, local_directory=tmp_path, now=now)
+        reused = ingest_orders(postgres, storage, request, local_directory=tmp_path, now=now)
+
+        assert first.status == "SUCCESS"
+        assert reused.status == "SKIPPED_ALREADY_COMMITTED"
+        assert reused.object_key == first.object_key
+        assert reused.manifest_key == first.manifest_key
+        with postgres.pipeline_connection() as connection:
+            object_count = connection.execute(
+                "SELECT count(*) FROM bronze_objects WHERE table_batch_id = %s",
+                (f"{request.batch_id}__orders",),
+            ).fetchone()[0]
+            watermark_row = connection.execute(
+                """
+                SELECT watermark_timestamp, watermark_keys, version
+                FROM watermarks WHERE pipeline_name = %s AND source_table = 'orders'
+                """,
+                (pipeline_name,),
+            ).fetchone()
+            statuses = connection.execute(
+                """
+                SELECT status FROM pipeline_runs
+                WHERE pipeline_name = %s AND source_table = 'orders'
+                ORDER BY started_at, run_id
+                """,
+                (pipeline_name,),
+            ).fetchall()
+
+        assert object_count == 1
+        assert watermark_row == (
+            first.run.extract_upper_bound.timestamp,
+            first.run.extract_upper_bound.as_json(),
+            1,
+        )
+        assert {row[0] for row in statuses} == {"SUCCESS", "SKIPPED_ALREADY_COMMITTED"}
+    finally:
+        _delete_test_rows_and_objects(postgres, storage, pipeline_name, request)
+
+
+@pytest.mark.skipif(
+    os.environ.get("RUN_POSTGRES_INTEGRATION") != "1"
+    or os.environ.get("RUN_SEAWEEDFS_INTEGRATION") != "1",
+    reason="Set PostgreSQL and SeaweedFS integration environment flags after starting containers.",
+)
+def test_orders_service_rejects_a_standard_batch_when_the_current_range_differs(tmp_path) -> None:
+    """같은 Batch라도 현재 Watermark가 다르면 Object 없이 Conflict Run으로 종료한다."""
+    postgres = PostgresSettings.from_environment()
+    storage = SeaweedFSSettings.from_environment()
+    now = datetime(2026, 9, 7, tzinfo=UTC)
+    pipeline_name = f"test_orders_identity_conflict_{uuid.uuid4().hex}"
+    request = OrdersIngestionRequest.for_dag_run(
+        dag_id=f"warehouse_{uuid.uuid4().hex}",
+        logical_date=now,
+        pipeline_name=pipeline_name,
+        page_size=2,
+    )
+    lower_bound = _lower_bound_before_five_latest_rows(postgres)
+    _set_watermark(postgres, pipeline_name, lower_bound, now)
+
+    try:
+        first = ingest_orders(postgres, storage, request, local_directory=tmp_path, now=now)
+        _set_watermark(postgres, pipeline_name, lower_bound, now)
+
+        with pytest.raises(BatchIdentityConflictError, match="range"):
+            ingest_orders(postgres, storage, request, local_directory=tmp_path, now=now)
+
+        with postgres.pipeline_connection() as connection:
+            object_count = connection.execute(
+                "SELECT count(*) FROM bronze_objects WHERE table_batch_id = %s",
+                (f"{request.batch_id}__orders",),
+            ).fetchone()[0]
+            run_rows = connection.execute(
+                """
+                SELECT status, error_type FROM pipeline_runs
+                WHERE pipeline_name = %s AND source_table = 'orders'
+                ORDER BY started_at, run_id
+                """,
+                (pipeline_name,),
+            ).fetchall()
+            watermark_row = connection.execute(
+                """
+                SELECT watermark_timestamp, watermark_keys
+                FROM watermarks WHERE pipeline_name = %s AND source_table = 'orders'
+                """,
+                (pipeline_name,),
+            ).fetchone()
+
+        assert first.status == "SUCCESS"
+        assert object_count == 1
+        assert set(run_rows) == {("SUCCESS", None), ("FAILED", "BATCH_IDENTITY_CONFLICT")}
+        assert watermark_row == (lower_bound.timestamp, lower_bound.as_json())
     finally:
         _delete_test_rows_and_objects(postgres, storage, pipeline_name, request)
 

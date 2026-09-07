@@ -9,6 +9,14 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from src.common.database import PostgresSettings
+from src.ingestion.batch import (
+    BatchIdentity,
+    BatchIdentityConflictError,
+    CommittedTableBatch,
+    TableBatchIdentity,
+    assert_reusable_table_batch,
+    get_committed_table_batch,
+)
 from src.ingestion.bronze import (
     BRONZE_SCHEMA_VERSION,
     BronzeWriteContext,
@@ -23,6 +31,7 @@ from src.ingestion.metadata import (
     commit_table_run,
     get_or_create_watermark,
     record_failed_run,
+    record_skipped_already_committed_run,
     record_started_run,
     record_success_no_data_run,
 )
@@ -61,6 +70,28 @@ class OrdersIngestionRequest:
         if self.page_size is not None and self.page_size <= 0:
             raise ValueError("page_size must be greater than zero")
 
+    @classmethod
+    def for_dag_run(
+        cls,
+        *,
+        dag_id: str,
+        logical_date: datetime,
+        attempt_number: int = 1,
+        run_id: uuid.UUID | None = None,
+        pipeline_name: str = ORDERS_PIPELINE_NAME,
+        page_size: int | None = None,
+    ) -> OrdersIngestionRequest:
+        """DAG ID와 Logical Date로 표준 Batch ID를 만든 `orders` 실행 요청을 반환한다."""
+        identity = BatchIdentity(dag_id=dag_id, logical_date=logical_date)
+        return cls(
+            batch_id=identity.batch_id,
+            logical_date=logical_date,
+            attempt_number=attempt_number,
+            run_id=run_id,
+            pipeline_name=pipeline_name,
+            page_size=page_size,
+        )
+
 
 @dataclass(frozen=True)
 class OrdersIngestionResult:
@@ -87,6 +118,12 @@ def ingest_orders(
     watermark = get_or_create_watermark(
         postgres, request.pipeline_name, ORDERS_SOURCE_TABLE, now=current_time
     )
+    identity = _orders_table_batch_identity(request)
+    existing = get_committed_table_batch(postgres, identity)
+    if existing is not None:
+        return _reuse_or_reject_committed_batch(
+            postgres, request, watermark, existing, current_time
+        )
 
     with open_orders_snapshot(postgres, watermark.cursor, page_size=request.page_size) as snapshot:
         run = PipelineRun(
@@ -150,6 +187,82 @@ def orders_object_keys(batch_id: str, logical_date: datetime) -> tuple[str, str]
         f"/batch_id={batch_id}"
     )
     return f"{prefix}/data.parquet", f"{prefix}/manifest.json"
+
+
+def _orders_table_batch_identity(request: OrdersIngestionRequest) -> TableBatchIdentity:
+    """외부 Batch ID를 표준 Table Batch Identity와 같은 계약으로 검증해 반환한다."""
+    standard = BatchIdentity(
+        dag_id=_dag_id_from_batch_id(request.batch_id), logical_date=request.logical_date
+    )
+    identity = standard.table_batch(ORDERS_SOURCE_TABLE)
+    if identity.batch_id != request.batch_id:
+        raise ValueError("batch_id must match '{dag_id}__{logical_date_utc:%Y%m%dT%H%M%SZ}'")
+    return identity
+
+
+def _dag_id_from_batch_id(batch_id: str) -> str:
+    """표준 Batch ID에서 마지막 구분자 앞의 DAG ID를 안전하게 분리한다."""
+    dag_id, separator, timestamp = batch_id.rpartition("__")
+    if not separator or len(timestamp) != 16:
+        raise ValueError("batch_id must use the standard DAG logical-date format")
+    return dag_id
+
+
+def _reuse_or_reject_committed_batch(
+    postgres: PostgresSettings,
+    request: OrdersIngestionRequest,
+    watermark,
+    existing: CommittedTableBatch,
+    current_time: datetime,
+) -> OrdersIngestionResult:
+    """기존 Commit 범위가 같으면 Skip하고 다르면 Source Read 전 Conflict로 종료한다."""
+    try:
+        assert_reusable_table_batch(
+            existing,
+            current_watermark=watermark,
+            schema_version=BRONZE_SCHEMA_VERSION,
+        )
+    except BatchIdentityConflictError as error:
+        run = PipelineRun(
+            run_id=request.run_id or uuid.uuid4(),
+            pipeline_name=request.pipeline_name,
+            source_table=ORDERS_SOURCE_TABLE,
+            batch_id=request.batch_id,
+            logical_date=request.logical_date,
+            attempt_number=request.attempt_number,
+            watermark_before=watermark.cursor,
+            extract_upper_bound=None,
+        )
+        record_started_run(postgres, run, now=current_time)
+        record_failed_run(
+            postgres,
+            run,
+            error_type="BATCH_IDENTITY_CONFLICT",
+            error_message=str(error),
+            now=current_time,
+        )
+        raise
+    run = PipelineRun(
+        run_id=request.run_id or uuid.uuid4(),
+        pipeline_name=request.pipeline_name,
+        source_table=ORDERS_SOURCE_TABLE,
+        batch_id=request.batch_id,
+        logical_date=request.logical_date,
+        attempt_number=request.attempt_number,
+        watermark_before=existing.watermark_before,
+        extract_upper_bound=existing.watermark_after,
+    )
+    record_started_run(postgres, run, now=current_time)
+    record_skipped_already_committed_run(
+        postgres, run, row_count=existing.row_count, now=current_time
+    )
+    return OrdersIngestionResult(
+        run=run,
+        status="SKIPPED_ALREADY_COMMITTED",
+        object_key=existing.object_key,
+        manifest_key=existing.manifest_key,
+        row_count=existing.row_count,
+    )
 
 
 def _write_local_parquet(

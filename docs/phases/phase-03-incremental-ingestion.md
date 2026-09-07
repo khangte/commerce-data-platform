@@ -148,12 +148,12 @@ Phase 3D `P3-23` Orphan Reconciliation 범위다.
 
 ## Phase 3B. 전체 Table 일반화
 
-- [ ] `P3-09` Table별 Cursor/PK/Arrow Schema Config 정의
-- [ ] `P3-10` `customers`, `products`, `sellers` Mutable Extract 확장
-- [ ] `P3-11` `order_items` Append-oriented Composite Cursor 확장
-- [ ] `P3-12` `order_payments` Composite Cursor 확장
-- [ ] `P3-13` Parent Key Snapshot을 이용한 Broken Reference 검증
-- [ ] `P3-14` 6개 Table Batch Identity와 재실행 정책 구현
+- [x] `P3-09` Table별 Cursor/PK/Arrow Schema Config 정의
+- [x] `P3-10` `customers`, `products`, `sellers` Mutable Extract 확장
+- [x] `P3-11` `order_items` Append-oriented Composite Cursor 확장
+- [x] `P3-12` `order_payments` Composite Cursor 확장
+- [x] `P3-13` Parent Key Snapshot을 이용한 Broken Reference 검증
+- [x] `P3-14` 6개 Table Batch Identity와 재실행 정책 구현
 
 Batch Identity:
 
@@ -286,26 +286,35 @@ Phase 3에서는 Framework-independent Python Pipeline을 완성하고 Phase 4�
 | 경로                                                             | 변경 | 요약                                                                                                                  |
 | ---------------------------------------------------------------- | ---- | --------------------------------------------------------------------------------------------------------------------- |
 | `sql/metadata/004_create_ingestion_metadata.sql`                 | 생성 | Watermark, 수집 실행, Bronze Object, Quarantine Batch의 상태·제약조건·Index를 추가했다.                               |
-| `src/ingestion/metadata.py`                                      | 생성 | 초기 Watermark, RUNNING/FAILED/SUCCESS_NO_DATA 상태 전이, Object·Run·Watermark CAS의 원자적 Commit을 추가했다.        |
+| `src/ingestion/metadata.py`                                      | 생성·수정 | 초기 Watermark, RUNNING/FAILED/SUCCESS_NO_DATA/SKIPPED_ALREADY_COMMITTED 상태 전이, Object·Run·Watermark CAS의 원자적 Commit을 추가했다. |
 | `src/ingestion/config.py`                                        | 생성 | `INGESTION_PAGE_SIZE` 환경 설정과 기본값 50,000 검증을 추가했다.                                                      |
 | `src/ingestion/orders.py`                                        | 생성 | 동일 Read-only Snapshot에서 `orders` Upper Bound 고정과 Keyset Pagination을 추가했다.                                 |
 | `src/ingestion/bronze.py`                                        | 생성 | `orders` Page의 명시적 Arrow Schema, 기술 컬럼, Zstandard Local Parquet Writer와 PK 기준 Logical Hash를 추가했다.     |
 | `src/ingestion/storage.py`                                       | 생성 | SeaweedFS Path-style S3 Client, Bucket 준비, Final Object의 조건부 PUT·HEAD·Parquet 검증을 추가했다.                  |
+| `src/ingestion/tables.py`                                        | 생성 | 6개 Source Table의 전체 PK Tie-breaker, 증분 Cursor, Raw-compatible Arrow Schema와 공통 Bronze 기술 Column 계약을 추가했다. |
+| `src/ingestion/extract.py`                                       | 생성 | 등록된 Table Config만 사용해 동일 Read-only Snapshot, 고정 Upper Bound, Composite Keyset Page를 읽는 공통 Extractor를 추가했다. |
+| `src/ingestion/references.py`                                    | 생성 | Child Page의 Orders·Products·Sellers Parent Key를 같은 Snapshot Connection에서 검증하는 계약을 추가했다. |
+| `src/ingestion/batch.py`                                         | 생성 | DAG·UTC Logical Date 기반 6개 Table Batch Identity와 Commit 범위·Schema 재사용/Conflict 판정을 추가했다. |
 | `src/ingestion/manifest.py`                                      | 생성 | Credential·Local 경로·Metadata Commit 상태 없이 `VERIFIED` Object 증적을 기록하는 Canonical JSON Manifest를 추가했다. |
-| `src/ingestion/service.py`                                       | 생성 | 고정 `orders` 범위를 Local Parquet, Final Object, Manifest, Metadata CAS까지 연결하는 실행 API를 추가했다.            |
+| `src/ingestion/service.py`                                       | 생성·수정 | 고정 `orders` 범위를 Local Parquet, Final Object, Manifest, Metadata CAS까지 연결하고, 표준 Batch 재실행을 Source Read 전에 Skip 또는 `BATCH_IDENTITY_CONFLICT`로 종료하도록 확장했다. |
 | `compose.yaml`                                                   | 수정 | SeaweedFS 4.45 S3 API Service, 영속 Volume과 Master Healthcheck를 추가했다.                                           |
 | `.env.example`                                                   | 수정 | SeaweedFS Host 환경 변수 Key를 추가했다.                                                                              |
 | `src/common/database.py`                                         | 수정 | 공통 환경 변수 Reader를 공개해 수집 설정도 로컬 `.env`를 사용할 수 있게 했다.                                         |
 | `tests/ingestion/test_config.py`                                 | 생성 | Page Size 기본값과 유효하지 않은 환경 변수 값을 검증한다.                                                             |
 | `tests/ingestion/test_bronze.py`                                 | 생성 | Local Parquet Schema, UTC microsecond Timestamp, 기술 컬럼, 압축·Row Group을 검증한다.                                |
 | `tests/ingestion/test_storage.py`                                | 생성 | SeaweedFS 연결 설정과 Object Storage Prefix 계약을 검증한다.                                                          |
+| `tests/ingestion/test_tables.py`                                 | 생성 | 6개 Table Cursor·PK·Arrow Schema와 금액 Decimal 정밀도 계약을 검증한다.                                               |
+| `tests/ingestion/test_batch.py`                                  | 생성 | 6개 Table 표준 Batch ID와 Cursor·Schema 재사용 범위 계약을 검증한다. |
 | `tests/ingestion/test_manifest.py`                               | 생성 | VERIFIED Manifest의 공개 필드와 Metadata Commit 경계를 검증한다.                                                      |
 | `tests/integration/test_ingestion_metadata_integration.py`       | 생성 | 성공 Commit과 Watermark 충돌 시 Rollback·실패 상태 전이를 PostgreSQL에서 검증했다.                                    |
 | `tests/integration/test_orders_incremental_integration.py`       | 생성 | `orders` Composite Cursor의 같은 Timestamp Page 경계와 Empty Range를 검증한다.                                        |
 | `tests/integration/test_orders_bronze_integration.py`            | 생성 | 실제 Source Page가 하나의 Local Bronze Parquet으로 기록되는지 검증한다.                                               |
 | `tests/integration/test_seaweedfs_s3_integration.py`             | 생성 | SeaweedFS S3 Lifecycle과 DuckDB Parquet Read 호환성을 검증한다.                                                       |
-| `tests/integration/test_orders_ingestion_service_integration.py` | 생성 | 실제 컨테이너에서 성공 Commit, Final Key 충돌 시 Watermark 유지, Empty Batch 종료를 검증한다.                         |
-| `docs/phases/phase-03-incremental-ingestion.md`                  | 수정 | Phase 3A P3-01~08 진행 상태와 파일별 변경 요약을 기록했다.                                                            |
+| `tests/integration/test_orders_ingestion_service_integration.py` | 생성·수정 | 실제 컨테이너에서 성공 Commit, Final Key 충돌, Empty Batch, Batch 재사용과 범위 Conflict를 검증한다.                         |
+| `tests/integration/test_mutable_table_extraction_integration.py` | 생성 | 실제 `customers`·`products`·`sellers`의 설정 기반 고정 범위 Keyset 추출을 검증한다. |
+| `tests/integration/test_child_table_extraction_integration.py` | 생성 | 실제 `order_items`·`order_payments`의 전체 복합 PK Keyset Page 경계를 검증한다. |
+| `tests/integration/test_child_parent_references_integration.py` | 생성 | 실제 Child Page가 동일 Snapshot의 모든 Parent Key를 참조하는지 검증한다. |
+| `docs/phases/phase-03-incremental-ingestion.md`                  | 수정 | Phase 3A P3-01~08, Phase 3B P3-09~14 진행 상태와 파일별 변경 요약을 기록했다.                                        |
 
 ## Definition of Done
 
