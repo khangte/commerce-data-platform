@@ -1,6 +1,6 @@
 # Phase 1. Source Environment
 
-> 상태: Planned  
+> 상태: Done  
 > Milestone: 1 — Source Foundation  
 > 선행 Phase: [Phase 0. Bootstrap](phase-00-bootstrap.md)  
 > 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.4](../../PRD_v1.4.md)
@@ -28,21 +28,21 @@ Olist Raw 데이터를 원본 Naming과 값을 최대한 유지하는 PostgreSQL
 
 ### 1. PostgreSQL 인프라
 
-- [ ] `P1-01` PostgreSQL 18.6 Compose Service 구성
-- [ ] `P1-02` Readiness를 확인하는 Health Check 구성
-- [ ] `P1-03` Source/Metadata/Airflow 역할별 Credential 분리
-- [ ] `P1-04` `commerce_source` Database 생성
-- [ ] `P1-05` `airflow_metadata` Database 생성
-- [ ] `P1-06` `pipeline_metadata` Database 생성
+- [x] `P1-01` PostgreSQL 18.6 Compose Service 구성
+- [x] `P1-02` Readiness를 확인하는 Health Check 구성
+- [x] `P1-03` Source/Metadata/Airflow 역할별 Credential 분리
+- [x] `P1-04` `commerce_source` Database 생성
+- [x] `P1-05` `airflow_metadata` Database 생성
+- [x] `P1-06` `pipeline_metadata` Database 생성
 
 Credential 원본은 `.env`에만 두며 SQL, Manifest, dbt Model에 기록하지 않는다.
 
 ### 2. Olist Raw Dataset
 
-- [ ] `P1-07` KaggleHub를 이용한 결정적 다운로드 경로 구현
-- [ ] `P1-08` 필수 CSV 6개 존재 여부 검증
-- [ ] `P1-09` CSV Header Allowlist/Contract 검증
-- [ ] `P1-10` 파일별 Raw Checksum 계산 및 기록
+- [x] `P1-07` KaggleHub를 이용한 결정적 다운로드 경로 구현
+- [x] `P1-08` 필수 CSV 6개 존재 여부 검증
+- [x] `P1-09` CSV Header Allowlist/Contract 검증
+- [x] `P1-10` 파일별 Raw Checksum 계산 및 기록
 
 필수 Dataset:
 
@@ -69,27 +69,27 @@ customers   products   sellers
         order_items  order_payments
 ```
 
-- [ ] `P1-11` `customers` DDL
-- [ ] `P1-12` `products` DDL
-- [ ] `P1-13` `sellers` DDL
-- [ ] `P1-14` `orders` DDL
-- [ ] `P1-15` `order_items` DDL
-- [ ] `P1-16` `order_payments` DDL
-- [ ] `P1-17` PK/FK/CHECK/Numeric Precision 제약조건
-- [ ] `P1-18` `(updated_at, PK)` 또는 Table별 Cursor에 맞는 증분 Index
+- [x] `P1-11` `customers` DDL
+- [x] `P1-12` `products` DDL
+- [x] `P1-13` `sellers` DDL
+- [x] `P1-14` `orders` DDL
+- [x] `P1-15` `order_items` DDL
+- [x] `P1-16` `order_payments` DDL
+- [x] `P1-17` PK/FK/CHECK/Numeric Precision 제약조건
+- [x] `P1-18` `(updated_at, PK)` 또는 Table별 Cursor에 맞는 증분 Index
 
 ### 4. Seed Loader
 
 먼저 `customers` 하나로 전체 흐름을 검증한 뒤 6개 Table로 확장한다.
 
-- [ ] `P1-19` 임시 PostgreSQL Staging Schema/Table 구성
-- [ ] `P1-20` CSV 문자열을 Source Type으로 명시적 변환
-- [ ] `P1-21` `created_at`, `updated_at` 등 Extension Field 계산
-- [ ] `P1-22` Load 직전 Header Contract 재검증
-- [ ] `P1-23` PK/FK와 필수 Domain 검증
-- [ ] `P1-24` 단일 실행 단위의 Transactional UPSERT
-- [ ] `P1-25` `seed_runs`에 입력, Version, Count, Hash, 상태 기록
-- [ ] `P1-26` 입력/Version이 다른 비정상 재실행을 차단하는 Seed Guard
+- [x] `P1-19` 임시 PostgreSQL Staging Schema/Table 구성
+- [x] `P1-20` CSV 문자열을 Source Type으로 명시적 변환
+- [x] `P1-21` `created_at`, `updated_at` 등 Extension Field 계산
+- [x] `P1-22` Load 직전 Header Contract 재검증
+- [x] `P1-23` PK/FK와 필수 Domain 검증
+- [x] `P1-24` 단일 실행 단위의 Transactional UPSERT
+- [x] `P1-25` `seed_runs`에 입력, Version, Count, Hash, 상태 기록
+- [x] `P1-26` 입력/Version이 다른 비정상 재실행을 차단하는 Seed Guard
 
 ## 범위 밖
 
@@ -152,13 +152,32 @@ Source Schema Allowlist
 
 ## Definition of Done
 
-- [ ] 모든 `P1-*` Task가 완료됐다.
-- [ ] PostgreSQL Health Check가 통과한다.
-- [ ] 필수 CSV 6개의 Header와 Checksum이 기록된다.
-- [ ] Source PK/FK/CHECK 위반이 0이다.
-- [ ] AC-14와 AC-18이 자동 또는 재현 가능한 명령으로 통과한다.
-- [ ] Source Naming에 분석용 Rename이 섞이지 않았다.
-- [ ] Credential이 Git과 실행 증적에 노출되지 않았다.
+- [x] 모든 `P1-*` Task가 완료됐다.
+- [x] PostgreSQL Health Check가 통과한다.
+- [x] 필수 CSV 6개의 Header와 Checksum이 기록된다.
+- [x] Source PK/FK/CHECK 위반이 0이다.
+- [x] AC-14와 AC-18이 자동 또는 재현 가능한 명령으로 통과한다.
+- [x] Source Naming에 분석용 Rename이 섞이지 않았다.
+- [x] Credential이 Git과 실행 증적에 노출되지 않았다.
+
+## 검증 증적
+
+2026-09-07에 PostgreSQL `18.6`을 호스트 포트 `5433`에서 기동하고 아래 명령을 실행했다.
+
+```bash
+uv run ruff check .
+uv run pytest
+RUN_POSTGRES_INTEGRATION=1 uv run pytest -q \
+  tests/integration/test_seed_integration.py::test_same_raw_input_and_seeded_at_are_idempotent
+RUN_POSTGRES_INTEGRATION=1 uv run pytest -q \
+  tests/integration/test_seed_integration.py::test_source_schema_keeps_only_the_selected_raw_columns_and_extensions \
+  tests/integration/test_seed_integration.py::test_seed_guard_rejects_a_changed_baseline_after_success
+```
+
+- Unit Test: `10 passed, 3 skipped`
+- AC-14: 동일 Raw와 `seeded_at` 재실행 결과 `1 passed`
+- AC-18 및 Seed Guard: `2 passed`
+- PostgreSQL Health Check: `healthy`
 
 ## Portfolio Evidence
 
