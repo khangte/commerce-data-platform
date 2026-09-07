@@ -23,6 +23,10 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
+markers = [
+    "integration: requires the Phase 1 PostgreSQL container and raw Olist dataset",
+]
 
 [tool.ruff]
 target-version = "py312"

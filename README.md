@@ -52,6 +52,22 @@ uv run python scripts/download_dataset.py --help
 uv run python scripts/download_dataset.py
 ```
 
+## Phase 1 실행하기
+
+기본 PostgreSQL 호스트 포트는 `5433`입니다. 실제 Credential은 `.env`에서만 관리합니다.
+
+```bash
+docker compose up -d postgres
+docker compose ps
+uv run python -m src.seed --seeded-at 2026-09-03T00:00:00Z
+```
+
+아래 명령은 PostgreSQL Container와 Raw CSV가 준비된 경우에만 Seed 재실행 동일성을 확인합니다.
+
+```bash
+RUN_POSTGRES_INTEGRATION=1 uv run pytest tests/integration/test_seed_integration.py
+```
+
 ## 로컬 데이터와 Secret
 
 `.env`, Raw/Generated Data, DuckDB Warehouse, Airflow Log는 Git에 포함하지 않습니다. `.env.example`의 예시 Secret은 실제 값으로 사용하지 않습니다.
