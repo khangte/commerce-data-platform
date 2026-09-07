@@ -84,10 +84,10 @@ Payment: pending → completed → refunded
 
 ### 5. Service-level 시나리오
 
-- [ ] `P2-15` Late Order 생성
-- [ ] `P2-16` Delayed Payment 생성
-- [ ] `P2-17` 과거 Event Timestamp를 가진 Late Update 생성
-- [ ] `P2-18` Membership Change 생성
+- [x] `P2-15` Late Order 생성
+- [x] `P2-16` Delayed Payment 생성
+- [x] `P2-17` 과거 Event Timestamp를 가진 Late Update 생성
+- [x] `P2-18` Membership Change 생성
 
 Pipeline 검증용 Duplicate/NULL Key/Broken FK 같은 Corruption은 정상 OLTP Source를 오염시키지 않고 Phase 3/6의 주입 경로에서 처리한다.
 
@@ -163,6 +163,7 @@ AC-20과 AC-21의 전체 E2E 판정은 Phase 3의 Ingestion과 결합해 완료�
 | `src/generator/customers.py`                               | 생성 | 신규·재구매·주소 변경 Customer Record와 결정적 Membership 변경 계획을 추가했다.         |
 | `src/generator/orders.py`                                  | 생성 | Order·Item·Payment Bundle 생성, Seed Catalog 선택, 원자적 멱등 저장을 추가했다.          |
 | `src/generator/transitions.py`                             | 생성 | Order·Payment 허용 상태 전이, 기대 Version, Mutation Time 검증을 추가했다.              |
+| `src/generator/scenarios.py`                               | 생성 | Late Order·Delayed Payment·Late Update·Membership Change Scenario를 추가했다.           |
 | `src/generator/__main__.py`                                | 생성 | Source를 변경하지 않고 Generator 입력과 Metadata 초기화를 검증하는 CLI를 추가했다.      |
 | `src/generator/__init__.py`                                | 수정 | Generator Config와 현재 구현 Version을 Package API로 노출했다.                          |
 | `sql/metadata/002_create_generator_metadata.sql`           | 생성 | 결정성 입력, 결과 Count/Hash, 실행 상태를 보관하는 `generator_runs` 테이블을 추가했다.  |
@@ -171,6 +172,7 @@ AC-20과 AC-21의 전체 E2E 판정은 Phase 3의 Ingestion과 결합해 완료�
 | `tests/integration/test_generator_customer_integration.py` | 생성 | Customer Record 저장 멱등성과 Membership 변경 시각을 검증하는 통합 테스트를 추가했다.   |
 | `tests/integration/test_generator_order_integration.py`    | 생성 | Order Bundle의 Insert/Skip, FK 오류 Rollback 통합 테스트를 추가했다.                    |
 | `tests/integration/test_generator_transition_integration.py` | 생성 | 상태 전이 재실행, Business Timestamp, 오래된 Version 거부를 검증하는 통합 테스트를 추가했다. |
+| `tests/integration/test_generator_scenario_integration.py` | 생성 | Service-level Scenario의 Business Event와 Mutation Time 분리를 검증하는 통합 테스트를 추가했다. |
 | `docs/phases/phase-02-deterministic-generator.md`          | 수정 | Phase 진행 상태와 P2-01~11 완료, 파일별 변경 요약을 기록했다.                           |
 
 ## Definition of Done
