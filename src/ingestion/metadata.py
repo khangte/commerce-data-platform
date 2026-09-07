@@ -14,6 +14,7 @@ from src.common.database import PostgresSettings, apply_sql_file
 RUNNING = "RUNNING"
 SUCCESS = "SUCCESS"
 SUCCESS_NO_DATA = "SUCCESS_NO_DATA"
+SKIPPED_ALREADY_COMMITTED = "SKIPPED_ALREADY_COMMITTED"
 FAILED = "FAILED"
 
 
@@ -324,6 +325,34 @@ def record_success_no_data_run(
         )
         if updated_run.rowcount != 1:
             raise PipelineRunStateError("Only a RUNNING pipeline run can finish with no data")
+
+
+def record_skipped_already_committed_run(
+    settings: PostgresSettings,
+    run: PipelineRun,
+    *,
+    row_count: int,
+    now: datetime | None = None,
+) -> None:
+    """이미 Commit된 같은 범위의 RUNNING 재실행을 Object 생성 없이 Skip으로 종료한다."""
+    if row_count < 0:
+        raise ValueError("row_count must be non-negative")
+    current_time = _utc_now(now)
+    with settings.pipeline_connection() as connection, connection.transaction():
+        updated_run = connection.execute(
+            """
+            UPDATE pipeline_runs
+            SET finished_at = %s,
+                rows_extracted = %s,
+                rows_valid = %s,
+                rows_loaded = %s,
+                status = 'SKIPPED_ALREADY_COMMITTED'
+            WHERE run_id = %s AND source_table = %s AND status = 'RUNNING'
+            """,
+            (current_time, row_count, row_count, row_count, run.run_id, run.source_table),
+        )
+        if updated_run.rowcount != 1:
+            raise PipelineRunStateError("Only a RUNNING pipeline run can be skipped")
 
 
 def _get_or_create_watermark(
