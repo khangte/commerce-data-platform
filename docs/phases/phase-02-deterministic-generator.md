@@ -1,8 +1,11 @@
 # Phase 2. Deterministic Generator
 
-> 상태: Planned  
-> Milestone: 1 — Source Foundation  
-> 선행 Phase: [Phase 1. Source Environment](phase-01-source-environment.md)  
+> 상태: In Progress
+>
+> Milestone: 1 — Source Foundation
+>
+> 선행 Phase: [Phase 1. Source Environment](phase-01-source-environment.md)
+>
 > 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.4](../../PRD_v1.4.md)
 
 ## 목표
@@ -29,12 +32,12 @@
 
 ### 1. 결정성 기반
 
-- [ ] `P2-01` Generator Config Schema 정의
-- [ ] `P2-02` `random_seed` 입력 및 기록
-- [ ] `P2-03` UTC `logical_date` 입력 및 검증
-- [ ] `P2-04` `generator_version` 입력 및 호환성 검사
-- [ ] `P2-05` UUIDv5/Hash 기반 Deterministic ID Utility
-- [ ] `P2-06` `generator_runs` DDL과 상태, 입력, Count, Logical Hash 기록
+- [x] `P2-01` Generator Config Schema 정의
+- [x] `P2-02` `random_seed` 입력 및 기록
+- [x] `P2-03` UTC `logical_date` 입력 및 검증
+- [x] `P2-04` `generator_version` 입력 및 호환성 검사
+- [x] `P2-05` UUIDv5/Hash 기반 Deterministic ID Utility
+- [x] `P2-06` `generator_runs` DDL과 상태, 입력, Count, Logical Hash 기록
 
 결정성 입력은 다음을 포함한다.
 
@@ -149,6 +152,20 @@ AC-20과 AC-21의 전체 E2E 판정은 Phase 3의 Ingestion과 결합해 완료�
 - `generator_runs` Metadata
 - Source Mutation Lease Client
 - 결정성, Transaction, Mutation Time 자동 테스트
+
+## 파일·폴더별 변경 요약
+
+| 경로                                                       | 변경 | 요약                                                                                    |
+| ---------------------------------------------------------- | ---- | --------------------------------------------------------------------------------------- |
+| `src/generator/config.py`                                  | 생성 | 결정성 실행 Config, UTC `logical_date`, 지원 Version과 Anomaly Profile 검증을 추가했다. |
+| `src/generator/ids.py`                                     | 생성 | UUIDv5 Business ID와 안정적인 Logical Content Hash 유틸리티를 추가했다.                 |
+| `src/generator/metadata.py`                                | 생성 | `generator_runs` Schema 준비와 RUNNING/완료 실행 이력 기록 기능을 추가했다.             |
+| `src/generator/__main__.py`                                | 생성 | Source를 변경하지 않고 Generator 입력과 Metadata 초기화를 검증하는 CLI를 추가했다.      |
+| `src/generator/__init__.py`                                | 수정 | Generator Config와 현재 구현 Version을 Package API로 노출했다.                          |
+| `sql/metadata/002_create_generator_metadata.sql`           | 생성 | 결정성 입력, 결과 Count/Hash, 실행 상태를 보관하는 `generator_runs` 테이블을 추가했다.  |
+| `tests/generator/`                                         | 생성 | Config, 결정적 ID/Hash, Metadata 입력 기록 단위 테스트를 추가했다.                      |
+| `tests/integration/test_generator_metadata_integration.py` | 생성 | 실제 PostgreSQL에 Generator 실행 이력이 저장되는지 검증하는 통합 테스트를 추가했다.     |
+| `docs/phases/phase-02-deterministic-generator.md`          | 수정 | Phase를 진행 상태로 전환하고 P2-01~06 완료 및 변경 요약을 기록했다.                     |
 
 ## Definition of Done
 
