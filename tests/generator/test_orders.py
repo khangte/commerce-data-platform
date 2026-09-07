@@ -10,6 +10,7 @@ import pytest
 
 from src.generator.config import GENERATOR_VERSION, GeneratorConfig
 from src.generator.customers import new_customer_record
+from src.generator.ids import logical_hash
 from src.generator.orders import (
     OrderBundle,
     OrderCatalog,
@@ -55,6 +56,46 @@ def test_new_order_bundle_is_stable_and_preserves_source_grains() -> None:
     assert sum((item.price + item.freight_value for item in first.items), Decimal("0.00")) == sum(
         (payment.payment_value for payment in first.payments), Decimal("0.00")
     )
+
+
+def test_same_snapshot_input_reproduces_bundle_keys_counts_statuses_and_hash() -> None:
+    """동일 Snapshot과 입력은 Bundle Key·Count·상태·Logical Hash를 재현한다."""
+    first = _bundle_evidence(_config())
+    second = _bundle_evidence(_config())
+
+    assert first == second
+
+
+def _bundle_evidence(config: GeneratorConfig) -> dict[str, object]:
+    """동일 Snapshot 재현 검증에 필요한 Bundle의 논리 증적을 반환한다."""
+    bundles = tuple(
+        new_order_bundle(config, new_customer_record(config, ordinal), _catalog(), ordinal)
+        for ordinal in range(1, config.order_count + 1)
+    )
+    rows = [
+        {
+            "customer_id": bundle.customer.customer_id,
+            "order_id": bundle.order.order_id,
+            "order_status": bundle.order.order_status,
+            "item_ids": [item.order_item_id for item in bundle.items],
+            "payment_statuses": [payment.payment_status for payment in bundle.payments],
+        }
+        for bundle in bundles
+    ]
+    return {
+        "key_set": {
+            "customers": [bundle.customer.customer_id for bundle in bundles],
+            "orders": [bundle.order.order_id for bundle in bundles],
+        },
+        "counts": {
+            "customers": len(bundles),
+            "orders": len(bundles),
+            "items": sum(len(bundle.items) for bundle in bundles),
+            "payments": sum(len(bundle.payments) for bundle in bundles),
+        },
+        "rows": rows,
+        "logical_hash": logical_hash(rows),
+    }
 
 
 def test_order_bundle_rejects_payment_total_that_differs_from_item_total() -> None:

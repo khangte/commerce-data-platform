@@ -10,6 +10,7 @@ SUPPORTED_GENERATOR_VERSIONS = frozenset({GENERATOR_VERSION})
 SUPPORTED_ANOMALY_PROFILES = frozenset(
     {"default", "late-arrival", "delayed-payment", "membership-change"}
 )
+EXECUTABLE_ANOMALY_PROFILES = frozenset({"default", "late-arrival"})
 
 
 @dataclass(frozen=True)

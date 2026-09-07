@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 
 from src.common.database import PostgresSettings
-from src.generator.config import GeneratorConfig
+from src.generator.config import EXECUTABLE_ANOMALY_PROFILES, GeneratorConfig
 from src.generator.customers import new_customer_record
 from src.generator.ids import logical_hash
 from src.generator.lease import (
@@ -62,9 +62,10 @@ def run_generator(config: GeneratorConfig, settings: PostgresSettings) -> Genera
             "source_snapshot_id differs from the current successful seed snapshot: "
             f"{expected_snapshot_id}"
         )
-    if config.anomaly_profile not in {"default", "late-arrival"}:
+    if config.anomaly_profile not in EXECUTABLE_ANOMALY_PROFILES:
+        executable_profiles = ", ".join(sorted(EXECUTABLE_ANOMALY_PROFILES))
         raise ValueError(
-            "The executable generator currently supports default and late-arrival profiles; "
+            f"The executable generator currently supports {executable_profiles} profiles; "
             "delayed-payment and membership-change are reusable scenario fixtures."
         )
 
