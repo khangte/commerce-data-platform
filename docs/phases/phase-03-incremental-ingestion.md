@@ -104,11 +104,14 @@ _schema_version
 
 ### 3A-4. SeaweedFS 호환성
 
-- [ ] `P3-05` Bucket Create/PUT/GET/HEAD/LIST/DELETE Smoke Test
-- [ ] Path-style S3 연결 검증
-- [ ] Overwrite 동작을 관측하되 Commit Object에는 사용하지 않음
-- [ ] DuckDB에서 업로드한 Parquet Read 검증
-- [ ] `bronze/`, `quarantine/`, 필요 시 `_staging/` Prefix 구성
+- [x] `P3-05` Bucket Create/PUT/GET/HEAD/LIST/DELETE Smoke Test
+- [x] Path-style S3 연결 검증
+- [x] Overwrite 동작을 관측하되 Commit Object에는 사용하지 않음
+- [x] DuckDB에서 업로드한 Parquet Read 검증
+- [x] `bronze/`, `quarantine/`, 필요 시 `_staging/` Prefix 구성
+
+S3 Prefix는 별도 디렉터리 생성 없이 Object Key로 표현한다. Smoke Test의 Overwrite와 삭제는
+Commit Prefix가 아닌 `_smoke/{uuid}/`에서만 수행한다.
 
 ### 3A-5. Commit Protocol
 
@@ -281,13 +284,18 @@ Phase 3에서는 Framework-independent Python Pipeline을 완성하고 Phase 4�
 | `src/ingestion/config.py` | 생성 | `INGESTION_PAGE_SIZE` 환경 설정과 기본값 50,000 검증을 추가했다. |
 | `src/ingestion/orders.py` | 생성 | 동일 Read-only Snapshot에서 `orders` Upper Bound 고정과 Keyset Pagination을 추가했다. |
 | `src/ingestion/bronze.py` | 생성 | `orders` Page의 명시적 Arrow Schema, 기술 컬럼, Zstandard Local Parquet Writer를 추가했다. |
+| `src/ingestion/storage.py` | 생성 | SeaweedFS Path-style S3 Client, Bucket 준비와 Bronze·Quarantine·Staging Prefix를 추가했다. |
+| `compose.yaml` | 수정 | SeaweedFS 4.45 S3 API Service, 영속 Volume과 Master Healthcheck를 추가했다. |
+| `.env.example` | 수정 | SeaweedFS Host 환경 변수 Key를 추가했다. |
 | `src/common/database.py` | 수정 | 공통 환경 변수 Reader를 공개해 수집 설정도 로컬 `.env`를 사용할 수 있게 했다. |
 | `tests/ingestion/test_config.py` | 생성 | Page Size 기본값과 유효하지 않은 환경 변수 값을 검증한다. |
 | `tests/ingestion/test_bronze.py` | 생성 | Local Parquet Schema, UTC microsecond Timestamp, 기술 컬럼, 압축·Row Group을 검증한다. |
+| `tests/ingestion/test_storage.py` | 생성 | SeaweedFS 연결 설정과 Object Storage Prefix 계약을 검증한다. |
 | `tests/integration/test_ingestion_metadata_integration.py` | 생성 | 성공 Commit과 Watermark 충돌 시 Rollback·실패 상태 전이를 PostgreSQL에서 검증했다. |
 | `tests/integration/test_orders_incremental_integration.py` | 생성 | `orders` Composite Cursor의 같은 Timestamp Page 경계와 Empty Range를 검증한다. |
 | `tests/integration/test_orders_bronze_integration.py` | 생성 | 실제 Source Page가 하나의 Local Bronze Parquet으로 기록되는지 검증한다. |
-| `docs/phases/phase-03-incremental-ingestion.md` | 수정 | Phase 3 상태, P3-01~04 진행 상태와 파일별 변경 요약을 기록했다. |
+| `tests/integration/test_seaweedfs_s3_integration.py` | 생성 | SeaweedFS S3 Lifecycle과 DuckDB Parquet Read 호환성을 검증한다. |
+| `docs/phases/phase-03-incremental-ingestion.md` | 수정 | Phase 3 상태, P3-01~05 진행 상태와 파일별 변경 요약을 기록했다. |
 
 ## Definition of Done
 

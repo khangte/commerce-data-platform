@@ -29,5 +29,28 @@ services:
       start_period: 10s
     restart: unless-stopped
 
+  seaweedfs:
+    image: chrislusf/seaweedfs:4.45
+    command:
+      - server
+      - -s3
+      - -s3.port=8333
+      - -dir=/data
+    environment:
+      AWS_ACCESS_KEY_ID: ${SEAWEEDFS_ACCESS_KEY}
+      AWS_SECRET_ACCESS_KEY: ${SEAWEEDFS_SECRET_KEY}
+    ports:
+      - "${SEAWEEDFS_S3_PORT}:8333"
+    volumes:
+      - seaweedfs_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://seaweedfs:9333/cluster/status"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    restart: unless-stopped
+
 volumes:
   postgres_data:
+  seaweedfs_data:
