@@ -55,6 +55,7 @@ class OrderTransition:
     expected_updated_at: datetime
     next_status: str
     mutation_time: datetime
+    business_event_time: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -123,17 +124,25 @@ def fetch_payment_state(
 
 
 def plan_order_transition(
-    current: OrderState, next_status: str, mutation_time: datetime
+    current: OrderState,
+    next_status: str,
+    mutation_time: datetime,
+    business_event_time: datetime | None = None,
 ) -> OrderTransition:
     """현재 Order 상태와 결정적 Mutation Time으로 허용 전이를 계획한다."""
     _assert_allowed_transition(ORDER_TRANSITIONS, current.order_status, next_status, "Order")
     _assert_increasing_mutation_time(current.updated_at, mutation_time)
+    if business_event_time is not None:
+        _assert_business_event_time(business_event_time, mutation_time)
+        if next_status not in {"approved", "shipped", "delivered"}:
+            raise ValueError("business_event_time is only supported for Order event status transitions")
     return OrderTransition(
         order_id=current.order_id,
         expected_status=current.order_status,
         expected_updated_at=current.updated_at,
         next_status=next_status,
         mutation_time=mutation_time,
+        business_event_time=business_event_time,
     )
 
 
@@ -173,7 +182,12 @@ def persist_order_transition(
     if _is_idempotent_order_transition(current, transition):
         return TransitionResult(updated=0, skipped=1)
     _assert_expected_order_version(current, transition)
-    desired = _order_state_after(current, transition.next_status, transition.mutation_time)
+    desired = _order_state_after(
+        current,
+        transition.next_status,
+        transition.mutation_time,
+        transition.business_event_time,
+    )
     connection.execute(
         """
         UPDATE orders
@@ -273,25 +287,31 @@ def _locked_payment_state(
 
 
 def _order_state_after(
-    current: OrderState, next_status: str, mutation_time: datetime
+    current: OrderState,
+    next_status: str,
+    mutation_time: datetime,
+    business_event_time: datetime | None,
 ) -> OrderState:
     """허용된 다음 Order 상태와 해당 Business Timestamp를 구성한다."""
     _assert_allowed_transition(ORDER_TRANSITIONS, current.order_status, next_status, "Order")
     _assert_increasing_mutation_time(current.updated_at, mutation_time)
+    if business_event_time is not None:
+        _assert_business_event_time(business_event_time, mutation_time)
+    event_time = business_event_time or mutation_time
     if next_status == "approved":
-        return replace(current, order_status=next_status, order_approved_at=mutation_time, updated_at=mutation_time)
+        return replace(current, order_status=next_status, order_approved_at=event_time, updated_at=mutation_time)
     if next_status == "shipped":
         return replace(
             current,
             order_status=next_status,
-            order_delivered_carrier_date=mutation_time,
+            order_delivered_carrier_date=event_time,
             updated_at=mutation_time,
         )
     if next_status == "delivered":
         return replace(
             current,
             order_status=next_status,
-            order_delivered_customer_date=mutation_time,
+            order_delivered_customer_date=event_time,
             updated_at=mutation_time,
         )
     return replace(current, order_status=next_status, updated_at=mutation_time)
@@ -301,12 +321,13 @@ def _is_idempotent_order_transition(current: OrderState, transition: OrderTransi
     """동일 Mutation Time의 재실행이 정확히 같은 Order 상태인지 확인한다."""
     if current.order_status != transition.next_status or current.updated_at != transition.mutation_time:
         return False
+    expected_event_time = transition.business_event_time or transition.mutation_time
     expected_timestamp = {
         "approved": current.order_approved_at,
         "shipped": current.order_delivered_carrier_date,
         "delivered": current.order_delivered_customer_date,
-    }.get(transition.next_status, transition.mutation_time)
-    if expected_timestamp != transition.mutation_time:
+    }.get(transition.next_status, expected_event_time)
+    if expected_timestamp != expected_event_time:
         raise ValueError("Order has different values at the same updated_at cursor")
     return True
 
@@ -344,3 +365,11 @@ def _assert_increasing_mutation_time(current_updated_at: datetime, mutation_time
         raise ValueError("mutation_time must be normalized to UTC")
     if mutation_time <= current_updated_at:
         raise ValueError("mutation_time must be greater than the current updated_at")
+
+
+def _assert_business_event_time(business_event_time: datetime, mutation_time: datetime) -> None:
+    """Business Event Time이 UTC이며 Source Mutation Time 이후가 아닌지 확인한다."""
+    if business_event_time.tzinfo is None or business_event_time.utcoffset() != timedelta(0):
+        raise ValueError("business_event_time must be normalized to UTC")
+    if business_event_time > mutation_time:
+        raise ValueError("business_event_time must not be later than mutation_time")
