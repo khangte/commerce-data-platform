@@ -83,11 +83,14 @@ LIMIT :page_size
 
 ### 3A-3. Local Parquet
 
-- [ ] `P3-04` Page 단위 Arrow Table → Local Parquet Writer 구현
-- [ ] 명시적 Arrow Schema와 UTC microsecond Timestamp 적용
+- [x] `P3-04` Page 단위 Arrow Table → Local Parquet Writer 구현
+- [x] 명시적 Arrow Schema와 UTC microsecond Timestamp 적용
 - [ ] Decimal `decimal128(14,2)` 적용
-- [ ] Zstandard Compression과 Row Group Target 128K 적용
-- [ ] Bronze 기술 컬럼 추가
+- [x] Zstandard Compression과 Row Group Target 128K 적용
+- [x] Bronze 기술 컬럼 추가
+
+`orders`에는 Decimal Source Column이 없으므로 `decimal128(14,2)`는 금액 Column을 가진
+`order_items`, `order_payments`를 추가하는 Phase 3B에서 실제 Schema에 적용한다.
 
 기술 컬럼:
 
@@ -277,11 +280,14 @@ Phase 3에서는 Framework-independent Python Pipeline을 완성하고 Phase 4�
 | `src/ingestion/metadata.py` | 생성 | 초기 Watermark, RUNNING/FAILED 상태 전이, Object·Run·Watermark CAS의 원자적 Commit을 추가했다. |
 | `src/ingestion/config.py` | 생성 | `INGESTION_PAGE_SIZE` 환경 설정과 기본값 50,000 검증을 추가했다. |
 | `src/ingestion/orders.py` | 생성 | 동일 Read-only Snapshot에서 `orders` Upper Bound 고정과 Keyset Pagination을 추가했다. |
+| `src/ingestion/bronze.py` | 생성 | `orders` Page의 명시적 Arrow Schema, 기술 컬럼, Zstandard Local Parquet Writer를 추가했다. |
 | `src/common/database.py` | 수정 | 공통 환경 변수 Reader를 공개해 수집 설정도 로컬 `.env`를 사용할 수 있게 했다. |
 | `tests/ingestion/test_config.py` | 생성 | Page Size 기본값과 유효하지 않은 환경 변수 값을 검증한다. |
+| `tests/ingestion/test_bronze.py` | 생성 | Local Parquet Schema, UTC microsecond Timestamp, 기술 컬럼, 압축·Row Group을 검증한다. |
 | `tests/integration/test_ingestion_metadata_integration.py` | 생성 | 성공 Commit과 Watermark 충돌 시 Rollback·실패 상태 전이를 PostgreSQL에서 검증했다. |
 | `tests/integration/test_orders_incremental_integration.py` | 생성 | `orders` Composite Cursor의 같은 Timestamp Page 경계와 Empty Range를 검증한다. |
-| `docs/phases/phase-03-incremental-ingestion.md` | 수정 | Phase 3 상태, P3-01~03 진행 상태와 파일별 변경 요약을 기록했다. |
+| `tests/integration/test_orders_bronze_integration.py` | 생성 | 실제 Source Page가 하나의 Local Bronze Parquet으로 기록되는지 검증한다. |
+| `docs/phases/phase-03-incremental-ingestion.md` | 수정 | Phase 3 상태, P3-01~04 진행 상태와 파일별 변경 요약을 기록했다. |
 
 ## Definition of Done
 
