@@ -3,21 +3,6 @@ __pycache__/
 *.py[codz]
 *$py.class
 
-# Commerce Analytics Data Platform local state
-.env
-data/raw/*
-!data/raw/.gitkeep
-!data/raw/olist/
-data/raw/olist/*
-!data/raw/olist/.gitkeep
-data/generated/*
-!data/generated/.gitkeep
-data/warehouse/*
-!data/warehouse/.gitkeep
-airflow/logs/
-dbt/target/
-dbt/dbt_packages/
-
 # C extensions
 *.so
 
@@ -244,4 +229,16 @@ CLAUDE.md
 # Codex
 AGENTS.md
 
-# data
+# Commerce Analytics Data Platform local state
+data/raw/*
+!data/raw/.gitkeep
+!data/raw/olist/
+data/raw/olist/*
+!data/raw/olist/.gitkeep
+data/generated/*
+!data/generated/.gitkeep
+data/warehouse/*
+!data/warehouse/.gitkeep
+airflow/logs/
+dbt/target/
+dbt/dbt_packages/
