@@ -1,0 +1,4 @@
+name: commerce-data-platform
+
+# Phase 0 skeleton. Service definitions are added in their owning phases.
+services: {}

@@ -1,0 +1,29 @@
+[project]
+name = "commerce-data-platform"
+version = "0.1.0"
+description = "Reliable local batch data platform for commerce analytics"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "boto3==1.43.87",
+    "dbt-core==1.12.3",
+    "dbt-duckdb==1.11.0",
+    "duckdb==1.5.5",
+    "kagglehub==1.0.2",
+    "pandas==3.0.5",
+    "psycopg[binary]==3.3.5",
+    "pyarrow==25.0.1",
+]
+
+[dependency-groups]
+dev = [
+    "pytest==9.1.1",
+    "ruff==0.16.5",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
