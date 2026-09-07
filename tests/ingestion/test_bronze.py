@@ -14,6 +14,7 @@ from src.ingestion.bronze import (
     ORDERS_BRONZE_SCHEMA,
     BronzeWriteContext,
     OrdersBronzeWriter,
+    orders_logical_hash,
 )
 from src.ingestion.metadata import CursorPosition
 from src.ingestion.orders import OrdersPage, SourceOrderRecord
@@ -70,6 +71,26 @@ def test_orders_writer_rejects_existing_file_and_writes_after_close(tmp_path) ->
     writer.close()
     with pytest.raises(RuntimeError, match="closed"):
         writer.write_page(_page(context.ingested_at, 2))
+
+
+def test_orders_logical_hash_ignores_parquet_technical_columns(tmp_path) -> None:
+    """PK순 Business JSON Hash는 실행마다 달라지는 Bronze 기술 컬럼을 제외한다."""
+    first_path = tmp_path / "first.parquet"
+    second_path = tmp_path / "second.parquet"
+    first = OrdersBronzeWriter(
+        first_path,
+        BronzeWriteContext("batch-one", uuid.uuid4(), datetime(2026, 9, 7, tzinfo=UTC)),
+    )
+    second = OrdersBronzeWriter(
+        second_path,
+        BronzeWriteContext("batch-two", uuid.uuid4(), datetime(2026, 9, 8, tzinfo=UTC)),
+    )
+    first.write_page(_page(datetime(2026, 9, 7, tzinfo=UTC), 1, 2))
+    second.write_page(_page(datetime(2026, 9, 7, tzinfo=UTC), 1, 2))
+    first.close()
+    second.close()
+
+    assert orders_logical_hash(first_path) == orders_logical_hash(second_path)
 
 
 def _page(base_time: datetime, *ordinals: int) -> OrdersPage:

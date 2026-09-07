@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
+import hashlib
+from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
 
 import boto3
+import pyarrow as pa
+import pyarrow.parquet as pq
 from botocore.config import Config
 from botocore.exceptions import ClientError
 
@@ -13,6 +19,22 @@ from src.common.database import environment_values
 STAGING_PREFIX = "_staging"
 BRONZE_PREFIX = "bronze"
 QUARANTINE_PREFIX = "quarantine"
+
+
+@dataclass(frozen=True)
+class StoredObject:
+    """최종 Object의 Key·크기·SHA-256 검증 결과다."""
+
+    key: str
+    size: int
+    content_sha256: str
+
+
+@dataclass(frozen=True)
+class VerifiedParquetObject(StoredObject):
+    """최종 Parquet Object에서 다시 확인한 Row Count를 포함한다."""
+
+    row_count: int
 
 
 @dataclass(frozen=True)
@@ -75,3 +97,95 @@ def ensure_bucket(settings: SeaweedFSSettings) -> None:
         if error_code not in {"404", "NoSuchBucket", "NotFound"}:
             raise
     client.create_bucket(Bucket=settings.bucket)
+
+
+def sha256_file(path: Path) -> str:
+    """Local 파일 전체 Byte의 SHA-256 Hex를 스트리밍으로 계산한다."""
+    digest = hashlib.sha256()
+    with path.open("rb") as file:
+        while chunk := file.read(1024 * 1024):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def upload_new_file(settings: SeaweedFSSettings, key: str, path: Path) -> StoredObject:
+    """새 Final Key에만 Local 파일을 올리고 HEAD의 크기·Hash를 검증한다."""
+    content_sha256 = sha256_file(path)
+    size = path.stat().st_size
+    with path.open("rb") as file:
+        return _upload_new(settings, key, file, size, content_sha256)
+
+
+def upload_new_bytes(settings: SeaweedFSSettings, key: str, payload: bytes) -> StoredObject:
+    """새 Final Key에만 Byte를 올리고 HEAD의 크기·Hash를 검증한다."""
+    return _upload_new(settings, key, payload, len(payload), hashlib.sha256(payload).hexdigest())
+
+
+def verify_parquet_object(
+    settings: SeaweedFSSettings, object: StoredObject
+) -> VerifiedParquetObject:
+    """Final Object를 재수신해 Byte Hash와 Parquet Row Count를 함께 확인한다."""
+    client = seaweedfs_s3_client(settings)
+    payload = client.get_object(Bucket=settings.bucket, Key=object.key)["Body"].read()
+    actual_hash = hashlib.sha256(payload).hexdigest()
+    if actual_hash != object.content_sha256:
+        raise RuntimeError(f"Object checksum differs from expected value: {object.key}")
+    parquet_file = pq.ParquetFile(pa.BufferReader(payload))
+    return VerifiedParquetObject(
+        key=object.key,
+        size=len(payload),
+        content_sha256=actual_hash,
+        row_count=parquet_file.metadata.num_rows,
+    )
+
+
+def _upload_new(
+    settings: SeaweedFSSettings,
+    key: str,
+    body: object,
+    expected_size: int,
+    content_sha256: str,
+) -> StoredObject:
+    """기존 Final Key를 거부하고 조건부 PUT 뒤 HEAD Metadata를 검증한다."""
+    if not key or key.startswith("/"):
+        raise ValueError("Object key must be a non-empty relative path")
+    client = seaweedfs_s3_client(settings)
+    _reject_existing_object(client, settings.bucket, key)
+    try:
+        client.put_object(
+            Bucket=settings.bucket,
+            Key=key,
+            Body=body,
+            Metadata={"sha256": content_sha256},
+            IfNoneMatch="*",
+        )
+    except ClientError as error:
+        if error.response.get("ResponseMetadata", {}).get("HTTPStatusCode") == 412:
+            raise FileExistsError(f"Final object already exists: {key}") from error
+        raise
+    head = client.head_object(Bucket=settings.bucket, Key=key)
+    _assert_object_head(key, head, expected_size, content_sha256)
+    return StoredObject(key=key, size=expected_size, content_sha256=content_sha256)
+
+
+def _reject_existing_object(client: Any, bucket: str, key: str) -> None:
+    """명시적인 재실행 충돌을 조건부 PUT 이전에 이해하기 쉬운 오류로 바꾼다."""
+    try:
+        client.head_object(Bucket=bucket, Key=key)
+    except ClientError as error:
+        error_code = error.response.get("Error", {}).get("Code")
+        if error_code in {"404", "NoSuchKey", "NotFound"}:
+            return
+        raise
+    raise FileExistsError(f"Final object already exists: {key}")
+
+
+def _assert_object_head(
+    key: str, head: Mapping[str, object], expected_size: int, expected_sha256: str
+) -> None:
+    """HEAD가 PUT 직후 기대한 크기와 사용자 Metadata Hash를 보존하는지 확인한다."""
+    if head.get("ContentLength") != expected_size:
+        raise RuntimeError(f"Object size differs from expected value: {key}")
+    metadata = head.get("Metadata")
+    if not isinstance(metadata, Mapping) or metadata.get("sha256") != expected_sha256:
+        raise RuntimeError(f"Object checksum metadata differs from expected value: {key}")
