@@ -19,11 +19,16 @@ CREATE TABLE IF NOT EXISTS generator_runs (
     ),
     CONSTRAINT generator_runs_success_evidence_check CHECK (
         status <> 'SUCCESS' OR (result_counts IS NOT NULL AND logical_hash ~ '^[0-9a-f]{64}$')
-    ),
-    CONSTRAINT generator_runs_deterministic_input_unique UNIQUE (
-        source_snapshot_id, random_seed, logical_date, order_count, anomaly_profile, generator_version
     )
 );
+
+ALTER TABLE generator_runs DROP CONSTRAINT IF EXISTS generator_runs_deterministic_input_unique;
+
+CREATE UNIQUE INDEX IF NOT EXISTS generator_runs_success_input_unique
+    ON generator_runs (
+        source_snapshot_id, random_seed, logical_date, order_count, anomaly_profile, generator_version
+    )
+    WHERE status = 'SUCCESS';
 
 CREATE INDEX IF NOT EXISTS generator_runs_status_finished_at_idx
     ON generator_runs (status, finished_at DESC);
