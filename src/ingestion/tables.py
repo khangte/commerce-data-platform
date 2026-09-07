@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from decimal import Decimal
 from types import MappingProxyType
 
 import pyarrow as pa
@@ -34,6 +35,8 @@ class TableConfig:
     cursor_timestamp_column: str
     cursor_key_columns: tuple[str, ...]
     source_columns: tuple[SourceColumn, ...]
+    status_domains: Mapping[str, frozenset[str]] = MappingProxyType({})
+    numeric_minimums: Mapping[str, Decimal | int] = MappingProxyType({})
     append_only: bool = False
     schema_version: int = BRONZE_SCHEMA_VERSION
 
@@ -53,6 +56,8 @@ class TableConfig:
         required_columns = (self.cursor_timestamp_column, *self.primary_key_columns)
         if any(column not in names for column in required_columns):
             raise ValueError("Cursor and primary key columns must exist in source_columns")
+        if any(column not in names for column in (*self.status_domains, *self.numeric_minimums)):
+            raise ValueError("Validation columns must exist in source_columns")
 
     @property
     def source_column_names(self) -> tuple[str, ...]:
@@ -178,6 +183,20 @@ ORDERS_TABLE = TableConfig(
         _timestamp("created_at", nullable=False),
         _timestamp("updated_at", nullable=False),
     ),
+    status_domains={
+        "order_status": frozenset(
+            {
+                "created",
+                "approved",
+                "processing",
+                "invoiced",
+                "shipped",
+                "delivered",
+                "canceled",
+                "unavailable",
+            }
+        )
+    },
 )
 
 ORDER_ITEMS_TABLE = TableConfig(
@@ -194,6 +213,7 @@ ORDER_ITEMS_TABLE = TableConfig(
         _decimal("freight_value", nullable=False),
         _timestamp("created_at", nullable=False),
     ),
+    numeric_minimums={"order_item_id": 1, "price": Decimal(0), "freight_value": Decimal(0)},
     append_only=True,
 )
 
@@ -212,6 +232,12 @@ ORDER_PAYMENTS_TABLE = TableConfig(
         _timestamp("created_at", nullable=False),
         _timestamp("updated_at", nullable=False),
     ),
+    status_domains={"payment_status": frozenset({"pending", "completed", "failed", "refunded"})},
+    numeric_minimums={
+        "payment_sequential": 1,
+        "payment_installments": 0,
+        "payment_value": Decimal(0),
+    },
 )
 
 TABLE_CONFIGS: Mapping[str, TableConfig] = MappingProxyType(

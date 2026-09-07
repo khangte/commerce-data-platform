@@ -85,12 +85,12 @@ LIMIT :page_size
 
 - [x] `P3-04` Page 단위 Arrow Table → Local Parquet Writer 구현
 - [x] 명시적 Arrow Schema와 UTC microsecond Timestamp 적용
-- [ ] Decimal `decimal128(14,2)` 적용
+- [x] Decimal `decimal128(14,2)` 적용
 - [x] Zstandard Compression과 Row Group Target 128K 적용
 - [x] Bronze 기술 컬럼 추가
 
-`orders`에는 Decimal Source Column이 없으므로 `decimal128(14,2)`는 금액 Column을 가진
-`order_items`, `order_payments`를 추가하는 Phase 3B에서 실제 Schema에 적용한다.
+`orders`에는 Decimal Source Column이 없으므로 금액 Column은 `order_items`,
+`order_payments` 공통 Bronze Writer에서 `decimal128(14,2)`로 실제 기록·검증한다.
 
 기술 컬럼:
 
@@ -165,13 +165,18 @@ table_batch_id = {batch_id}__{source_table}
 
 동일 Table Batch가 이미 Commit됐고 Range/Schema Version이 같으면 재사용한다. 다르면 `BATCH_IDENTITY_CONFLICT`로 실패한다.
 
+`TableIngestionRequest`와 `ingest_table()`은 6개 Table 모두에 공통으로 사용한다. 각 실행은
+설정 기반 Snapshot·검증·Quarantine·Local Parquet·Final Object·VERIFIED Manifest·Metadata
+Transaction·Watermark CAS를 동일한 순서로 처리한다. 기존 `ingest_orders()`는 이 공통 서비스의
+호환 래퍼다.
+
 ## Phase 3C. Quarantine
 
-- [ ] `P3-15` 검증 Pipeline 구현
-- [ ] `P3-16` 결정적 `_record_id`와 Quarantine Parquet 구현
-- [ ] `P3-17` Error Count/Object Key를 `quarantine_batches`에 기록
-- [ ] `P3-18` `MAX_REJECT_RATE=5%` Threshold 처리
-- [ ] `P3-19` Corruption 주입 전후 Count 분리
+- [x] `P3-15` 검증 Pipeline 구현
+- [x] `P3-16` 결정적 `_record_id`와 Quarantine Parquet 구현
+- [x] `P3-17` Error Count/Object Key를 `quarantine_batches`에 기록
+- [x] `P3-18` `MAX_REJECT_RATE=5%` Threshold 처리
+- [x] `P3-19` Corruption 주입 전후 Count 분리
 
 검증 순서:
 
@@ -192,6 +197,16 @@ Schema / 필수 Column
 - Reject Rate가 Threshold 이하이면 Valid Row를 Commit하고 Watermark를 Upper까지 전진한다.
 - Threshold 초과, Schema 누락, Cursor 위반은 Batch를 실패시키고 Watermark를 유지한다.
 - Metadata에는 Raw Payload를 저장하지 않는다.
+
+구현상 Schema 누락 또는 Cursor 범위 위반은 `SourceContractError`로 즉시 Batch를 실패시킨다.
+일반 Row 오류는 Valid Row와 분리해 Quarantine Parquet에 기록한다. `_record_id`는
+`table_batch_id + 추출 순번`의 UUIDv5이며, Quarantine 기술 시각은 `_detected_at`이다.
+Quarantine Object·Manifest를 검증한 뒤 그 Object Key·Error Count는 Bronze Object·성공 Run·
+Watermark CAS와 같은 Metadata Transaction에서 기록한다.
+
+`CorruptionPlan`은 Extract 후 Validation 직전의 In-memory 복제본에만 5종 오류를 결정적으로
+주입한다. Source DB는 변경하지 않으며, 결과는 `rows_extracted`, `rows_corrupted`,
+`rows_rejected`, `rows_valid`로 분리해 반환·검증한다.
 
 ## Phase 3D. 동시성, Catalog, Schema Version
 
@@ -286,17 +301,20 @@ Phase 3에서는 Framework-independent Python Pipeline을 완성하고 Phase 4�
 | 경로                                                             | 변경 | 요약                                                                                                                  |
 | ---------------------------------------------------------------- | ---- | --------------------------------------------------------------------------------------------------------------------- |
 | `sql/metadata/004_create_ingestion_metadata.sql`                 | 생성 | Watermark, 수집 실행, Bronze Object, Quarantine Batch의 상태·제약조건·Index를 추가했다.                               |
-| `src/ingestion/metadata.py`                                      | 생성·수정 | 초기 Watermark, RUNNING/FAILED/SUCCESS_NO_DATA/SKIPPED_ALREADY_COMMITTED 상태 전이, Object·Run·Watermark CAS의 원자적 Commit을 추가했다. |
+| `src/ingestion/metadata.py`                                      | 생성·수정 | 초기 Watermark, RUNNING/FAILED/SUCCESS_NO_DATA/SKIPPED_ALREADY_COMMITTED 상태 전이와 Bronze·Quarantine Object·Run·Watermark CAS의 원자적 Commit을 추가했다. |
 | `src/ingestion/config.py`                                        | 생성 | `INGESTION_PAGE_SIZE` 환경 설정과 기본값 50,000 검증을 추가했다.                                                      |
 | `src/ingestion/orders.py`                                        | 생성 | 동일 Read-only Snapshot에서 `orders` Upper Bound 고정과 Keyset Pagination을 추가했다.                                 |
-| `src/ingestion/bronze.py`                                        | 생성 | `orders` Page의 명시적 Arrow Schema, 기술 컬럼, Zstandard Local Parquet Writer와 PK 기준 Logical Hash를 추가했다.     |
+| `src/ingestion/bronze.py`                                        | 생성·수정 | 기존 `orders` Writer와 함께 6개 Table의 명시적 Arrow Schema·기술 Column·Zstandard Local Parquet Writer 및 PK 기준 Logical Hash를 추가했다.     |
 | `src/ingestion/storage.py`                                       | 생성 | SeaweedFS Path-style S3 Client, Bucket 준비, Final Object의 조건부 PUT·HEAD·Parquet 검증을 추가했다.                  |
 | `src/ingestion/tables.py`                                        | 생성 | 6개 Source Table의 전체 PK Tie-breaker, 증분 Cursor, Raw-compatible Arrow Schema와 공통 Bronze 기술 Column 계약을 추가했다. |
-| `src/ingestion/extract.py`                                       | 생성 | 등록된 Table Config만 사용해 동일 Read-only Snapshot, 고정 Upper Bound, Composite Keyset Page를 읽는 공통 Extractor를 추가했다. |
-| `src/ingestion/references.py`                                    | 생성 | Child Page의 Orders·Products·Sellers Parent Key를 같은 Snapshot Connection에서 검증하는 계약을 추가했다. |
+| `src/ingestion/extract.py`                                       | 생성·수정 | 등록된 Table Config만 사용해 동일 Read-only Snapshot, 고정 Upper Bound, Composite Keyset Page를 읽고 Corruption 복제본도 원 Cursor로 검증할 수 있게 했다. |
+| `src/ingestion/references.py`                                    | 생성 | Child Page의 Orders·Products·Sellers Parent Key를 같은 Snapshot Connection에서 검사하며 공통 수집 서비스가 결과를 Reject로 연결한다. |
 | `src/ingestion/batch.py`                                         | 생성 | DAG·UTC Logical Date 기반 6개 Table Batch Identity와 Commit 범위·Schema 재사용/Conflict 판정을 추가했다. |
-| `src/ingestion/manifest.py`                                      | 생성 | Credential·Local 경로·Metadata Commit 상태 없이 `VERIFIED` Object 증적을 기록하는 Canonical JSON Manifest를 추가했다. |
-| `src/ingestion/service.py`                                       | 생성·수정 | 고정 `orders` 범위를 Local Parquet, Final Object, Manifest, Metadata CAS까지 연결하고, 표준 Batch 재실행을 Source Read 전에 Skip 또는 `BATCH_IDENTITY_CONFLICT`로 종료하도록 확장했다. |
+| `src/ingestion/validation.py`                                    | 생성 | Source Schema·Type·Key·Batch Duplicate·Status Domain·Numeric·Broken Reference·Cursor 범위를 검사해 Valid/Reject를 분리하고 Schema·Cursor 계약 오류를 Batch Failure로 전환한다. |
+| `src/ingestion/quarantine.py`                                    | 생성 | `table_batch_id + 추출 순번` 결정 ID, `_detected_at`, Raw Payload·오류 Code Quarantine Parquet Writer와 5% Reject Threshold 정책을 추가했다. |
+| `src/ingestion/corruption.py`                                    | 생성 | Extract 후 Validation 전 복제본에 NULL Key, Invalid Status, 음수값, Type, Broken Reference 5종 오류를 결정적으로 주입한다. |
+| `src/ingestion/manifest.py`                                      | 생성·수정 | Credential·Local 경로·Metadata Commit 상태 없이 Bronze와 Quarantine의 `VERIFIED` Object 증적을 기록하는 Canonical JSON Manifest를 추가했다. |
+| `src/ingestion/service.py`                                       | 생성·수정 | 6개 Table 공통 수집 서비스를 추가해 검증·Quarantine·Final Object·Manifest·Metadata CAS를 연결하고, `ingest_orders()`는 호환 래퍼로 유지했다. |
 | `compose.yaml`                                                   | 수정 | SeaweedFS 4.45 S3 API Service, 영속 Volume과 Master Healthcheck를 추가했다.                                           |
 | `.env.example`                                                   | 수정 | SeaweedFS Host 환경 변수 Key를 추가했다.                                                                              |
 | `src/common/database.py`                                         | 수정 | 공통 환경 변수 Reader를 공개해 수집 설정도 로컬 `.env`를 사용할 수 있게 했다.                                         |
@@ -305,16 +323,22 @@ Phase 3에서는 Framework-independent Python Pipeline을 완성하고 Phase 4�
 | `tests/ingestion/test_storage.py`                                | 생성 | SeaweedFS 연결 설정과 Object Storage Prefix 계약을 검증한다.                                                          |
 | `tests/ingestion/test_tables.py`                                 | 생성 | 6개 Table Cursor·PK·Arrow Schema와 금액 Decimal 정밀도 계약을 검증한다.                                               |
 | `tests/ingestion/test_batch.py`                                  | 생성 | 6개 Table 표준 Batch ID와 Cursor·Schema 재사용 범위 계약을 검증한다. |
+| `tests/ingestion/test_validation.py`                             | 생성 | Source 검증 오류와 Valid/Reject 분리, Cursor 범위 계약을 검증한다. |
+| `tests/ingestion/test_quarantine.py`                             | 생성 | 결정적 Quarantine Record, Raw Payload·오류 집계와 Reject Threshold를 검증한다. |
+| `tests/ingestion/test_corruption.py`                             | 생성 | 5종 In-memory Corruption의 Source 무오염, Valid/Reject·Error Code Count 분리를 검증한다. |
+| `tests/ingestion/test_table_bronze.py`                           | 생성 | `orders` 외 Decimal Table도 공통 Bronze Writer와 실행 독립 Logical Hash를 사용하는지 검증한다. |
 | `tests/ingestion/test_manifest.py`                               | 생성 | VERIFIED Manifest의 공개 필드와 Metadata Commit 경계를 검증한다.                                                      |
 | `tests/integration/test_ingestion_metadata_integration.py`       | 생성 | 성공 Commit과 Watermark 충돌 시 Rollback·실패 상태 전이를 PostgreSQL에서 검증했다.                                    |
 | `tests/integration/test_orders_incremental_integration.py`       | 생성 | `orders` Composite Cursor의 같은 Timestamp Page 경계와 Empty Range를 검증한다.                                        |
 | `tests/integration/test_orders_bronze_integration.py`            | 생성 | 실제 Source Page가 하나의 Local Bronze Parquet으로 기록되는지 검증한다.                                               |
 | `tests/integration/test_seaweedfs_s3_integration.py`             | 생성 | SeaweedFS S3 Lifecycle과 DuckDB Parquet Read 호환성을 검증한다.                                                       |
-| `tests/integration/test_orders_ingestion_service_integration.py` | 생성·수정 | 실제 컨테이너에서 성공 Commit, Final Key 충돌, Empty Batch, Batch 재사용과 범위 Conflict를 검증한다.                         |
+| `tests/integration/test_orders_ingestion_service_integration.py` | 생성·수정 | 실제 컨테이너에서 성공 Commit, Final Key 충돌, Empty Batch, Batch 재사용·범위 Conflict와 Threshold 이하 Reject의 Quarantine·Metadata Commit을 검증한다.                         |
+| `tests/integration/test_table_ingestion_service_integration.py`  | 생성 | 실제 `customers`가 `orders`와 같은 공통 Bronze Commit Protocol로 수집되는지 검증한다. |
 | `tests/integration/test_mutable_table_extraction_integration.py` | 생성 | 실제 `customers`·`products`·`sellers`의 설정 기반 고정 범위 Keyset 추출을 검증한다. |
 | `tests/integration/test_child_table_extraction_integration.py` | 생성 | 실제 `order_items`·`order_payments`의 전체 복합 PK Keyset Page 경계를 검증한다. |
 | `tests/integration/test_child_parent_references_integration.py` | 생성 | 실제 Child Page가 동일 Snapshot의 모든 Parent Key를 참조하는지 검증한다. |
-| `docs/phases/phase-03-incremental-ingestion.md`                  | 수정 | Phase 3A P3-01~08, Phase 3B P3-09~14 진행 상태와 파일별 변경 요약을 기록했다.                                        |
+| `tests/integration/test_validation_integration.py` | 생성 | 실제 `orders` Snapshot Page가 Schema·Domain·Cursor 검증에서 Reject 없이 통과하는지 검증한다. |
+| `docs/phases/phase-03-incremental-ingestion.md`                  | 수정 | Phase 3A Decimal, Phase 3B 6개 Table 공통 Commit, Phase 3C Quarantine·Threshold·Corruption 구현 상태와 파일별 변경 요약을 기록했다.                 |
 
 ## Definition of Done
 
