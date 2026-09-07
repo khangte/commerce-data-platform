@@ -66,11 +66,11 @@ Phase 3D: Lease, CAS, Source Freeze 동시성
 
 ### 3A-2. 고정 범위와 Pagination
 
-- [ ] `P3-02` `orders` Composite Cursor Query 구현
-- [ ] `P3-03` 고정 Upper Bound와 Keyset Pagination 구현
-- [ ] `INGESTION_PAGE_SIZE` 설정과 기본값 50,000 적용
-- [ ] 마지막 Page Cursor를 다음 Page Lower Bound로 사용
-- [ ] Empty Batch 처리
+- [x] `P3-02` `orders` Composite Cursor Query 구현
+- [x] `P3-03` 고정 Upper Bound와 Keyset Pagination 구현
+- [x] `INGESTION_PAGE_SIZE` 설정과 기본값 50,000 적용
+- [x] 마지막 Page Cursor를 다음 Page Lower Bound로 사용
+- [x] Empty Batch 처리
 
 Query 의미:
 
@@ -275,8 +275,13 @@ Phase 3에서는 Framework-independent Python Pipeline을 완성하고 Phase 4�
 | ---- | ---- | ---- |
 | `sql/metadata/004_create_ingestion_metadata.sql` | 생성 | Watermark, 수집 실행, Bronze Object, Quarantine Batch의 상태·제약조건·Index를 추가했다. |
 | `src/ingestion/metadata.py` | 생성 | 초기 Watermark, RUNNING/FAILED 상태 전이, Object·Run·Watermark CAS의 원자적 Commit을 추가했다. |
+| `src/ingestion/config.py` | 생성 | `INGESTION_PAGE_SIZE` 환경 설정과 기본값 50,000 검증을 추가했다. |
+| `src/ingestion/orders.py` | 생성 | 동일 Read-only Snapshot에서 `orders` Upper Bound 고정과 Keyset Pagination을 추가했다. |
+| `src/common/database.py` | 수정 | 공통 환경 변수 Reader를 공개해 수집 설정도 로컬 `.env`를 사용할 수 있게 했다. |
+| `tests/ingestion/test_config.py` | 생성 | Page Size 기본값과 유효하지 않은 환경 변수 값을 검증한다. |
 | `tests/integration/test_ingestion_metadata_integration.py` | 생성 | 성공 Commit과 Watermark 충돌 시 Rollback·실패 상태 전이를 PostgreSQL에서 검증했다. |
-| `docs/phases/phase-03-incremental-ingestion.md` | 수정 | Phase 3 상태, P3-01 진행 상태와 파일별 변경 요약을 기록했다. |
+| `tests/integration/test_orders_incremental_integration.py` | 생성 | `orders` Composite Cursor의 같은 Timestamp Page 경계와 Empty Range를 검증한다. |
+| `docs/phases/phase-03-incremental-ingestion.md` | 수정 | Phase 3 상태, P3-01~03 진행 상태와 파일별 변경 요약을 기록했다. |
 
 ## Definition of Done
 

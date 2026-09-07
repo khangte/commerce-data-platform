@@ -28,7 +28,7 @@ class PostgresSettings:
 
     @classmethod
     def from_environment(cls) -> PostgresSettings:
-        values = _environment_values()
+        values = environment_values()
         required = (
             "POSTGRES_USER",
             "POSTGRES_PASSWORD",
@@ -83,8 +83,8 @@ def apply_sql_file(connection: psycopg.Connection, relative_path: str) -> None:
     connection.commit()
 
 
-def _environment_values() -> dict[str, str]:
-    """Load local `.env` values only when the process environment does not provide them."""
+def environment_values() -> dict[str, str]:
+    """Process Environment에 없는 값만 로컬 `.env`에서 읽어 반환한다."""
     values = dict(os.environ)
     environment_path = PROJECT_ROOT / ".env"
     if not environment_path.is_file():
