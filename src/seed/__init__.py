@@ -1,1 +1,1 @@
-"""Olist seed transformation and loading package."""
+"""Raw-compatible Olist seed loader."""
