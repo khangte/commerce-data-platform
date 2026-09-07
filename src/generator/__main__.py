@@ -6,7 +6,7 @@ import argparse
 import json
 
 from src.common.database import PostgresSettings
-from src.generator.config import GENERATOR_VERSION, SUPPORTED_ANOMALY_PROFILES, GeneratorConfig
+from src.generator.config import EXECUTABLE_ANOMALY_PROFILES, GENERATOR_VERSION, GeneratorConfig
 from src.generator.ids import logical_hash
 from src.generator.metadata import ensure_generator_metadata
 from src.generator.service import resolve_source_snapshot_id, run_generator
@@ -27,8 +27,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--anomaly-profile",
         default="default",
-        choices=sorted(SUPPORTED_ANOMALY_PROFILES),
-        help="Deterministic service scenario profile.",
+        choices=sorted(EXECUTABLE_ANOMALY_PROFILES),
+        help="Deterministic profile executable by this CLI.",
     )
     parser.add_argument(
         "--generator-version",

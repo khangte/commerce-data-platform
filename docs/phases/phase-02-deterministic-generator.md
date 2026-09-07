@@ -1,6 +1,6 @@
 # Phase 2. Deterministic Generator
 
-> 상태: In Progress
+> 상태: Done
 >
 > Milestone: 1 — Source Foundation
 >
@@ -104,6 +104,10 @@ Pipeline 검증용 Duplicate/NULL Key/Broken FK 같은 Corruption은 정상 OLTP
 - [x] Lease 보호 아래 결정적 Order Bundle 생성과 `generator_runs` 결과 기록
 - [x] 동일 성공 입력의 결과 재사용과 Warehouse Lease 중 Source 변경 0 검증
 
+CLI가 직접 실행하는 Profile은 `default`, `late-arrival`이다. `delayed-payment`,
+`membership-change`는 Phase 3 검증에서도 조합할 수 있는 재사용 가능한 Source Scenario Fixture로
+제공한다.
+
 ## 범위 밖
 
 - Bronze/Quarantine Object 생성
@@ -163,7 +167,7 @@ AC-20과 AC-21의 전체 E2E 판정은 Phase 3의 Ingestion과 결합해 완료�
 
 | 경로                                                       | 변경 | 요약                                                                                    |
 | ---------------------------------------------------------- | ---- | --------------------------------------------------------------------------------------- |
-| `src/generator/config.py`                                  | 생성 | 결정성 실행 Config, UTC `logical_date`, 지원 Version과 Anomaly Profile 검증을 추가했다. |
+| `src/generator/config.py`                                  | 생성·수정 | 결정성 실행 Config, UTC `logical_date`, 지원 Version·Profile 검증과 CLI 실행 Profile 범위를 추가했다. |
 | `src/generator/ids.py`                                     | 생성 | UUIDv5 Business ID와 안정적인 Logical Content Hash 유틸리티를 추가했다.                 |
 | `src/generator/metadata.py`                                | 생성 | `generator_runs` Schema 준비와 RUNNING/완료 실행 이력 기록 기능을 추가했다.             |
 | `src/generator/customers.py`                               | 생성 | 신규·재구매·주소 변경 Customer Record와 결정적 Membership 변경 계획을 추가했다.         |
@@ -171,12 +175,12 @@ AC-20과 AC-21의 전체 E2E 판정은 Phase 3의 Ingestion과 결합해 완료�
 | `src/generator/transitions.py`                             | 생성 | Order·Payment 허용 상태 전이, 기대 Version, Mutation Time 검증을 추가했다.              |
 | `src/generator/scenarios.py`                               | 생성 | Late Order·Delayed Payment·Late Update·Membership Change Scenario를 추가했다.           |
 | `src/generator/lease.py`                                   | 생성 | Generator·Warehouse Global Lease의 획득·갱신·Fencing·해제를 추가했다.                    |
-| `src/generator/service.py`                                 | 생성 | Seed Snapshot 검증, Lease 보호 Source 생성, 실행 결과 재사용을 추가했다.                 |
-| `src/generator/__main__.py`                                | 수정 | 기본 실행 시 Generator 적재를 수행하고 `--validate-only`를 지원하도록 변경했다.         |
+| `src/generator/service.py`                                 | 생성 | Seed Snapshot 검증, Lease 보호 Source 생성, 실행 결과 재사용과 Fixture Profile 경계를 추가했다. |
+| `src/generator/__main__.py`                                | 수정 | 기본 실행 시 Generator 적재를 수행하고 `--validate-only`와 실행 가능 Profile 선택을 지원하도록 변경했다. |
 | `sql/metadata/002_create_generator_metadata.sql`           | 수정 | 성공 실행 입력만 Unique하게 보관해 실패 실행의 재시도를 허용하도록 변경했다.             |
 | `sql/metadata/003_create_source_mutation_leases.sql`       | 생성 | `commerce_source` Global Source Mutation Lease Table을 추가했다.                         |
 | `src/generator/__init__.py`                                | 수정 | Generator Config와 현재 구현 Version을 Package API로 노출했다.                          |
-| `tests/generator/`                                         | 생성 | Config, 결정적 ID/Hash, Metadata 입력 기록 단위 테스트를 추가했다.                      |
+| `tests/generator/`                                         | 생성·수정 | Config, 결정적 ID/Hash, Metadata 입력과 동일 Snapshot 입력의 Bundle 재현 단위 테스트를 추가했다. |
 | `tests/integration/test_generator_metadata_integration.py` | 생성 | 실제 PostgreSQL에 Generator 실행 이력이 저장되는지 검증하는 통합 테스트를 추가했다.     |
 | `tests/integration/test_generator_customer_integration.py` | 생성 | Customer Record 저장 멱등성과 Membership 변경 시각을 검증하는 통합 테스트를 추가했다.   |
 | `tests/integration/test_generator_order_integration.py`    | 생성 | Order Bundle의 Insert/Skip, FK 오류 Rollback 통합 테스트를 추가했다.                    |
@@ -188,13 +192,27 @@ AC-20과 AC-21의 전체 E2E 판정은 Phase 3의 Ingestion과 결합해 완료�
 
 ## Definition of Done
 
-- [ ] 모든 `P2-*` Task가 완료됐다.
-- [ ] 동일 Snapshot/입력의 Key Set, Count, 상태, Hash가 같다.
-- [ ] 허용되지 않은 상태 전이가 0이다.
-- [ ] Mutable Row의 `updated_at` 역행 또는 동일 위치 변경이 0이다.
-- [ ] 복합 Entity 생성이 원자적으로 동작한다.
-- [ ] Warehouse Lease 중 Generator 변경이 0이다.
-- [ ] AC-15가 통과하고 AC-20/21용 Fixture가 준비됐다.
+- [x] 모든 `P2-*` Task가 완료됐다.
+- [x] 동일 Snapshot/입력의 Key Set, Count, 상태, Hash가 같다.
+- [x] 허용되지 않은 상태 전이가 0이다.
+- [x] Mutable Row의 `updated_at` 역행 또는 동일 위치 변경이 0이다.
+- [x] 복합 Entity 생성이 원자적으로 동작한다.
+- [x] Warehouse Lease 중 Generator 변경이 0이다.
+- [x] AC-15가 통과하고 AC-20/21용 Fixture가 준비됐다.
+
+## 검증 증적
+
+2026-09-07에 아래 검증을 실행했다.
+
+```bash
+uv run ruff check src/generator tests/generator
+uv run pytest -q tests/generator
+RUN_POSTGRES_INTEGRATION=1 uv run pytest -q tests/integration/test_generator_metadata_integration.py tests/integration/test_generator_customer_integration.py tests/integration/test_generator_order_integration.py tests/integration/test_generator_transition_integration.py tests/integration/test_generator_scenario_integration.py tests/integration/test_generator_service_integration.py tests/integration/test_source_mutation_lease_integration.py
+```
+
+- Ruff 오류 없음
+- Generator 단위 테스트 `39 passed`
+- PostgreSQL 통합 테스트 `10 passed`
 
 ## Portfolio Evidence
 
