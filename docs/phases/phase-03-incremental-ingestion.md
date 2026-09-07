@@ -1,6 +1,6 @@
 # Phase 3. Incremental Ingestion
 
-> 상태: Planned  
+> 상태: In Progress
 > Milestone: 2 — Data Platform Core  
 > 선행 Phase: [Phase 2. Deterministic Generator](phase-02-deterministic-generator.md)  
 > 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.4](../../PRD_v1.4.md)
@@ -59,10 +59,10 @@ Phase 3D: Lease, CAS, Source Freeze 동시성
 
 ### 3A-1. Metadata Schema
 
-- [ ] `P3-01` `watermarks`, `pipeline_runs`, `bronze_objects`, `quarantine_batches` DDL 구현
-- [ ] Metadata 상태/제약조건/Index 구현
-- [ ] Table Commit용 Metadata Transaction 구현
-- [ ] 상태 전이와 Rollback 테스트
+- [x] `P3-01` `watermarks`, `pipeline_runs`, `bronze_objects`, `quarantine_batches` DDL 구현
+- [x] Metadata 상태/제약조건/Index 구현
+- [x] Table Commit용 Metadata Transaction 구현
+- [x] 상태 전이와 Rollback 테스트
 
 ### 3A-2. 고정 범위와 Pagination
 
@@ -268,6 +268,15 @@ Phase 3에서는 Framework-independent Python Pipeline을 완성하고 Phase 4�
 - Metadata-backed Bronze File Catalog
 - Schema Version Contract
 - AC-02~06, 08, 20, 21, 23, 24 자동 테스트
+
+## 파일·폴더별 변경 요약
+
+| 경로 | 변경 | 요약 |
+| ---- | ---- | ---- |
+| `sql/metadata/004_create_ingestion_metadata.sql` | 생성 | Watermark, 수집 실행, Bronze Object, Quarantine Batch의 상태·제약조건·Index를 추가했다. |
+| `src/ingestion/metadata.py` | 생성 | 초기 Watermark, RUNNING/FAILED 상태 전이, Object·Run·Watermark CAS의 원자적 Commit을 추가했다. |
+| `tests/integration/test_ingestion_metadata_integration.py` | 생성 | 성공 Commit과 Watermark 충돌 시 Rollback·실패 상태 전이를 PostgreSQL에서 검증했다. |
+| `docs/phases/phase-03-incremental-ingestion.md` | 수정 | Phase 3 상태, P3-01 진행 상태와 파일별 변경 요약을 기록했다. |
 
 ## Definition of Done
 
