@@ -184,14 +184,14 @@ Generator DAG는 `seed`, `logical_date`, 생성 건수와 Scenario Profile을 Ai
 
 ### 3. Warehouse DAG
 
-- [ ] `P4-06` `warehouse_pipeline_dag` 구현
-- [ ] `P4-07` `initialize_run`에서 Batch/Run 식별 정보 구성, 별도 Task에서 원천 데이터 동시성 잠금 획득
-- [ ] `P4-08` 6개 Table `extract_validate_load` Dynamic Task Mapping
-- [ ] `P4-09` `verify_bronze_commit`에서 Metadata 기반 Commit 검증
-- [ ] `P4-10` `sync_bronze_catalog` 호출
+- [x] `P4-06` `warehouse_pipeline_dag` 구현
+- [x] `P4-07` `initialize_run`에서 Batch/Run 식별 정보 구성, 별도 Task에서 원천 데이터 동시성 잠금 획득
+- [x] `P4-08` 6개 Table `extract_validate_load` Dynamic Task Mapping
+- [x] `P4-09` `verify_bronze_commit`에서 Metadata 기반 Commit 검증
+- [x] `P4-10` `sync_bronze_catalog` 호출
 - [ ] `P4-11` Phase 5 이후 활성화할 dbt Build 호출 경계 구성
-- [ ] `P4-12` `publish_run_summary`와 최종 상태 기록
-- [ ] `P4-13` 성공/실패에 관계없이 원천 데이터 동시성 잠금을 해제하는 Cleanup Task
+- [x] `P4-12` `publish_run_summary`와 최종 상태 기록
+- [x] `P4-13` 성공/실패에 관계없이 원천 데이터 동시성 잠금을 해제하는 Cleanup Task
 
 `P4-08`은 `partial(...).expand(...)`로 고정된 아래 6개 Table만 확장한다. 병렬도는 Source와
 Object Storage 용량을 고려해 `max_active_tis_per_dag`로 제한하고, Map 입력 순서는 고정한다.
@@ -233,6 +233,29 @@ publish_run_summary
 
 Lease 해제는 mapped Task 자체가 아니라 별도 Cleanup Task에서 `ALL_DONE`으로 실행한다. Cleanup은 모든
 mapped Task의 종료를 기다리되, 검증 실패 또는 Cleanup 실패 시 Catalog/dbt로 진행하지 않는다.
+
+`P4-09`의 `verify_bronze_commit`은 Phase 3에 재확인 전용 API가 없어 `src/ingestion/verification.py`에
+`verify_bronze_commit()`을 신설했다. `get_committed_table_batch`로 COMMITTED 여부를 확인하고,
+Manifest Object를 재다운로드해 HEAD Checksum과 `orphan.py`가 쓰던 Manifest Type 검증 계약으로
+재파싱한 뒤 Object Checksum/Row Count/Logical Hash/Watermark를 Manifest와 교차 검증한다. Manifest
+파싱 로직은 `orphan.py`와 중복되던 부분을 `src/ingestion/manifest.py`의 `parse_bronze_manifest_payload()`로
+공개해 두 모듈이 공유한다. `SUCCESS_NO_DATA`로 끝나 Bronze Object가 없는 Table은 `pipeline_runs`의
+최신 상태로 정상 완료를 인정한다.
+
+검증:
+
+- `airflow dags list-import-errors`로 Import Error 0건을 확인했다.
+- `airflow dags test warehouse_pipeline_dag`로 6개 Table Dynamic Task Mapping이 전부 실행되고,
+  `verify_bronze_commit_task`·`sync_bronze_catalog_task`·`publish_run_summary`까지 DagRun이
+  `success`로 끝남을 확인했다. Batch에서 신규 데이터가 없던 `products`/`sellers`는 `SUCCESS_NO_DATA`로
+  정상 반영됐다.
+- 동일 Batch를 재실행해 `customers`/`orders`/`order_items`/`order_payments`가
+  `SKIPPED_ALREADY_COMMITTED`로 재사용되고, `products`/`sellers`는 `SUCCESS_NO_DATA`로 다시 Skip되며
+  Catalog/Verify/Summary가 다시 성공함을 확인했다.
+- Lease Token은 `owner_type`/`owner_id`/`lease_expires_at`/`version`만 XCom에 저장되고,
+  `release_source_snapshot_lease`가 `trigger_rule=all_done`으로 Mapped Task 종료 후 실행됨을 확인했다.
+- `uv run pytest tests/` 84 passed, 0 failed, 39 skipped로 `manifest.py`/`orphan.py` 리팩터링과
+  신규 `verification.py`가 기존 동작을 깨지 않음을 확인했다.
 
 ### 4. Retry와 오류 분류
 
@@ -404,4 +427,8 @@ Project/CLI와 Test를 완성한 뒤, Warehouse DAG의 `dbt_build` 호출 경계
 | `.env.example`                                  | 수정 | Airflow UI Port·LocalExecutor 병렬도와 Linux/WSL 파일 권한용 `AIRFLOW_UID` 설정 예시를 추가했다. |
 | `.gitignore`                                    | 수정 | Airflow Log는 무시하되 빈 디렉터리 표시 파일은 추적하도록 변경했다. |
 | `airflow/dags/source_simulation_dag.py`         | 생성 | Airflow Param을 검증해 Phase 2 `run_generator` API를 호출하는 Generator DAG를 추가했다. |
-| `docs/phases/phase-04-airflow-orchestration.md` | 수정 | P4-01/P4-02/P4-05 완료 상태와 Airflow Runtime 구성 범위, Fresh Boot·DAG 실행 검증 결과를 기록했다. |
+| `airflow/dags/warehouse_pipeline_dag.py`        | 생성 | `initialize_run`/Lease 획득·해제/6개 Table Dynamic Mapping/Verify/Catalog/Summary Task로 Phase 3 `ingest_table`을 오케스트레이션하는 Warehouse DAG를 추가했다. |
+| `src/ingestion/verification.py`                 | 생성 | Batch의 6개 Table이 모두 COMMITTED이고 Manifest/Object/Hash/Row Count/Watermark가 일치하는지 재확인하는 `verify_bronze_commit()`을 추가했다. |
+| `src/ingestion/manifest.py`                     | 수정 | `orphan.py`가 쓰던 Manifest 파싱·Type 검증 로직을 `parse_bronze_manifest_payload()`로 공개해 `verification.py`와 공유하도록 정리했다. |
+| `src/ingestion/orphan.py`                       | 수정 | 중복이던 Manifest 파싱·Type 검증 Private 함수를 제거하고 `manifest.py`의 공개 함수를 사용하도록 정리했다. |
+| `docs/phases/phase-04-airflow-orchestration.md` | 수정 | P4-01/P4-02/P4-05~P4-10/P4-12/P4-13 완료 상태와 Airflow Runtime 구성 범위, Fresh Boot·DAG 실행 검증 결과를 기록했다. |

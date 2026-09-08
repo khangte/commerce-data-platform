@@ -5,12 +5,28 @@ from __future__ import annotations
 import json
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from src.ingestion.metadata import CursorPosition
+from src.ingestion.tables import table_config
 
 MANIFEST_VERSION = 1
 VERIFIED_OBJECT_STATE = "VERIFIED"
+
+_REQUIRED_BRONZE_MANIFEST_FIELDS = (
+    "batch_id",
+    "run_id",
+    "source_table",
+    "logical_date",
+    "watermark_before",
+    "extract_upper_bound",
+    "object_key",
+    "object_size",
+    "content_sha256",
+    "logical_hash",
+    "row_count",
+    "schema_version",
+)
 
 
 @dataclass(frozen=True)
@@ -77,6 +93,74 @@ class BronzeManifest:
         return json.dumps(
             self.as_dict(), ensure_ascii=False, separators=(",", ":"), sort_keys=True
         ).encode("utf-8")
+
+
+def parse_bronze_manifest_payload(manifest_bytes: bytes, *, expected_object_key: str) -> dict[str, object]:
+    """Bronze Manifest JSON Byte를 재검증에 필요한 필드·Type 계약으로 파싱한다."""
+    try:
+        payload = json.loads(manifest_bytes)
+        if not isinstance(payload, dict):
+            raise TypeError("manifest must be a JSON object")
+        if (
+            payload["manifest_version"] != MANIFEST_VERSION
+            or payload["object_state"] != VERIFIED_OBJECT_STATE
+            or payload["object_key"] != expected_object_key
+        ):
+            raise ValueError("manifest object identity is invalid")
+        uuid.UUID(payload["run_id"])
+        if any(name not in payload for name in _REQUIRED_BRONZE_MANIFEST_FIELDS):
+            raise ValueError("manifest fields are incomplete")
+        _assert_bronze_manifest_types(payload)
+        return payload
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
+        raise ValueError("Bronze manifest is invalid") from error
+
+
+def _assert_bronze_manifest_types(payload: dict[str, object]) -> None:
+    """재검증에 쓰는 Manifest 식별자·Count·Hash·Cursor의 Type과 범위를 확인한다."""
+    text_fields = ("batch_id", "source_table", "logical_date", "object_key", "content_sha256", "logical_hash")
+    if any(not isinstance(payload[name], str) or not payload[name].strip() for name in text_fields):
+        raise ValueError("manifest identifiers must be non-empty strings")
+    if any(
+        not isinstance(payload[name], int) or isinstance(payload[name], bool) or payload[name] < 0
+        for name in ("object_size", "row_count")
+    ):
+        raise ValueError("manifest size and row_count must be non-negative integers")
+    if (
+        not isinstance(payload["schema_version"], int)
+        or isinstance(payload["schema_version"], bool)
+        or payload["schema_version"] <= 0
+    ):
+        raise ValueError("manifest schema_version must be a positive integer")
+    for name in ("content_sha256", "logical_hash"):
+        value = payload[name]
+        if len(value) != 64 or any(character not in "0123456789abcdef" for character in value):
+            raise ValueError(f"manifest {name} must be a lowercase SHA-256 hex")
+    table_config(payload["source_table"])
+    _cursor_from_manifest_payload(payload["watermark_before"])
+    _cursor_from_manifest_payload(payload["extract_upper_bound"])
+    _utc_datetime_from_manifest(payload["logical_date"])
+
+
+def _cursor_from_manifest_payload(value: object) -> CursorPosition:
+    """Manifest JSON Cursor를 Metadata와 비교 가능한 엄격한 Cursor 계약으로 변환한다."""
+    if not isinstance(value, dict) or set(value) != {"timestamp", "keys"}:
+        raise ValueError("manifest cursor must contain timestamp and keys")
+    timestamp = value["timestamp"]
+    keys = value["keys"]
+    if timestamp is not None and not isinstance(timestamp, str):
+        raise ValueError("manifest cursor timestamp must be a UTC string or null")
+    if not isinstance(keys, list):
+        raise TypeError("manifest cursor keys must be an array")
+    return CursorPosition(_utc_datetime_from_manifest(timestamp) if timestamp is not None else None, tuple(keys))
+
+
+def _utc_datetime_from_manifest(value: str) -> datetime:
+    """ISO-8601 문자열을 UTC Timestamp로 읽고 비 UTC 값은 거부한다."""
+    result = datetime.fromisoformat(value)
+    if result.tzinfo is None or result.utcoffset() != UTC.utcoffset(None):
+        raise ValueError("manifest timestamps must be normalized to UTC")
+    return result
 
 
 def _assert_utc(value: datetime, name: str) -> None:
