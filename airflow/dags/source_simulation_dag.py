@@ -2,14 +2,24 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from airflow.sdk import DAG, task
 from airflow.sdk.definitions.param import Param
+from airflow.sdk.exceptions import AirflowFailException
 
 from src.common.database import PostgresSettings
 from src.generator.config import EXECUTABLE_ANOMALY_PROFILES, GENERATOR_VERSION, GeneratorConfig
 from src.generator.service import resolve_source_snapshot_id, run_generator
+from src.ingestion.errors import classify_error, is_retryable
+
+DEFAULT_TASK_ARGS = {
+    "retries": 2,
+    "retry_delay": timedelta(seconds=60),
+    "retry_exponential_backoff": True,
+    "max_retry_delay": timedelta(minutes=10),
+    "execution_timeout": timedelta(minutes=20),
+}
 
 with DAG(
     dag_id="source_simulation_dag",
@@ -17,6 +27,7 @@ with DAG(
     start_date=datetime(2026, 1, 1),
     catchup=False,
     max_active_runs=1,
+    default_args=DEFAULT_TASK_ARGS,
     params={
         "seed": Param(0, type="integer", description="Deterministic random seed."),
         "logical_date": Param(
@@ -55,7 +66,13 @@ with DAG(
             anomaly_profile=params["anomaly_profile"],
             generator_version=GENERATOR_VERSION,
         )
-        result = run_generator(config, settings)
+        try:
+            result = run_generator(config, settings)
+        except Exception as error:
+            error_type = classify_error(error)
+            if is_retryable(error):
+                raise
+            raise AirflowFailException(f"{error_type}: {error}") from error
         return {
             "generator_run_id": str(result.generator_run_id),
             "result_counts": result.result_counts,
