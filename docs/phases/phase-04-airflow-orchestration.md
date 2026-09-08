@@ -103,7 +103,7 @@ Context Manager를 Task 경계 전체에 걸쳐 사용할 수 없다. 아래 계
 
 ### 1. Airflow Runtime
 
-- [ ] `P4-01` Airflow 3.3.1 Compose Service와 LocalExecutor 구성
+- [x] `P4-01` Airflow 3.3.1 Compose Service와 LocalExecutor 구성
 - [ ] `P4-02` Airflow Metadata DB 초기화와 Health Check 구성
 - [ ] `P4-03` Secret을 코드에 넣지 않는 환경 변수 설정
 - [ ] `P4-04` DAG Import/Parse Smoke Test 구성
@@ -121,6 +121,25 @@ Runtime 계약:
   Docker Secret/환경 변수로만 주입한다. 코드·DAG·XCom·로그에 Credential을 기록하지 않는다.
 - Compose에는 Airflow 버전에 맞는 API Server, Scheduler, Metadata DB Migration과 Health Check를
   명시하고, LocalExecutor가 Task를 실행할 수 있는 단일 개발 머신 구성을 검증한다.
+
+`P4-01`에서는 `airflow-api-server`, `airflow-scheduler`, `airflow-dag-processor`를 `airflow`
+Compose Profile에 추가했다. 세 Service는 Airflow 3.3.1 Python 3.12 기반의 공통 Image를 사용하며,
+`LocalExecutor`와 최대 6개 Process 병렬도를 설정한다. 프로젝트 `src/`, `sql/`, DAG는 read-only로
+Mount하고, Airflow Log와 DuckDB Warehouse 경로만 쓰기 가능하다. Airflow Image의 Amazon Provider와
+호환되도록 `boto3`를 1.43.56으로 고정했다. Metadata DB migration과 Airflow Service Health Check는
+`P4-02`에서 추가한다.
+
+Linux/WSL에서는 `.env`의 `AIRFLOW_UID`에 `id -u` 결과를 설정한다. 이 값으로 컨테이너 Process를 실행해
+Airflow Log와 DuckDB Bind Mount에 쓸 권한을 호스트 사용자와 맞춘다.
+
+검증:
+
+- `docker compose config --quiet`와 `docker compose --profile airflow config --quiet`로 기본 및 Airflow
+  Profile Compose 구성을 검증했다.
+- `docker compose --profile airflow build airflow-api-server`와 Image 내부 `pip check`를 통과했다.
+- Airflow Container에서 `airflow`, 프로젝트 의존성, `src.ingestion.storage` Import를 확인했다.
+- 호스트 사용자 UID로 실행한 Airflow Container가 Log와 DuckDB Warehouse 쓰기 경로에 파일을 생성·제거할 수
+  있음을 확인했다.
 
 ### 2. Generator DAG
 
@@ -346,4 +365,12 @@ Project/CLI와 Test를 완성한 뒤, Warehouse DAG의 `dbt_build` 호출 경계
 
 | 경로                                            | 변경 내용                                                                                                                                     |
 | ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `docs/phases/phase-04-airflow-orchestration.md` | Phase 4 검토 결과를 반영해 내부 용어의 한국어 표기, Airflow Task 경계 Lease Token, DAG 순서, Runtime, 재시도, dbt 경계, 검증 기준을 보완했다. |
+| `airflow/Dockerfile`                            | 생성 | Airflow 3.3.1 Python 3.12 Image에 프로젝트 런타임 의존성을 빌드 시 설치하도록 구성했다. |
+| `airflow/requirements.txt`                      | 생성 | Airflow Container에서 필요한 프로젝트 Python 의존성의 고정 Version을 정의했다. |
+| `airflow/logs/.gitkeep`                         | 생성 | Airflow Log Bind Mount의 추적 가능한 빈 디렉터리를 추가했다. |
+| `compose.yaml`                                  | 수정 | `airflow` Profile의 API Server·Scheduler·DAG Processor, LocalExecutor, 내부 Service 연결과 프로젝트 경로 Mount를 추가했다. |
+| `pyproject.toml`                                | 수정 | Airflow Image의 Amazon Provider와 호환되는 `boto3` Version으로 고정했다. |
+| `uv.lock`                                       | 수정 | 프로젝트 의존성 잠금 정보를 `boto3` Version 변경에 맞춰 갱신했다. |
+| `.env.example`                                  | 수정 | Airflow UI Port·LocalExecutor 병렬도와 Linux/WSL 파일 권한용 `AIRFLOW_UID` 설정 예시를 추가했다. |
+| `.gitignore`                                    | 수정 | Airflow Log는 무시하되 빈 디렉터리 표시 파일은 추적하도록 변경했다. |
+| `docs/phases/phase-04-airflow-orchestration.md` | 수정 | P4-01 완료 상태와 Airflow Runtime 구성 범위를 기록했다. |
