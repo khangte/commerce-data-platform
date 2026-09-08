@@ -17,9 +17,9 @@
 - Business ID는 UUIDv5 또는 결정적 Hash로 생성한다.
 - `customer_unique_id`는 동일 인물의 Business Key, `customer_id`는 주문 시점 Customer Record다.
 - 기존 Mutable Row의 새 `updated_at`은 직전 값보다 반드시 크다.
-- Late Arrival은 과거 Business Event Time과 현재 Source Mutation Time으로 표현한다.
+- Late Arrival은 과거 Business Event Time과 현재 원천 변경 시각으로 표현한다.
 - Order/Item/Payment 묶음은 하나의 Transaction으로 생성한다.
-- Warehouse가 Source Freeze Lease를 보유하는 동안 Generator는 Source를 변경하지 않는다.
+- Warehouse가 원천 데이터 동시성 잠금을 보유하는 동안 Generator는 Source를 변경하지 않는다.
 - 한 수집 구간에서 동일 SCD2 추적 속성을 여러 번 바꿔 중간 Version을 소실시키지 않는다.
 
 ## 선행 조건
@@ -80,7 +80,7 @@ Payment: pending → completed → refunded
 - [x] 상태 전이 전 현재 상태와 기대 Version 확인
 - [x] 기존 Row 변경 시 `updated_at` 단조 증가 보장
 - [x] 동일 `updated_at`에서 서로 다른 값으로 변경 금지
-- [x] Source에는 Raw-compatible 상태를 저장하고 Canonicalization은 수행하지 않음
+- [x] Source에는 Raw-compatible 상태를 저장하고 표준화는 수행하지 않음
 
 ### 5. Service-level 시나리오
 
@@ -89,11 +89,11 @@ Payment: pending → completed → refunded
 - [x] `P2-17` 과거 Event Timestamp를 가진 Late Update 생성
 - [x] `P2-18` Membership Change 생성
 
-Pipeline 검증용 Duplicate/NULL Key/Broken FK 같은 Corruption은 정상 OLTP Source를 오염시키지 않고 Phase 3/6의 주입 경로에서 처리한다.
+파이프라인 검증용 Duplicate/NULL Key/Broken FK 같은 오류는 정상 OLTP Source를 오염시키지 않고 Phase 3/6의 주입 경로에서 처리한다.
 
-### 6. Source Mutation 동시성
+### 6. 원천 변경 동시성
 
-- [x] `P2-19` `source_mutation_leases` DDL과 Global Lease 조회/획득 로직
+- [x] `P2-19` `source_mutation_leases` DDL과 원천 데이터 동시성 잠금 조회/획득 로직
 - [x] `P2-20` Lease 획득 실패 시 Source 변경 전 안전하게 종료
 - [x] `P2-21` Generator Transaction 종료 후 Lease 해제
 - [x] `P2-22` 만료/소유권 상실 시 변경을 중단하는 Fencing 검증
@@ -102,7 +102,7 @@ Pipeline 검증용 Duplicate/NULL Key/Broken FK 같은 Corruption은 정상 OLTP
 
 - [x] 현재 성공 Seed Snapshot을 자동 식별하는 Generator 실행 서비스
 - [x] Lease 보호 아래 결정적 Order Bundle 생성과 `generator_runs` 결과 기록
-- [x] 동일 성공 입력의 결과 재사용과 Warehouse Lease 중 Source 변경 0 검증
+- [x] 동일 성공 입력의 결과 재사용과 Warehouse의 원천 데이터 동시성 잠금 중 Source 변경 0 검증
 
 CLI가 직접 실행하는 Profile은 `default`, `late-arrival`이다. `delayed-payment`,
 `membership-change`는 Phase 3 검증에서도 조합할 수 있는 재사용 가능한 Source Scenario Fixture로
@@ -111,9 +111,9 @@ CLI가 직접 실행하는 Profile은 `default`, `late-arrival`이다. `delayed-
 ## 범위 밖
 
 - Bronze/Quarantine Object 생성
-- Pipeline-level Corruption을 Source DB에 저장
+- 파이프라인 오류 주입 결과를 Source DB에 저장
 - Airflow DAG Scheduling
-- dbt 상태 Canonicalization과 SCD2 모델 구현
+- dbt 상태 표준화와 SCD2 모델 구현
 
 ## 테스트
 
@@ -125,31 +125,31 @@ CLI가 직접 실행하는 Profile은 `default`, `late-arrival`이다. `delayed-
 생성/변경 Key Set
 Entity별 Row Count
 상태와 비즈니스 값
-Logical Content Hash
+Logical Hash
 ```
 
 ### 계약
 
 - 허용되지 않은 Order/Payment 상태 전이가 0인지 검증
 - 모든 기존 Row 변경에서 `new.updated_at > old.updated_at`인지 검증
-- Late Arrival에서 Business Event Time은 과거이고 Mutation Time은 현재인지 검증
+- Late Arrival에서 Business Event Time은 과거이고 원천 변경 시각은 현재인지 검증
 - 실패한 복합 생성에서 부분 Order/Item/Payment가 남지 않는지 검증
-- Warehouse Lease 보유 중 생성 Row/변경 Row가 0인지 검증
+- Warehouse의 원천 데이터 동시성 잠금 보유 중 생성 Row/변경 Row가 0인지 검증
 
 ## 요구사항 추적
 
-| 구분 | 연결 항목                                   | 주요 증거                |
-| ---- | ------------------------------------------- | ------------------------ |
-| PRD  | Section 4.1 `updated_at` 안전성 계약        | Mutation Time Test       |
-| PRD  | Section 7 Generator와 Anomaly               | 결정성 및 상태 전이 Test |
-| PRD  | Section 7.3 Global Source Mutation Lease    | Lease 충돌 Test          |
-| ADR  | ADR-009 Observed Customer SCD2              | 변경 횟수/관측 계약      |
-| ADR  | ADR-013 Source Mutation/Extract 동시성      | Lease Test               |
-| FR   | FR-02 Deterministic Generator               | 동일 Snapshot 비교       |
-| FR   | FR-05 Global Source Mutation Lease          | 동시성 실행 기록         |
-| AC   | AC-15 Generator 재현                        | Key Set/Hash 비교        |
-| AC   | AC-20 Mutation Time Cursor Safety의 생성 측 | Late Update Fixture      |
-| AC   | AC-21 Generator vs Warehouse의 생성 측      | Source 변경 0 증거       |
+| 구분 | 연결 항목                                    | 주요 증거                |
+| ---- | -------------------------------------------- | ------------------------ |
+| PRD  | Section 4.1 `updated_at` 안전성 계약         | 원천 변경 시각 Test      |
+| PRD  | Section 7 Generator와 Anomaly                | 결정성 및 상태 전이 Test |
+| PRD  | Section 7.3 원천 데이터 동시성 잠금          | Lease 충돌 Test          |
+| ADR  | ADR-009 관측 기반 고객 SCD2                  | 변경 횟수/관측 계약      |
+| ADR  | ADR-013 원천 변경/수집 동시성                | Lease Test               |
+| FR   | FR-02 Deterministic Generator                | 동일 Snapshot 비교       |
+| FR   | FR-05 원천 데이터 동시성 잠금                | 동시성 실행 기록         |
+| AC   | AC-15 Generator 재현                         | Key Set/Hash 비교        |
+| AC   | AC-20 원천 변경 시각 Cursor Safety의 생성 측 | Late Update Fixture      |
+| AC   | AC-21 Generator vs Warehouse의 생성 측       | Source 변경 0 증거       |
 
 AC-20과 AC-21의 전체 E2E 판정은 Phase 3의 Ingestion과 결합해 완료한다.
 
@@ -160,35 +160,35 @@ AC-20과 AC-21의 전체 E2E 판정은 Phase 3의 Ingestion과 결합해 완료�
 - Customer/Order/Item/Payment 생성 모듈
 - 상태 변경과 Late Arrival 시나리오
 - `generator_runs` Metadata
-- Source Mutation Lease Client
-- 결정성, Transaction, Mutation Time 자동 테스트
+- 원천 데이터 동시성 잠금 Client
+- 결정성, Transaction, 원천 변경 시각 자동 테스트
 
 ## 파일·폴더별 변경 요약
 
-| 경로                                                       | 변경 | 요약                                                                                    |
-| ---------------------------------------------------------- | ---- | --------------------------------------------------------------------------------------- |
-| `src/generator/config.py`                                  | 생성·수정 | 결정성 실행 Config, UTC `logical_date`, 지원 Version·Profile 검증과 CLI 실행 Profile 범위를 추가했다. |
-| `src/generator/ids.py`                                     | 생성 | UUIDv5 Business ID와 안정적인 Logical Content Hash 유틸리티를 추가했다.                 |
-| `src/generator/metadata.py`                                | 생성 | `generator_runs` Schema 준비와 RUNNING/완료 실행 이력 기록 기능을 추가했다.             |
-| `src/generator/customers.py`                               | 생성 | 신규·재구매·주소 변경 Customer Record와 결정적 Membership 변경 계획을 추가했다.         |
-| `src/generator/orders.py`                                  | 생성 | Order·Item·Payment Bundle 생성, Seed Catalog 선택, 원자적 멱등 저장을 추가했다.          |
-| `src/generator/transitions.py`                             | 생성 | Order·Payment 허용 상태 전이, 기대 Version, Mutation Time 검증을 추가했다.              |
-| `src/generator/scenarios.py`                               | 생성 | Late Order·Delayed Payment·Late Update·Membership Change Scenario를 추가했다.           |
-| `src/generator/lease.py`                                   | 생성 | Generator·Warehouse Global Lease의 획득·갱신·Fencing·해제를 추가했다.                    |
-| `src/generator/service.py`                                 | 생성 | Seed Snapshot 검증, Lease 보호 Source 생성, 실행 결과 재사용과 Fixture Profile 경계를 추가했다. |
-| `src/generator/__main__.py`                                | 생성·수정 | Generator CLI 기반을 만들고, 기본 실행 적재·`--validate-only`·실행 가능 Profile 선택을 지원하도록 변경했다. |
-| `sql/metadata/002_create_generator_metadata.sql`           | 생성·수정 | Generator 실행 Metadata Schema를 만들고, 성공 실행 입력만 Unique하게 보관해 실패 실행의 재시도를 허용하도록 변경했다. |
-| `sql/metadata/003_create_source_mutation_leases.sql`       | 생성 | `commerce_source` Global Source Mutation Lease Table을 추가했다.                         |
-| `src/generator/__init__.py`                                | 수정 | Generator Config와 현재 구현 Version을 Package API로 노출했다.                          |
-| `tests/generator/`                                         | 생성·수정 | Config, 결정적 ID/Hash, Metadata 입력과 동일 Snapshot 입력의 Bundle 재현 단위 테스트를 추가했다. |
-| `tests/integration/test_generator_metadata_integration.py` | 생성 | 실제 PostgreSQL에 Generator 실행 이력이 저장되는지 검증하는 통합 테스트를 추가했다.     |
-| `tests/integration/test_generator_customer_integration.py` | 생성 | Customer Record 저장 멱등성과 Membership 변경 시각을 검증하는 통합 테스트를 추가했다.   |
-| `tests/integration/test_generator_order_integration.py`    | 생성 | Order Bundle의 Insert/Skip, FK 오류 Rollback 통합 테스트를 추가했다.                    |
-| `tests/integration/test_generator_transition_integration.py` | 생성 | 상태 전이 재실행, Business Timestamp, 오래된 Version 거부를 검증하는 통합 테스트를 추가했다. |
-| `tests/integration/test_generator_scenario_integration.py` | 생성 | Service-level Scenario의 Business Event와 Mutation Time 분리를 검증하는 통합 테스트를 추가했다. |
-| `tests/integration/test_source_mutation_lease_integration.py` | 생성 | Generator·Warehouse Lease 배타성, 해제, 만료 인수 Fencing을 검증하는 통합 테스트를 추가했다. |
-| `tests/integration/test_generator_service_integration.py`  | 생성 | 실제 Generator 적재, 성공 결과 재사용, Warehouse Lease 차단을 검증하는 통합 테스트를 추가했다. |
-| `docs/phases/phase-02-deterministic-generator.md`          | 수정 | P2-01~22와 실행 통합 진행 상태, 파일별 변경 요약을 기록했다.                            |
+| 경로                                                          | 변경      | 요약                                                                                                                  |
+| ------------------------------------------------------------- | --------- | --------------------------------------------------------------------------------------------------------------------- |
+| `src/generator/config.py`                                     | 생성·수정 | 결정성 실행 Config, UTC `logical_date`, 지원 Version·Profile 검증과 CLI 실행 Profile 범위를 추가했다.                 |
+| `src/generator/ids.py`                                        | 생성      | UUIDv5 Business ID와 안정적인 Logical Hash 유틸리티를 추가했다.                                                       |
+| `src/generator/metadata.py`                                   | 생성      | `generator_runs` Schema 준비와 RUNNING/완료 실행 이력 기록 기능을 추가했다.                                           |
+| `src/generator/customers.py`                                  | 생성      | 신규·재구매·주소 변경 Customer Record와 결정적 Membership 변경 계획을 추가했다.                                       |
+| `src/generator/orders.py`                                     | 생성      | Order·Item·Payment Bundle 생성, Seed Catalog 선택, 원자적 멱등 저장을 추가했다.                                       |
+| `src/generator/transitions.py`                                | 생성      | Order·Payment 허용 상태 전이, 기대 Version, 원천 변경 시각 검증을 추가했다.                                           |
+| `src/generator/scenarios.py`                                  | 생성      | Late Order·Delayed Payment·Late Update·Membership Change Scenario를 추가했다.                                         |
+| `src/generator/lease.py`                                      | 생성      | Generator·Warehouse 원천 데이터 동시성 잠금의 획득·갱신·Fencing·해제를 추가했다.                                      |
+| `src/generator/service.py`                                    | 생성      | Seed Snapshot 검증, Lease 보호 Source 생성, 실행 결과 재사용과 Fixture Profile 경계를 추가했다.                       |
+| `src/generator/__main__.py`                                   | 생성·수정 | Generator CLI 기반을 만들고, 기본 실행 적재·`--validate-only`·실행 가능 Profile 선택을 지원하도록 변경했다.           |
+| `sql/metadata/002_create_generator_metadata.sql`              | 생성·수정 | Generator 실행 Metadata Schema를 만들고, 성공 실행 입력만 Unique하게 보관해 실패 실행의 재시도를 허용하도록 변경했다. |
+| `sql/metadata/003_create_source_mutation_leases.sql`          | 생성      | `commerce_source` 원천 데이터 동시성 잠금 Table을 추가했다.                                                           |
+| `src/generator/__init__.py`                                   | 수정      | Generator Config와 현재 구현 Version을 Package API로 노출했다.                                                        |
+| `tests/generator/`                                            | 생성·수정 | Config, 결정적 ID/Hash, Metadata 입력과 동일 Snapshot 입력의 Bundle 재현 단위 테스트를 추가했다.                      |
+| `tests/integration/test_generator_metadata_integration.py`    | 생성      | 실제 PostgreSQL에 Generator 실행 이력이 저장되는지 검증하는 통합 테스트를 추가했다.                                   |
+| `tests/integration/test_generator_customer_integration.py`    | 생성      | Customer Record 저장 멱등성과 Membership 변경 시각을 검증하는 통합 테스트를 추가했다.                                 |
+| `tests/integration/test_generator_order_integration.py`       | 생성      | Order Bundle의 Insert/Skip, FK 오류 Rollback 통합 테스트를 추가했다.                                                  |
+| `tests/integration/test_generator_transition_integration.py`  | 생성      | 상태 전이 재실행, Business Timestamp, 오래된 Version 거부를 검증하는 통합 테스트를 추가했다.                          |
+| `tests/integration/test_generator_scenario_integration.py`    | 생성      | Service-level Scenario의 Business Event와 원천 변경 시각 분리를 검증하는 통합 테스트를 추가했다.                      |
+| `tests/integration/test_source_mutation_lease_integration.py` | 생성      | Generator·Warehouse 원천 데이터 동시성 잠금의 배타성, 해제, 만료 인수 Fencing을 검증하는 통합 테스트를 추가했다.      |
+| `tests/integration/test_generator_service_integration.py`     | 생성      | 실제 Generator 적재, 성공 결과 재사용, Warehouse의 원천 데이터 동시성 잠금 차단을 검증하는 통합 테스트를 추가했다.    |
+| `docs/phases/phase-02-deterministic-generator.md`             | 수정      | P2-01~22와 실행 통합 진행 상태, 파일별 변경 요약, 내부 용어의 한국어 표기를 기록했다.                                 |
 
 ## Definition of Done
 
@@ -197,7 +197,7 @@ AC-20과 AC-21의 전체 E2E 판정은 Phase 3의 Ingestion과 결합해 완료�
 - [x] 허용되지 않은 상태 전이가 0이다.
 - [x] Mutable Row의 `updated_at` 역행 또는 동일 위치 변경이 0이다.
 - [x] 복합 Entity 생성이 원자적으로 동작한다.
-- [x] Warehouse Lease 중 Generator 변경이 0이다.
+- [x] Warehouse의 원천 데이터 동시성 잠금 중 Generator 변경이 0이다.
 - [x] AC-15가 통과하고 AC-20/21용 Fixture가 준비됐다.
 
 ## 검증 증적
@@ -217,7 +217,7 @@ RUN_POSTGRES_INTEGRATION=1 uv run pytest -q tests/integration/test_generator_met
 ## Portfolio Evidence
 
 - 동일 입력을 두 번 실행한 Key Set/Hash 비교
-- Business Event Time과 Mutation Time이 다른 Late Arrival 예시
+- Business Event Time과 원천 변경 시각이 다른 Late Arrival 예시
 - Customer Identity와 Membership 변경 Timeline
 - Warehouse/Generator Lease 충돌 실행 기록
 
@@ -229,4 +229,4 @@ feat: add deterministic source generator
 
 ## 다음 Phase 인계
 
-Phase 3은 Seed와 Generator가 만든 `updated_at`/PK Cursor를 사용한다. Late Arrival Fixture와 Warehouse Lease 충돌 Fixture를 AC-20/21의 통합 검증에 재사용한다.
+Phase 3은 Seed와 Generator가 만든 `updated_at`/PK Cursor를 사용한다. Late Arrival Fixture와 Warehouse의 원천 데이터 동시성 잠금 충돌 Fixture를 AC-20/21의 통합 검증에 재사용한다.

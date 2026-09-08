@@ -111,18 +111,18 @@ Backfill 기본값은 Replay다. Re-extract는 Source 현재 상태가 과거 Sn
 
 ## Acceptance 연결
 
-| AC       | 담당 시나리오                              |
-| -------- | ------------------------------------------ |
-| AC-03    | R-01 Duplicate Batch                       |
-| AC-04    | R-02 Upload Failure, R-03 Metadata Failure |
-| AC-06    | R-04 CAS Conflict, R-05 Expired Lease      |
-| AC-07    | R-12 Backfill Replay, R-13 Re-extract 비교 |
-| AC-09/10 | R-10 Customer SCD2 Change                  |
-| AC-11/20 | R-08 Late Order, R-09 Late Payment         |
-| AC-13    | 모든 Scenario의 Metadata 조회              |
-| AC-21    | Warehouse Lease 중 Generator 충돌 시나리오 |
-| AC-23    | R-03/R-06/R-07 Commit Authority            |
-| AC-24    | Broken/Unsupported Schema Version 변형     |
+| AC       | 담당 시나리오                                                  |
+| -------- | -------------------------------------------------------------- |
+| AC-03    | R-01 Duplicate Batch                                           |
+| AC-04    | R-02 Upload Failure, R-03 Metadata Failure                     |
+| AC-06    | R-04 CAS Conflict, R-05 Expired Lease                          |
+| AC-07    | R-12 Backfill Replay, R-13 Re-extract 비교                     |
+| AC-09/10 | R-10 Customer SCD2 Change                                      |
+| AC-11/20 | R-08 Late Order, R-09 Late Payment                             |
+| AC-13    | 모든 Scenario의 Metadata 조회                                  |
+| AC-21    | Warehouse의 원천 데이터 동시성 잠금 중 Generator 충돌 시나리오 |
+| AC-23    | R-03/R-06/R-07 메타데이터 커밋 상태 기준                       |
+| AC-24    | Broken/Unsupported Schema Version 변형                         |
 
 AC-07은 동일 범위 Full Refresh와 Key별 값/Logical Hash가 같아야 한다.
 
@@ -147,6 +147,12 @@ AC-07은 동일 범위 Full Refresh와 Key별 값/Logical Hash가 같아야 한�
 - 원인/Error Type별 Troubleshooting 문서
 - Backfill/Full Refresh Hash 비교
 - 정상 복귀 후 E2E 재검증 기록
+
+## 파일·폴더별 변경 요약
+
+| 경로                                  | 변경 내용                                                                                                       |
+| ------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `docs/phases/phase-07-reliability.md` | 프로젝트 내부 잠금·커밋 상태 기준 용어를 한국어 중심으로 정리하고, Batch Identity·Logical Hash 표기는 유지했다. |
 
 ## Definition of Done
 

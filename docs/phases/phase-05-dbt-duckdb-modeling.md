@@ -12,7 +12,7 @@ Metadata에서 COMMITTED인 Bronze Object만 읽어 DuckDB에 Staging, Intermedi
 ## 핵심 계약
 
 - S3 Prefix Glob이 아니라 `control.bronze_files`의 COMMITTED Object 목록만 읽는다.
-- Source Prefix 제거, Timestamp Rename, 상태 Canonicalization은 Staging에서 처음 수행한다.
+- Source Prefix 제거, Timestamp Rename, 상태 표준화는 Staging에서 처음 수행한다.
 - Intermediate/Mart는 Raw Source Prefix를 직접 참조하지 않는다.
 - Mutable Entity는 `updated_at`, `_ingested_at`, `_batch_id` 순으로 Current를 결정한다.
 - 모든 Mart는 문서화된 Grain과 `unique_key`를 가진다.
@@ -68,7 +68,7 @@ dbt source macro
 
 - [ ] `P5-05` Product/Seller Naming과 Type 표준화
 - [ ] `P5-06` Order Item/Payment Naming과 Type 표준화
-- [ ] `P5-07` Order Timestamp Rename과 Canonical Status Mapping
+- [ ] `P5-07` Order Timestamp Rename과 표준화 상태값 매핑
 - [ ] `P5-08` Customer Business Key 변환과 Current 선택
 - [ ] `P5-09` Customer Observation Deduplication
 - [ ] `P5-10` Staging Mapping 자동 검증
@@ -190,7 +190,7 @@ AND order.purchase_at < COALESCE(dim_customer.valid_to, TIMESTAMPTZ 'infinity')
 | AC-11 | 3일 전 Late Order의 모델링 측 | 과거 Business Date Fact 재계산                |
 | AC-12 | Referential Integrity         | Fact FK/Unique 통과, 정상 Unknown 0           |
 | AC-19 | Staging Naming                | Alias/값 보존, Raw Prefix 직접 참조 0         |
-| AC-22 | Canonical Status              | 정의 Mapping 100% 일치                        |
+| AC-22 | 표준화 상태값                 | 정의 Mapping 100% 일치                        |
 
 추가 검증:
 
@@ -211,8 +211,8 @@ AND order.purchase_at < COALESCE(dim_customer.valid_to, TIMESTAMPTZ 'infinity')
 | PRD  | Section 16 Late Arrival, Backfill, Re-run |
 | ADR  | ADR-002 DuckDB Local Warehouse            |
 | ADR  | ADR-008 Staging Naming 표준화             |
-| ADR  | ADR-009 Observed Customer SCD2            |
-| ADR  | ADR-010 Metadata-backed Bronze Catalog    |
+| ADR  | ADR-009 관측 기반 고객 SCD2               |
+| ADR  | ADR-010 메타데이터 기반 Bronze 파일 목록  |
 | ADR  | ADR-011 Late Arrival 재처리 전략          |
 | FR   | FR-10 dbt Staging/Intermediate/Mart       |
 | FR   | FR-11 Star Schema/Fact Grain              |
@@ -228,6 +228,12 @@ AND order.purchase_at < COALESCE(dim_customer.valid_to, TIMESTAMPTZ 'infinity')
 - SCD2와 Temporal Join
 - Affected Key/Date 기반 Incremental 재계산
 - Mapping, Grain, Measure, SCD2, Full Refresh 비교 Test
+
+## 파일·폴더별 변경 요약
+
+| 경로                                          | 변경 내용                                                                                       |
+| --------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `docs/phases/phase-05-dbt-duckdb-modeling.md` | 프로젝트 내부 용어를 한국어 중심으로 정리하고, 코드·DB 식별자와 `Logical Hash` 표기는 유지했다. |
 
 ## Definition of Done
 

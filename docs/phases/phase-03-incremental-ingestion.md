@@ -20,7 +20,7 @@ Phase 3B: 6개 Table 일반화
     ↓
 Phase 3C: Quarantine과 Reject Threshold
     ↓
-Phase 3D: Lease, CAS, Source Freeze 동시성
+Phase 3D: 시간 제한 잠금, CAS, 수집 중 원천 변경 차단 동시성
 ```
 
 ## 핵심 계약
@@ -118,29 +118,29 @@ Commit Prefix가 아닌 `_smoke/{uuid}/`에서만 수행한다.
 - [x] `P3-06` Manifest 생성 및 `object_state=VERIFIED` 기록
 - [x] `P3-07` `bronze_objects=COMMITTED` Metadata Commit 구현
 - [x] `P3-08` Watermark Compare-and-swap 구현
-- [x] Final Object HEAD/Size/Checksum/Row Count 검증
+- [x] 최종 Bronze 객체 HEAD/Size/Checksum/Row Count 검증
 - [x] Final Key 충돌 실패와 Empty Batch에서 Watermark 유지 검증
 
 Commit 순서:
 
 ```text
-Global Source Lease
-→ Table Lease
+원천 데이터 동시성 잠금
+→ 테이블별 수집 잠금
 → 범위 고정
 → Extract / Validate
 → Local Parquet
-→ Final Object Upload
+→ 최종 Bronze 객체 Upload
 → HEAD / Checksum / Row Count 검증
 → Manifest VERIFIED
 → Metadata Transaction
    - bronze_objects COMMITTED
    - pipeline_runs SUCCESS
    - watermark CAS Update
-→ Table Lease 해제
-→ 모든 Table 종료 후 Global Source Lease 해제
+→ 테이블별 수집 잠금 해제
+→ 모든 Table 종료 후 원천 데이터 동시성 잠금 해제
 ```
 
-현재 `orders` 구현은 Final Object에 조건부 PUT을 사용하고, 기존 Key는 업로드 전에
+현재 `orders` 구현은 최종 Bronze 객체에 조건부 PUT을 사용하고, 기존 Key는 업로드 전에
 명시적으로 거부한다. Parquet는 Local 파일에서 SHA-256을 스트리밍 계산해 업로드한 뒤,
 HEAD의 Size·사용자 Metadata Checksum과 재수신한 Parquet의 Row Count를 확인한다. Metadata
 Commit 전 Manifest는 `VERIFIED` 상태로만 작성하며, Commit 실패 후 남은 Object의 정리는
@@ -166,7 +166,7 @@ table_batch_id = {batch_id}__{source_table}
 동일 Table Batch가 이미 Commit됐고 Range/Schema Version이 같으면 재사용한다. 다르면 `BATCH_IDENTITY_CONFLICT`로 실패한다.
 
 `TableIngestionRequest`와 `ingest_table()`은 6개 Table 모두에 공통으로 사용한다. 각 실행은
-설정 기반 Snapshot·검증·Quarantine·Local Parquet·Final Object·VERIFIED Manifest·Metadata
+설정 기반 Snapshot·검증·Quarantine·Local Parquet·최종 Bronze 객체·VERIFIED Manifest·Metadata
 Transaction·Watermark CAS를 동일한 순서로 처리한다. 기존 `ingest_orders()`는 이 공통 서비스의
 호환 래퍼다.
 
@@ -210,31 +210,31 @@ Watermark CAS와 같은 Metadata Transaction에서 기록한다.
 
 ## Phase 3D. 동시성, Catalog, Schema Version
 
-- [x] `P3-20` Table Lease 획득/TTL/Renewal/Release 구현
-- [x] `P3-21` Global Source Lease로 Warehouse Run 전체 Source Freeze
+- [x] `P3-20` 테이블별 수집 잠금 획득/TTL/Renewal/Release 구현
+- [x] `P3-21` 원천 데이터 동시성 잠금으로 Warehouse 수집 중 원천 변경 차단
 - [x] `P3-22` 동시 Extract에서 Lock 실패 Run의 Source Read/Object 생성 차단
 - [x] `P3-23` Orphan 탐지와 안전한 Reconciliation 구현
-- [x] `P3-24` Metadata COMMITTED Object만 읽는 Bronze File Catalog 구현
+- [x] `P3-24` Metadata COMMITTED Object만 읽는 메타데이터 기반 Bronze 파일 목록 구현
 - [x] `P3-25` `schema_version=1` 및 지원 Version Contract 구현
 - [x] `P3-26` 미지원 Version을 `SOURCE_CONTRACT_ERROR`로 차단
 
-Global Lease는 Generator와 Warehouse 사이의 Source Mutation을 막고, Table Lease는 Warehouse Run끼리 동일 Watermark를 갱신하는 것을 막는다.
+원천 데이터 동시성 잠금은 Generator와 Warehouse 사이의 원천 변경을 막고, 테이블별 수집 잠금은 Warehouse Run끼리 동일 Watermark를 갱신하는 것을 막는다.
 
-`warehouse_source_freeze()` Context는 하나의 Warehouse Run이 공유할 `WAREHOUSE` Global
-Lease를 획득·해제한다. `LeaseHeartbeat`는 5분마다 Global·Table Lease를 갱신하고 갱신 실패를
-Snapshot·Upload·Commit 직전에 수집 실패로 전파한다. `ingest_table()`과 `ingest_orders()`는 전달된
-`WAREHOUSE` Global Lease를 Fencing하고, 없으면 Table 실행 동안 자체 Lease를 획득한다. 이어서
-Watermark 행의 Table Lease를 확보한 뒤에만 Snapshot을 열며, Lease 실패 Run은 `FAILED`로 기록하고
-Source Read·Final Object 생성을 하지 않는다.
+`warehouse_source_freeze()` Context Manager는 하나의 Warehouse Run이 공유할 `WAREHOUSE` 원천 데이터
+동시성 잠금을 획득·해제한다. `LeaseHeartbeat`는 5분마다 원천 데이터 동시성 잠금과 테이블별 수집 잠금을
+갱신하고, 갱신 실패를 Snapshot·Upload·Commit 직전에 수집 실패로 전파한다. `ingest_table()`과
+`ingest_orders()`는 전달된 `WAREHOUSE` 원천 데이터 동시성 잠금을 fencing으로 확인하고, 없으면 Table 실행
+동안 자체 Lease를 획득한다. 이어서 Watermark 행의 테이블별 수집 잠금을 확보한 뒤에만 Snapshot을 열며,
+Lease 실패 Run은 `FAILED`로 기록하고 Source Read·최종 Bronze 객체 생성을 하지 않는다.
 
 `sync_bronze_catalog()`은 `bronze_objects.status='COMMITTED'` Object만 DuckDB
 `control.bronze_files`로 교체 동기화한다. Version 1만 지원하며, 미지원 Version은
 `SOURCE_CONTRACT_ERROR`로 DuckDB 쓰기 전에 차단한다.
 
-`find_orphan_candidates()`는 Bronze Final Parquet와 VERIFIED Manifest가 있으나 Metadata
+`find_orphan_candidates()`는 Bronze 최종 경로 Parquet와 VERIFIED Manifest가 있으나 Metadata
 `COMMITTED`가 없는 Object를 Manifest 유무와 함께 찾는다. `reconcile_orphan()`은 Manifest가 유실된
 후보, 이미 `FAILED`로 처리된 Run, Quarantine Object가 있는 Batch를 자동 복구하지 않는다. 나머지는
-Manifest HEAD SHA-256, Bronze HEAD Size·SHA-256, 재수신 Parquet Row Count·논리 Hash, 범위·Schema
+Manifest HEAD SHA-256, Bronze HEAD Size·SHA-256, 재수신 Parquet Row Count·Logical Hash, 범위·Schema
 Version, `RUNNING` Run, 현재 Watermark를 모두 검증한 뒤 Bronze Object·Pipeline Run·Watermark를
 하나의 Transaction으로 복원한다. Reject Quarantine는 Bronze보다 먼저 게시해 안전한 자동 복구 조건을
 보장한다.
@@ -256,14 +256,14 @@ uv run python -m src.ingestion \
   --tables orders
 ```
 
-| 항목 | 값 |
-| --- | --- |
-| Batch ID | `manual_initial_load__20260908T000000Z` |
-| Run ID | `e9fca84e-5bee-4b13-8cfb-29d92057adc4` |
-| 결과 | `SUCCESS`, 추출·Valid·Loaded 각각 99,441행, Reject 0행 |
-| Bronze Object | `bronze/orders/ingestion_date=2026-09-08/batch_id=manual_initial_load__20260908T000000Z/data.parquet` |
-| Manifest | 같은 경로의 `manifest.json`, `object_state=VERIFIED` |
-| Metadata | `bronze_objects=COMMITTED`, Watermark가 `2026-09-03T00:00:00Z / fffe41c64501cc87c801fd61db3f6244`까지 전진 |
+| 항목          | 값                                                                                                         |
+| ------------- | ---------------------------------------------------------------------------------------------------------- |
+| Batch ID      | `manual_initial_load__20260908T000000Z`                                                                    |
+| Run ID        | `e9fca84e-5bee-4b13-8cfb-29d92057adc4`                                                                     |
+| 결과          | `SUCCESS`, 추출·Valid·Loaded 각각 99,441행, Reject 0행                                                     |
+| Bronze Object | `bronze/orders/ingestion_date=2026-09-08/batch_id=manual_initial_load__20260908T000000Z/data.parquet`      |
+| Manifest      | 같은 경로의 `manifest.json`, `object_state=VERIFIED`                                                       |
+| Metadata      | `bronze_objects=COMMITTED`, Watermark가 `2026-09-03T00:00:00Z / fffe41c64501cc87c801fd61db3f6244`까지 전진 |
 
 Manifest·재수신 Parquet·PostgreSQL Metadata의 Row Count 99,441행과 Watermark 범위가 일치하는 것을
 확인했다.
@@ -287,8 +287,8 @@ uv run python -m src.ingestion \
   --tables orders
 ```
 
-`batch_id`는 `{dag_id}__{logical_date_utc:%Y%m%dT%H%M%SZ}`로 결정되고 Final Object Key에
-포함된다. 정상 재실행은 같은 Batch를 재사용하지만, Final Object만 남은 실패는 새 Batch로
+`batch_id`는 `{dag_id}__{logical_date_utc:%Y%m%dT%H%M%SZ}`로 결정되고 최종 Bronze 객체 Key에
+포함된다. 정상 재실행은 같은 Batch를 재사용하지만, 최종 Bronze 객체만 남은 실패는 새 Batch로
 덮어쓰지 않고 Orphan 절차를 먼저 점검한다.
 
 ### 2. 사전 점검
@@ -333,19 +333,19 @@ uv run python scripts/inspect_bronze.py \
 customers → products → sellers → orders → order_items → order_payments
 ```
 
-이 실행은 하나의 Warehouse Global Lease 안에서 수행해 Generator의 Source Mutation을 막는다.
+이 실행은 하나의 원천 데이터 동시성 잠금 안에서 수행해 Generator의 원천 변경을 막는다.
 모든 실행이 성공하면 `bronze_objects.status='COMMITTED'` Object만 DuckDB
 `control.bronze_files` Catalog에 동기화한다.
 
 ### 5. 실패 대응
 
-| 상황 | 처리 |
-| --- | --- |
-| `SUCCESS_NO_DATA` | 정상 종료다. Object와 Watermark는 바뀌지 않는다. |
-| Lease 충돌 | Source Read·Final Object 생성 없이 `FAILED`로 기록한다. 활성 실행 종료 후 재시도한다. |
-| Reject Rate 초과 | Batch 실패이며 Watermark는 유지한다. Quarantine을 점검한다. |
-| Final Object만 남음 | Orphan 후보를 검증한다. Reject 없는 `RUNNING` Run만 자동 복구 대상이다. |
-| Manifest 유실·Quarantine 존재·`FAILED` Run | 자동 복구하지 않고 수동 점검한다. |
+| 상황                                       | 처리                                                                                      |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------- |
+| `SUCCESS_NO_DATA`                          | 정상 종료다. Object와 Watermark는 바뀌지 않는다.                                          |
+| Lease 충돌                                 | Source Read·최종 Bronze 객체 생성 없이 `FAILED`로 기록한다. 활성 실행 종료 후 재시도한다. |
+| Reject Rate 초과                           | Batch 실패이며 Watermark는 유지한다. Quarantine을 점검한다.                               |
+| 최종 Bronze 객체만 남음                    | Orphan 후보를 검증한다. Reject 없는 `RUNNING` Run만 자동 복구 대상이다.                   |
+| Manifest 유실·Quarantine 존재·`FAILED` Run | 자동 복구하지 않고 수동 점검한다.                                                         |
 
 ## Object 구조
 
@@ -403,9 +403,9 @@ Phase 3에서는 Framework-independent Python Pipeline을 완성하고 Phase 4�
 | PRD  | Sections 8~12 증분, Identity, Bronze, Validation, Metadata       |
 | ADR  | ADR-001/003 SeaweedFS와 Parquet Bronze                           |
 | ADR  | ADR-004/005 Table별 증분과 Composite Watermark                   |
-| ADR  | ADR-010 Metadata-backed Bronze Catalog                           |
-| ADR  | ADR-013 Source Mutation/Extract 동시성                           |
-| ADR  | ADR-014 Metadata Commit Authority                                |
+| ADR  | ADR-010 메타데이터 기반 Bronze 파일 목록                         |
+| ADR  | ADR-013 원천 변경/수집 동시성                                    |
+| ADR  | ADR-014 메타데이터 커밋 상태 기준                                |
 | ADR  | ADR-015 Bronze Schema Evolution                                  |
 | FR   | FR-03~08 Incremental/Watermark/Lease/Metadata/Bronze/Idempotency |
 | FR   | FR-13 Backfill 입력 경계                                         |
@@ -419,67 +419,67 @@ Phase 3에서는 Framework-independent Python Pipeline을 완성하고 Phase 4�
 - SeaweedFS Client와 Compatibility Smoke Test
 - Bronze/Quarantine Manifest와 Commit Protocol
 - Lease/CAS/Reconciliation 구현
-- Metadata-backed Bronze File Catalog
+- 메타데이터 기반 Bronze 파일 목록
 - Schema Version Contract
 - AC-02~06, 08, 20, 21, 23, 24 자동 테스트
 
 ## 파일·폴더별 변경 요약
 
-| 경로                                                             | 변경 | 요약                                                                                                                  |
-| ---------------------------------------------------------------- | ---- | --------------------------------------------------------------------------------------------------------------------- |
-| `sql/metadata/004_create_ingestion_metadata.sql`                 | 생성 | Watermark, 수집 실행, Bronze Object, Quarantine Batch의 상태·제약조건·Index를 추가했다.                               |
-| `src/ingestion/metadata.py`                                      | 생성·수정 | 초기 Watermark, RUNNING/FAILED/SUCCESS_NO_DATA/SKIPPED_ALREADY_COMMITTED 상태 전이와 Bronze·Quarantine Object·Run·Watermark CAS의 원자적 Commit을 추가했다. |
-| `src/ingestion/config.py`                                        | 생성 | `INGESTION_PAGE_SIZE` 환경 설정과 기본값 50,000 검증을 추가했다.                                                      |
-| `src/ingestion/orders.py`                                        | 생성 | 동일 Read-only Snapshot에서 `orders` Upper Bound 고정과 Keyset Pagination을 추가했다.                                 |
-| `src/ingestion/bronze.py`                                        | 생성·수정 | 기존 `orders` Writer와 함께 6개 Table의 명시적 Arrow Schema·기술 Column·Zstandard Local Parquet Writer를 추가하고, 재수신 Parquet Byte에서도 PK 기준 Logical Hash를 다시 계산하게 했다.     |
-| `src/ingestion/storage.py`                                       | 생성 | SeaweedFS Path-style S3 Client, Bucket 준비, Final Object의 조건부 PUT·HEAD·Parquet 검증을 추가했다.                  |
-| `src/ingestion/tables.py`                                        | 생성 | 6개 Source Table의 전체 PK Tie-breaker, 증분 Cursor, Raw-compatible Arrow Schema와 공통 Bronze 기술 Column 계약을 추가했다. |
-| `src/ingestion/extract.py`                                       | 생성·수정 | 등록된 Table Config만 사용해 동일 Read-only Snapshot, 고정 Upper Bound, Composite Keyset Page를 읽고 Corruption 복제본도 원 Cursor로 검증할 수 있게 했다. |
-| `src/ingestion/references.py`                                    | 생성 | Child Page의 Orders·Products·Sellers Parent Key를 같은 Snapshot Connection에서 검사하며 공통 수집 서비스가 결과를 Reject로 연결한다. |
-| `src/ingestion/batch.py`                                         | 생성 | DAG·UTC Logical Date 기반 6개 Table Batch Identity와 Commit 범위·Schema 재사용/Conflict 판정을 추가했다. |
-| `src/ingestion/validation.py`                                    | 생성 | Source Schema·Type·Key·Batch Duplicate·Status Domain·Numeric·Broken Reference·Cursor 범위를 검사해 Valid/Reject를 분리하고 Schema·Cursor 계약 오류를 Batch Failure로 전환한다. |
-| `src/ingestion/lease.py`                                         | 생성·수정 | Watermark 기반 Table Lease의 획득·30분 TTL·Fencing·Release와 여러 Table이 공유하는 Warehouse Global Source Freeze Context를 추가하고, 5분 Heartbeat로 Global·Table Lease를 자동 갱신하게 했다. |
-| `src/ingestion/catalog.py`                                       | 생성 | Metadata의 COMMITTED Bronze Object만 DuckDB `control.bronze_files`로 원자적으로 동기화한다. |
-| `src/ingestion/schema.py`                                        | 생성 | 지원 Bronze Schema Version 1을 정의하고 미지원 Version을 `SOURCE_CONTRACT_ERROR`로 차단한다. |
-| `src/ingestion/orphan.py`                                        | 생성·수정 | Manifest 유실 Object도 수동 처리 후보로 탐지하고, Manifest·Object SHA-256/크기/Row Count/논리 Hash·Schema·RUNNING Run·Watermark가 모두 일치하며 Quarantine가 없는 Orphan만 트랜잭션으로 재조정하게 했다. |
-| `src/ingestion/quarantine.py`                                    | 생성 | `table_batch_id + 추출 순번` 결정 ID, `_detected_at`, Raw Payload·오류 Code Quarantine Parquet Writer와 5% Reject Threshold 정책을 추가했다. |
-| `src/ingestion/corruption.py`                                    | 생성 | Extract 후 Validation 전 복제본에 NULL Key, Invalid Status, 음수값, Type, Broken Reference 5종 오류를 결정적으로 주입한다. |
-| `src/ingestion/manifest.py`                                      | 생성·수정 | Credential·Local 경로·Metadata Commit 상태 없이 Bronze와 Quarantine의 `VERIFIED` Object 증적을 기록하는 Canonical JSON Manifest를 추가했다. |
-| `src/ingestion/service.py`                                       | 생성·수정 | 6개 Table 공통 수집 서비스를 추가해 검증·Quarantine·Final Object·Manifest·Metadata CAS를 연결하고, Heartbeat·Lease 충돌 FAILED 기록·공유 Global Lease를 적용했다. Quarantine는 Bronze보다 먼저 게시하며 `ingest_orders()`도 공유 Lease를 받는 호환 래퍼로 유지했다. |
-| `src/ingestion/__main__.py`                                      | 생성 | `--dag-id`, `--logical-date`, `--tables`로 선택 Table을 한 Warehouse Global Lease 안에서 수동 적재하고 결과 JSON을 출력하는 CLI를 추가했다. |
-| `scripts/inspect_bronze.py`                                      | 생성 | Source Table·Batch·Logical Date로 SeaweedFS Bronze Manifest, Parquet Schema·행 수·샘플 행을 조회하는 운영 보조 스크립트를 추가했다. |
-| `compose.yaml`                                                   | 수정 | SeaweedFS 4.45 S3 API Service, 영속 Volume과 Master Healthcheck를 추가했다.                                           |
-| `.env.example`                                                   | 수정 | SeaweedFS Host 환경 변수 Key를 추가했다.                                                                              |
-| `src/common/database.py`                                         | 수정 | 공통 환경 변수 Reader를 공개해 수집 설정도 로컬 `.env`를 사용할 수 있게 했다.                                         |
-| `tests/ingestion/test_config.py`                                 | 생성 | Page Size 기본값과 유효하지 않은 환경 변수 값을 검증한다.                                                             |
-| `tests/ingestion/test_bronze.py`                                 | 생성 | Local Parquet Schema, UTC microsecond Timestamp, 기술 컬럼, 압축·Row Group을 검증한다.                                |
-| `tests/ingestion/test_storage.py`                                | 생성 | SeaweedFS 연결 설정과 Object Storage Prefix 계약을 검증한다.                                                          |
-| `tests/ingestion/test_tables.py`                                 | 생성 | 6개 Table Cursor·PK·Arrow Schema와 금액 Decimal 정밀도 계약을 검증한다.                                               |
-| `tests/ingestion/test_batch.py`                                  | 생성 | 6개 Table 표준 Batch ID와 Cursor·Schema 재사용 범위 계약을 검증한다. |
-| `tests/ingestion/test_validation.py`                             | 생성 | Source 검증 오류와 Valid/Reject 분리, Cursor 범위 계약을 검증한다. |
-| `tests/ingestion/test_quarantine.py`                             | 생성 | 결정적 Quarantine Record, Raw Payload·오류 집계와 Reject Threshold를 검증한다. |
-| `tests/ingestion/test_corruption.py`                             | 생성 | 5종 In-memory Corruption의 Source 무오염, Valid/Reject·Error Code Count 분리를 검증한다. |
-| `tests/ingestion/test_table_bronze.py`                           | 생성·수정 | `orders` 외 Decimal Table도 공통 Bronze Writer와 실행 독립 Logical Hash를 사용하고, 재수신 Byte Hash가 Local Artifact Hash와 같은지 검증한다. |
-| `tests/ingestion/test_catalog.py`                                | 생성 | COMMITTED Snapshot만 DuckDB Catalog에 남기고 미지원 Schema Version이 쓰기 전에 차단되는지 검증한다. |
-| `tests/ingestion/test_schema.py`                                 | 생성 | Version 1 지원과 미지원 Version의 `SOURCE_CONTRACT_ERROR` 계약을 검증한다. |
-| `tests/ingestion/test_lease.py`                                  | 생성 | Heartbeat가 Global·Table Lease를 함께 갱신하고 갱신 실패를 수집 흐름에 전달하는지 검증한다. |
-| `tests/ingestion/test_orphan.py`                                 | 생성 | Manifest 유실 Final Parquet도 수동 처리 대상 Orphan 후보로 빠짐없이 탐지하는지 검증한다. |
-| `tests/ingestion/test_cli.py`                                    | 생성 | 수동 수집 CLI의 UTC Logical Date 검증, 선택 Table 실행, 공유 Global Lease와 결과 JSON 출력을 검증한다. |
-| `tests/ingestion/test_inspect_bronze.py`                         | 생성 | Bronze 조회 스크립트가 Manifest·Parquet 행 수·Schema·Sample을 읽고 음수 Sample 제한을 거부하는지 검증한다. |
-| `tests/ingestion/test_manifest.py`                               | 생성 | VERIFIED Manifest의 공개 필드와 Metadata Commit 경계를 검증한다.                                                      |
-| `tests/integration/test_ingestion_metadata_integration.py`       | 생성 | 성공 Commit과 Watermark 충돌 시 Rollback·실패 상태 전이를 PostgreSQL에서 검증했다.                                    |
-| `tests/integration/test_orders_incremental_integration.py`       | 생성 | `orders` Composite Cursor의 같은 Timestamp Page 경계와 Empty Range를 검증한다.                                        |
-| `tests/integration/test_orders_bronze_integration.py`            | 생성 | 실제 Source Page가 하나의 Local Bronze Parquet으로 기록되는지 검증한다.                                               |
-| `tests/integration/test_seaweedfs_s3_integration.py`             | 생성 | SeaweedFS S3 Lifecycle과 DuckDB Parquet Read 호환성을 검증한다.                                                       |
-| `tests/integration/test_orders_ingestion_service_integration.py` | 생성·수정 | 실제 컨테이너에서 성공 Commit, Final Key 충돌, Empty Batch, Batch 재사용·범위 Conflict, Threshold 이하 Reject의 Quarantine·Metadata Commit, Generator Lease 충돌 차단, Reject 0건 Orphan 복구와 Reject Orphan 거부를 검증한다.                         |
-| `tests/integration/test_table_ingestion_service_integration.py`  | 생성 | 실제 `customers`가 `orders`와 같은 공통 Bronze Commit Protocol로 수집되는지 검증한다. |
-| `tests/integration/test_mutable_table_extraction_integration.py` | 생성 | 실제 `customers`·`products`·`sellers`의 설정 기반 고정 범위 Keyset 추출을 검증한다. |
-| `tests/integration/test_child_table_extraction_integration.py` | 생성 | 실제 `order_items`·`order_payments`의 전체 복합 PK Keyset Page 경계를 검증한다. |
-| `tests/integration/test_child_parent_references_integration.py` | 생성 | 실제 Child Page가 동일 Snapshot의 모든 Parent Key를 참조하는지 검증한다. |
-| `tests/integration/test_validation_integration.py` | 생성 | 실제 `orders` Snapshot Page가 Schema·Domain·Cursor 검증에서 Reject 없이 통과하는지 검증한다. |
-| `tests/integration/test_ingestion_lease_integration.py` | 생성 | 실제 PostgreSQL에서 Table Lease의 충돌·갱신·해제와 Warehouse Global Source Freeze 해제를 검증한다. |
-| `docs/phases/phase-03-incremental-ingestion.md`                  | 수정 | Phase 3A Decimal, Phase 3B 공통 Commit, Phase 3C Quarantine, Phase 3D Lease·Catalog·Schema Contract 진행 상태와 실제 수동 수집 실행·검증·실패 대응 계획을 기록했다.                 |
-| `src/ingestion/`, `scripts/`, `tests/`                           | 수정 | Phase 3 관련 모듈·운영 스크립트·테스트의 docstring을 개조식 접두사 없이 짧은 일반 문장으로 통일했다. |
+| 경로                                                             | 변경      | 요약                                                                                                                                                                                                                                                                               |
+| ---------------------------------------------------------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sql/metadata/004_create_ingestion_metadata.sql`                 | 생성      | Watermark, 수집 실행, Bronze Object, Quarantine Batch의 상태·제약조건·Index를 추가했다.                                                                                                                                                                                            |
+| `src/ingestion/metadata.py`                                      | 생성·수정 | 초기 Watermark, RUNNING/FAILED/SUCCESS_NO_DATA/SKIPPED_ALREADY_COMMITTED 상태 전이와 Bronze·Quarantine Object·Run·Watermark CAS의 원자적 Commit을 추가했다.                                                                                                                        |
+| `src/ingestion/config.py`                                        | 생성      | `INGESTION_PAGE_SIZE` 환경 설정과 기본값 50,000 검증을 추가했다.                                                                                                                                                                                                                   |
+| `src/ingestion/orders.py`                                        | 생성      | 동일 Read-only Snapshot에서 `orders` Upper Bound 고정과 Keyset Pagination을 추가했다.                                                                                                                                                                                              |
+| `src/ingestion/bronze.py`                                        | 생성·수정 | 기존 `orders` Writer와 함께 6개 Table의 명시적 Arrow Schema·기술 Column·Zstandard Local Parquet Writer를 추가하고, 재수신 Parquet Byte에서도 PK 기준 Logical Hash를 다시 계산하게 했다.                                                                                            |
+| `src/ingestion/storage.py`                                       | 생성      | SeaweedFS Path-style S3 Client, Bucket 준비, 최종 Bronze 객체의 조건부 PUT·HEAD·Parquet 검증을 추가했다.                                                                                                                                                                           |
+| `src/ingestion/tables.py`                                        | 생성      | 6개 Source Table의 전체 PK Tie-breaker, 증분 Cursor, Raw-compatible Arrow Schema와 공통 Bronze 기술 Column 계약을 추가했다.                                                                                                                                                        |
+| `src/ingestion/extract.py`                                       | 생성·수정 | 등록된 Table Config만 사용해 동일 Read-only Snapshot, 고정 Upper Bound, Composite Keyset Page를 읽고 Corruption 복제본도 원 Cursor로 검증할 수 있게 했다.                                                                                                                          |
+| `src/ingestion/references.py`                                    | 생성      | Child Page의 Orders·Products·Sellers Parent Key를 같은 Snapshot Connection에서 검사하며 공통 수집 서비스가 결과를 Reject로 연결한다.                                                                                                                                               |
+| `src/ingestion/batch.py`                                         | 생성      | DAG·UTC Logical Date 기반 6개 Table Batch Identity와 Commit 범위·Schema 재사용/Conflict 판정을 추가했다.                                                                                                                                                                           |
+| `src/ingestion/validation.py`                                    | 생성      | Source Schema·Type·Key·Batch Duplicate·Status Domain·Numeric·Broken Reference·Cursor 범위를 검사해 Valid/Reject를 분리하고 Schema·Cursor 계약 오류를 Batch Failure로 전환한다.                                                                                                     |
+| `src/ingestion/lease.py`                                         | 생성·수정 | Watermark 기반 테이블별 수집 잠금의 획득·30분 TTL·Fencing·Release와 여러 Table이 공유하는 원천 데이터 동시성 잠금 Context Manager를 추가하고, 5분 Heartbeat로 두 잠금을 자동 갱신하게 했다.                                                                                        |
+| `src/ingestion/catalog.py`                                       | 생성      | Metadata의 COMMITTED Bronze Object만 DuckDB `control.bronze_files`로 원자적으로 동기화한다.                                                                                                                                                                                        |
+| `src/ingestion/schema.py`                                        | 생성      | 지원 Bronze Schema Version 1을 정의하고 미지원 Version을 `SOURCE_CONTRACT_ERROR`로 차단한다.                                                                                                                                                                                       |
+| `src/ingestion/orphan.py`                                        | 생성·수정 | Manifest 유실 Object도 수동 처리 후보로 탐지하고, Manifest·Object SHA-256/크기/Row Count/Logical Hash·Schema·RUNNING Run·Watermark가 모두 일치하며 Quarantine가 없는 Orphan만 트랜잭션으로 재조정하게 했다.                                                                        |
+| `src/ingestion/quarantine.py`                                    | 생성      | `table_batch_id + 추출 순번` 결정 ID, `_detected_at`, Raw Payload·오류 Code Quarantine Parquet Writer와 5% Reject Threshold 정책을 추가했다.                                                                                                                                       |
+| `src/ingestion/corruption.py`                                    | 생성      | Extract 후 Validation 전 복제본에 NULL Key, Invalid Status, 음수값, Type, Broken Reference 5종 오류를 결정적으로 주입한다.                                                                                                                                                         |
+| `src/ingestion/manifest.py`                                      | 생성·수정 | Credential·Local 경로·Metadata Commit 상태 없이 Bronze와 Quarantine의 `VERIFIED` Object 증적을 기록하는 정규화 JSON Manifest를 추가했다.                                                                                                                                           |
+| `src/ingestion/service.py`                                       | 생성·수정 | 6개 Table 공통 수집 서비스를 추가해 검증·Quarantine·최종 Bronze 객체·Manifest·Metadata CAS를 연결하고, Heartbeat·Lease 충돌 FAILED 기록·공유 원천 데이터 동시성 잠금을 적용했다. Quarantine는 Bronze보다 먼저 게시하며 `ingest_orders()`도 공유 Lease를 받는 호환 래퍼로 유지했다. |
+| `src/ingestion/__main__.py`                                      | 생성      | `--dag-id`, `--logical-date`, `--tables`로 선택 Table을 원천 데이터 동시성 잠금 안에서 수동 적재하고 결과 JSON을 출력하는 CLI를 추가했다.                                                                                                                                          |
+| `scripts/inspect_bronze.py`                                      | 생성      | Source Table·Batch·Logical Date로 SeaweedFS Bronze Manifest, Parquet Schema·행 수·샘플 행을 조회하는 운영 보조 스크립트를 추가했다.                                                                                                                                                |
+| `compose.yaml`                                                   | 수정      | SeaweedFS 4.45 S3 API Service, 영속 Volume과 Master Healthcheck를 추가했다.                                                                                                                                                                                                        |
+| `.env.example`                                                   | 수정      | SeaweedFS Host 환경 변수 Key를 추가했다.                                                                                                                                                                                                                                           |
+| `src/common/database.py`                                         | 수정      | 공통 환경 변수 Reader를 공개해 수집 설정도 로컬 `.env`를 사용할 수 있게 했다.                                                                                                                                                                                                      |
+| `tests/ingestion/test_config.py`                                 | 생성      | Page Size 기본값과 유효하지 않은 환경 변수 값을 검증한다.                                                                                                                                                                                                                          |
+| `tests/ingestion/test_bronze.py`                                 | 생성      | Local Parquet Schema, UTC microsecond Timestamp, 기술 컬럼, 압축·Row Group을 검증한다.                                                                                                                                                                                             |
+| `tests/ingestion/test_storage.py`                                | 생성      | SeaweedFS 연결 설정과 Object Storage Prefix 계약을 검증한다.                                                                                                                                                                                                                       |
+| `tests/ingestion/test_tables.py`                                 | 생성      | 6개 Table Cursor·PK·Arrow Schema와 금액 Decimal 정밀도 계약을 검증한다.                                                                                                                                                                                                            |
+| `tests/ingestion/test_batch.py`                                  | 생성      | 6개 Table 표준 Batch ID와 Cursor·Schema 재사용 범위 계약을 검증한다.                                                                                                                                                                                                               |
+| `tests/ingestion/test_validation.py`                             | 생성      | Source 검증 오류와 Valid/Reject 분리, Cursor 범위 계약을 검증한다.                                                                                                                                                                                                                 |
+| `tests/ingestion/test_quarantine.py`                             | 생성      | 결정적 Quarantine Record, Raw Payload·오류 집계와 Reject Threshold를 검증한다.                                                                                                                                                                                                     |
+| `tests/ingestion/test_corruption.py`                             | 생성      | 5종 In-memory Corruption의 Source 무오염, Valid/Reject·Error Code Count 분리를 검증한다.                                                                                                                                                                                           |
+| `tests/ingestion/test_table_bronze.py`                           | 생성·수정 | `orders` 외 Decimal Table도 공통 Bronze Writer와 실행 독립 Logical Hash를 사용하고, 재수신 Byte Hash가 Local Artifact Hash와 같은지 검증한다.                                                                                                                                      |
+| `tests/ingestion/test_catalog.py`                                | 생성      | COMMITTED Snapshot만 DuckDB Catalog에 남기고 미지원 Schema Version이 쓰기 전에 차단되는지 검증한다.                                                                                                                                                                                |
+| `tests/ingestion/test_schema.py`                                 | 생성      | Version 1 지원과 미지원 Version의 `SOURCE_CONTRACT_ERROR` 계약을 검증한다.                                                                                                                                                                                                         |
+| `tests/ingestion/test_lease.py`                                  | 생성      | Heartbeat가 원천 데이터 동시성 잠금과 테이블별 수집 잠금을 함께 갱신하고 갱신 실패를 수집 흐름에 전달하는지 검증한다.                                                                                                                                                              |
+| `tests/ingestion/test_orphan.py`                                 | 생성      | Manifest 유실 최종 경로 Parquet도 수동 처리 대상 Orphan 후보로 빠짐없이 탐지하는지 검증한다.                                                                                                                                                                                       |
+| `tests/ingestion/test_cli.py`                                    | 생성      | 수동 수집 CLI의 UTC Logical Date 검증, 선택 Table 실행, 공유 원천 데이터 동시성 잠금과 결과 JSON 출력을 검증한다.                                                                                                                                                                  |
+| `tests/ingestion/test_inspect_bronze.py`                         | 생성      | Bronze 조회 스크립트가 Manifest·Parquet 행 수·Schema·Sample을 읽고 음수 Sample 제한을 거부하는지 검증한다.                                                                                                                                                                         |
+| `tests/ingestion/test_manifest.py`                               | 생성      | VERIFIED Manifest의 공개 필드와 Metadata Commit 경계를 검증한다.                                                                                                                                                                                                                   |
+| `tests/integration/test_ingestion_metadata_integration.py`       | 생성      | 성공 Commit과 Watermark 충돌 시 Rollback·실패 상태 전이를 PostgreSQL에서 검증했다.                                                                                                                                                                                                 |
+| `tests/integration/test_orders_incremental_integration.py`       | 생성      | `orders` Composite Cursor의 같은 Timestamp Page 경계와 Empty Range를 검증한다.                                                                                                                                                                                                     |
+| `tests/integration/test_orders_bronze_integration.py`            | 생성      | 실제 Source Page가 하나의 Local Bronze Parquet으로 기록되는지 검증한다.                                                                                                                                                                                                            |
+| `tests/integration/test_seaweedfs_s3_integration.py`             | 생성      | SeaweedFS S3 Lifecycle과 DuckDB Parquet Read 호환성을 검증한다.                                                                                                                                                                                                                    |
+| `tests/integration/test_orders_ingestion_service_integration.py` | 생성·수정 | 실제 컨테이너에서 성공 Commit, Final Key 충돌, Empty Batch, Batch 재사용·범위 Conflict, Threshold 이하 Reject의 Quarantine·Metadata Commit, Generator와 원천 데이터 동시성 잠금 충돌 차단, Reject 0건 Orphan 복구와 Reject Orphan 거부를 검증한다.                                 |
+| `tests/integration/test_table_ingestion_service_integration.py`  | 생성      | 실제 `customers`가 `orders`와 같은 공통 Bronze Commit Protocol로 수집되는지 검증한다.                                                                                                                                                                                              |
+| `tests/integration/test_mutable_table_extraction_integration.py` | 생성      | 실제 `customers`·`products`·`sellers`의 설정 기반 고정 범위 Keyset 추출을 검증한다.                                                                                                                                                                                                |
+| `tests/integration/test_child_table_extraction_integration.py`   | 생성      | 실제 `order_items`·`order_payments`의 전체 복합 PK Keyset Page 경계를 검증한다.                                                                                                                                                                                                    |
+| `tests/integration/test_child_parent_references_integration.py`  | 생성      | 실제 Child Page가 동일 Snapshot의 모든 Parent Key를 참조하는지 검증한다.                                                                                                                                                                                                           |
+| `tests/integration/test_validation_integration.py`               | 생성      | 실제 `orders` Snapshot Page가 Schema·Domain·Cursor 검증에서 Reject 없이 통과하는지 검증한다.                                                                                                                                                                                       |
+| `tests/integration/test_ingestion_lease_integration.py`          | 생성      | 실제 PostgreSQL에서 테이블별 수집 잠금의 충돌·갱신·해제와 원천 데이터 동시성 잠금 해제를 검증한다.                                                                                                                                                                                 |
+| `docs/phases/phase-03-incremental-ingestion.md`                  | 수정      | Phase 3A Decimal, Phase 3B 공통 Commit, Phase 3C Quarantine, Phase 3D 잠금·Catalog·Schema Contract 진행 상태와 실제 수동 수집 실행·검증·실패 대응 계획, 내부 용어의 한국어 표기를 기록했다.                                                                                        |
+| `src/ingestion/`, `scripts/`, `tests/`                           | 수정      | Phase 3 관련 모듈·운영 스크립트·테스트의 docstring을 개조식 접두사 없이 짧은 일반 문장으로 통일했다.                                                                                                                                                                               |
 
 ## Definition of Done
 
@@ -489,7 +489,7 @@ Phase 3에서는 Framework-independent Python Pipeline을 완성하고 Phase 4�
 - [x] 실패한 Table Watermark가 전진하지 않는다.
 - [x] 동일 Batch 재실행이 중복 Object/Row를 만들지 않는다.
 - [x] Reject와 Batch Failure 정책이 구분된다.
-- [x] Global/Table Lease와 Watermark CAS가 경쟁 조건을 차단한다.
+- [x] 원천 데이터 동시성 잠금과 테이블별 수집 잠금, Watermark CAS가 경쟁 조건을 차단한다.
 - [x] Phase 3의 모든 AC가 재현 가능한 명령으로 통과한다.
 
 ## Portfolio Evidence
@@ -500,7 +500,7 @@ Phase 3에서는 Framework-independent Python Pipeline을 완성하고 Phase 4�
 - Manifest VERIFIED와 Metadata COMMITTED 차이
 - Orphan Reconciliation 성공/거부 사례
 - Quarantine Record와 Error Count
-- Global/Table Lease 동시성 Timeline
+- 원천 데이터 동시성 잠금과 테이블별 수집 잠금 동시성 Timeline
 - Bronze Schema Version Contract Test
 
 ## 권장 Commit
