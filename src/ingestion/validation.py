@@ -16,7 +16,7 @@ from src.ingestion.tables import TableConfig
 
 @dataclass(frozen=True)
 class RejectedRecord:
-    """- Quarantine으로 보낼 Record와 Batch 내 순번·오류 Code를 보관한다."""
+    """Quarantine으로 보낼 Record와 Batch 내 순번·오류 Code를 보관한다."""
 
     record: SourceRecord
     ordinal: int
@@ -25,19 +25,19 @@ class RejectedRecord:
 
 @dataclass(frozen=True)
 class ValidatedPage:
-    """- 한 Source Page의 Valid Record와 Row 단위 Reject를 분리한다."""
+    """한 Source Page의 Valid Record와 Row 단위 Reject를 분리한다."""
 
     valid_records: tuple[SourceRecord, ...]
     rejected_records: tuple[RejectedRecord, ...]
 
 
 class SourceContractError(RuntimeError):
-    """- Schema 또는 고정 Cursor 범위를 위반한 Batch 계약 오류다."""
+    """Schema 또는 고정 Cursor 범위를 위반한 Batch 계약 오류다."""
 
 
 @dataclass
 class ValidationPipeline:
-    """- 고정 Cursor 범위 안에서 Batch 중복을 추적하는 Page 검증기다."""
+    """고정 Cursor 범위 안에서 Batch 중복을 추적하는 Page 검증기다."""
 
     config: TableConfig
     watermark_before: CursorPosition
@@ -48,9 +48,7 @@ class ValidationPipeline:
     def validate_page(
         self, page: SourcePage, *, broken_reference_cursors: frozenset[tuple[object, ...]] = frozenset()
     ) -> ValidatedPage:
-        """- 정의된 순서로 Page를 검사해 Valid와 Reject를 분리한다.
-        - Schema·Cursor 계약 오류는 즉시 Batch 오류로 승격한다.
-        """
+        """정의된 순서로 Page를 검사해 Valid와 Reject를 분리하고 계약 오류는 Batch 오류로 승격한다."""
         if not page.records or page.records[0].config != self.config:
             raise ValueError("Validation page must use the pipeline table config")
         valid: list[SourceRecord] = []
@@ -68,7 +66,7 @@ class ValidationPipeline:
     def _validate_record(
         self, record: SourceRecord, broken_reference_cursors: frozenset[tuple[object, ...]]
     ) -> list[str]:
-        """- Schema부터 Cursor 범위까지의 Record 오류를 정해진 순서로 수집한다."""
+        """Schema부터 Cursor 범위까지의 Record 오류를 정해진 순서로 수집한다."""
         values = record.values
         errors = _schema_and_type_errors(self.config, values)
         if "SCHEMA_MISMATCH" in errors:
@@ -89,7 +87,7 @@ class ValidationPipeline:
 
 
 def _schema_and_type_errors(config: TableConfig, values: Mapping[str, object]) -> list[str]:
-    """- Source Column 집합·필수값·Arrow Type 호환성 오류를 순서대로 반환한다."""
+    """Source Column 집합·필수값·Arrow Type 호환성 오류를 순서대로 반환한다."""
     if tuple(values) != config.source_column_names:
         return ["SCHEMA_MISMATCH"]
     errors: list[str] = []
@@ -105,7 +103,7 @@ def _schema_and_type_errors(config: TableConfig, values: Mapping[str, object]) -
 
 
 def _domain_and_numeric_errors(config: TableConfig, values: Mapping[str, object]) -> list[str]:
-    """- Source Status Domain과 Numeric 최소값 위반을 검증한다."""
+    """Source Status Domain과 Numeric 최소값 위반을 검증한다."""
     errors: list[str] = []
     for column, domain in config.status_domains.items():
         if values.get(column) is not None and values[column] not in domain:
@@ -119,7 +117,7 @@ def _domain_and_numeric_errors(config: TableConfig, values: Mapping[str, object]
 
 
 def _matches_arrow_type(value: object, type: pa.DataType) -> bool:
-    """- PostgreSQL Driver 값이 지정 Arrow Source Type과 호환되는지 확인한다."""
+    """PostgreSQL Driver 값이 지정 Arrow Source Type과 호환되는지 확인한다."""
     if pa.types.is_string(type):
         return isinstance(value, str)
     if pa.types.is_integer(type):
@@ -132,7 +130,7 @@ def _matches_arrow_type(value: object, type: pa.DataType) -> bool:
 
 
 def _cursor_in_range(cursor: CursorPosition, lower: CursorPosition, upper: CursorPosition) -> bool:
-    """- Cursor가 `(lower, upper]` 고정 추출 범위에 있는지 확인한다."""
+    """Cursor가 `(lower, upper]` 고정 추출 범위에 있는지 확인한다."""
     if cursor.timestamp is None:
         return False
     candidate = (cursor.timestamp, cursor.keys)

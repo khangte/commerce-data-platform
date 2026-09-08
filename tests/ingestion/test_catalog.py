@@ -1,4 +1,4 @@
-"""- Metadata-backed Bronze File Catalog와 Schema Contract를 검증한다."""
+"""Metadata-backed Bronze File Catalog와 Schema Contract를 검증한다."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from src.ingestion.schema import SourceContractError
 
 
 def test_catalog_replaces_entries_with_committed_metadata_snapshot(monkeypatch, tmp_path) -> None:
-    """- 동기화는 전달된 Commit Snapshot만 DuckDB Catalog에 남긴다."""
+    """동기화는 전달된 Commit Snapshot만 DuckDB Catalog에 남긴다."""
     entries = (
         BronzeCatalogEntry(
             "orders",
@@ -42,7 +42,7 @@ def test_catalog_replaces_entries_with_committed_metadata_snapshot(monkeypatch, 
 
 
 def test_catalog_stops_before_duckdb_write_for_unsupported_schema_version(monkeypatch, tmp_path) -> None:
-    """- Metadata에 미지원 Version이 있으면 SOURCE_CONTRACT_ERROR로 동기화를 차단한다."""
+    """Metadata에 미지원 Version이 있으면 SOURCE_CONTRACT_ERROR로 동기화를 차단한다."""
     monkeypatch.setattr(
         catalog,
         "_committed_entries",

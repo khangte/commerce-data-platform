@@ -1,4 +1,4 @@
-"""- Warehouse Table Lease와 Global Source Freeze의 PostgreSQL 계약을 검증한다."""
+"""Warehouse Table Lease와 Global Source Freeze의 PostgreSQL 계약을 검증한다."""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ pytestmark = pytest.mark.integration
     reason="Set RUN_POSTGRES_INTEGRATION=1 after starting the Phase 1 PostgreSQL container.",
 )
 def test_table_lease_blocks_other_owner_then_renews_and_releases() -> None:
-    """- 활성 Lease는 다른 Owner를 차단하고 갱신·해제 후 다음 Owner를 허용한다."""
+    """활성 Lease는 다른 Owner를 차단하고 갱신·해제 후 다음 Owner를 허용한다."""
     settings = PostgresSettings.from_environment()
     now = datetime(2026, 9, 7, tzinfo=UTC)
     pipeline_name = f"test_table_lease_{uuid.uuid4().hex}"
@@ -69,7 +69,7 @@ def test_table_lease_blocks_other_owner_then_renews_and_releases() -> None:
     reason="Set RUN_POSTGRES_INTEGRATION=1 after starting the Phase 1 PostgreSQL container.",
 )
 def test_warehouse_source_freeze_releases_global_lease_after_all_table_work() -> None:
-    """- Warehouse Context 종료 후 같은 Global Source Lease를 새 Owner가 다시 획득할 수 있다."""
+    """Warehouse Context 종료 후 같은 Global Source Lease를 새 Owner가 다시 획득할 수 있다."""
     settings = PostgresSettings.from_environment()
     now = datetime(2026, 9, 7, tzinfo=UTC)
     with warehouse_source_freeze(settings, owner_id=uuid.uuid4(), now=now) as lease:

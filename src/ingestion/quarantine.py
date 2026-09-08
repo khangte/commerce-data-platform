@@ -31,12 +31,12 @@ QUARANTINE_SCHEMA = pa.schema(
 
 
 class RejectRateExceededError(RuntimeError):
-    """- Reject 비율이 허용 Threshold를 넘을 때 발생한다."""
+    """Reject 비율이 허용 Threshold를 넘을 때 발생한다."""
 
 
 @dataclass(frozen=True)
 class QuarantineWriteContext:
-    """- 한 Table Batch Quarantine 기술 Column의 고정 값이다."""
+    """한 Table Batch Quarantine 기술 Column의 고정 값이다."""
 
     batch_id: str
     run_id: uuid.UUID
@@ -44,13 +44,13 @@ class QuarantineWriteContext:
 
     @property
     def table_batch_id(self) -> str:
-        """- Metadata와 결정적 Record ID에 쓸 Table Batch ID를 반환한다."""
+        """Metadata와 결정적 Record ID에 쓸 Table Batch ID를 반환한다."""
         return f"{self.batch_id}__{self.source_table}"
 
     source_table: str = ""
 
     def __post_init__(self) -> None:
-        """- Table 이름과 UTC 탐지 시각을 검증한다."""
+        """Table 이름과 UTC 탐지 시각을 검증한다."""
         if not self.batch_id.strip() or not self.source_table.strip():
             raise ValueError("batch_id and source_table must not be empty")
         if self.detected_at.tzinfo is None or self.detected_at.utcoffset() != UTC.utcoffset(None):
@@ -59,7 +59,7 @@ class QuarantineWriteContext:
 
 @dataclass(frozen=True)
 class LocalQuarantineArtifact:
-    """- 닫힌 Local Quarantine Parquet의 경로·Row Count·오류 집계다."""
+    """닫힌 Local Quarantine Parquet의 경로·Row Count·오류 집계다."""
 
     path: Path
     row_count: int
@@ -67,17 +67,17 @@ class LocalQuarantineArtifact:
 
 
 def quarantine_record_id(table_batch_id: str, ordinal: int) -> str:
-    """- Table Batch ID와 추출 순번으로 PRD의 결정적 UUIDv5를 만든다."""
+    """Table Batch ID와 추출 순번으로 PRD의 결정적 UUIDv5를 만든다."""
     if not table_batch_id.strip() or ordinal < 0:
         raise ValueError("table_batch_id must not be empty and ordinal must be non-negative")
     return str(uuid.uuid5(QUARANTINE_RECORD_NAMESPACE, f"{table_batch_id}:{ordinal}"))
 
 
 class QuarantineWriter:
-    """- Reject Record를 Raw Payload와 Error Code가 있는 Zstd Parquet으로 기록한다."""
+    """Reject Record를 Raw Payload와 Error Code가 있는 Zstd Parquet으로 기록한다."""
 
     def __init__(self, output_path: Path, context: QuarantineWriteContext) -> None:
-        """- 기존 Local Artifact 덮어쓰기를 막고 새 Quarantine Writer를 연다."""
+        """기존 Local Artifact 덮어쓰기를 막고 새 Quarantine Writer를 연다."""
         if output_path.exists():
             raise FileExistsError(f"Local Quarantine Parquet already exists: {output_path}")
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -89,7 +89,7 @@ class QuarantineWriter:
         self._closed = False
 
     def write_rejected_records(self, rejected_records: tuple[RejectedRecord, ...]) -> None:
-        """- 한 검증 Page의 Reject를 명시적 Schema Quarantine Row로 기록한다."""
+        """한 검증 Page의 Reject를 명시적 Schema Quarantine Row로 기록한다."""
         if self._closed:
             raise RuntimeError("Quarantine Writer is already closed")
         if not rejected_records:
@@ -102,7 +102,7 @@ class QuarantineWriter:
         )
 
     def close(self) -> LocalQuarantineArtifact:
-        """- Writer를 닫고 Local Artifact와 결정적 오류 Code Count를 반환한다."""
+        """Writer를 닫고 Local Artifact와 결정적 오류 Code Count를 반환한다."""
         if self._closed:
             raise RuntimeError("Quarantine Writer is already closed")
         self._writer.close()
@@ -113,7 +113,7 @@ class QuarantineWriter:
 
 
 def assert_reject_rate(*, total_rows: int, rejected_rows: int) -> None:
-    """- Reject 비율이 5% 이하면 통과시키고 초과하면 Batch 실패로 전환한다."""
+    """Reject 비율이 5% 이하면 통과시키고 초과하면 Batch 실패로 전환한다."""
     if total_rows < 0 or rejected_rows < 0 or rejected_rows > total_rows:
         raise ValueError("Reject counts must be within the total row count")
     if total_rows and rejected_rows / total_rows > MAX_REJECT_RATE:
@@ -121,7 +121,7 @@ def assert_reject_rate(*, total_rows: int, rejected_rows: int) -> None:
 
 
 def _quarantine_row(rejected: RejectedRecord, context: QuarantineWriteContext) -> dict[str, object]:
-    """- Type 오류도 보존할 수 있는 JSON Raw Payload Quarantine Row를 만든다."""
+    """Type 오류도 보존할 수 있는 JSON Raw Payload Quarantine Row를 만든다."""
     return {
         "_record_id": quarantine_record_id(context.table_batch_id, rejected.ordinal),
         "_source_table": rejected.record.config.source_table,
@@ -134,14 +134,14 @@ def _quarantine_row(rejected: RejectedRecord, context: QuarantineWriteContext) -
 
 
 def _canonical_json(value: object) -> str:
-    """- Datetime·Decimal을 안정적인 문자열로 바꾼 Raw Payload JSON을 반환한다."""
+    """Datetime·Decimal을 안정적인 문자열로 바꾼 Raw Payload JSON을 반환한다."""
     return json.dumps(
         value, default=_json_default, ensure_ascii=False, separators=(",", ":"), sort_keys=True
     )
 
 
 def _json_default(value: object) -> str:
-    """- Quarantine Raw Payload의 JSON 비기본 Type을 결정적으로 직렬화한다."""
+    """Quarantine Raw Payload의 JSON 비기본 Type을 결정적으로 직렬화한다."""
     if isinstance(value, datetime):
         return value.astimezone(UTC).isoformat()
     if isinstance(value, Decimal):
