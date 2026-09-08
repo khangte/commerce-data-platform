@@ -239,6 +239,7 @@ data/generated/*
 !data/generated/.gitkeep
 data/warehouse/*
 !data/warehouse/.gitkeep
-airflow/logs/
+airflow/logs/*
+!airflow/logs/.gitkeep
 dbt/target/
 dbt/dbt_packages/

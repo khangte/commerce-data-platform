@@ -1,5 +1,47 @@
 name: commerce-data-platform
 
+x-airflow-common: &airflow-common
+  build:
+    context: .
+    dockerfile: airflow/Dockerfile
+  image: commerce-data-platform-airflow:3.3.1
+  environment:
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__CORE__PARALLELISM: "${AIRFLOW_PARALLELISM:-6}"
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: "postgresql+psycopg://${AIRFLOW_DB_USER}:${AIRFLOW_DB_PASSWORD}@postgres:5432/${AIRFLOW_METADATA_DB}"
+    POSTGRES_HOST: postgres
+    POSTGRES_PORT: "5432"
+    SEAWEEDFS_HOST: seaweedfs
+    SEAWEEDFS_S3_PORT: "8333"
+    SEAWEEDFS_ACCESS_KEY: ${SEAWEEDFS_ACCESS_KEY}
+    SEAWEEDFS_SECRET_KEY: ${SEAWEEDFS_SECRET_KEY}
+    SEAWEEDFS_BUCKET: ${SEAWEEDFS_BUCKET}
+    COMMERCE_SOURCE_DB: ${COMMERCE_SOURCE_DB}
+    SOURCE_DB_USER: ${SOURCE_DB_USER}
+    SOURCE_DB_PASSWORD: ${SOURCE_DB_PASSWORD}
+    PIPELINE_METADATA_DB: ${PIPELINE_METADATA_DB}
+    PIPELINE_DB_USER: ${PIPELINE_DB_USER}
+    PIPELINE_DB_PASSWORD: ${PIPELINE_DB_PASSWORD}
+    INGESTION_PAGE_SIZE: ${INGESTION_PAGE_SIZE:-50000}
+    WAREHOUSE_DAG_SCHEDULE: ${WAREHOUSE_DAG_SCHEDULE:-}
+    PYTHONPATH: /opt/airflow/project
+  user: "${AIRFLOW_UID:-50000}:0"
+  working_dir: /opt/airflow/project
+  volumes:
+    - ./airflow/dags:/opt/airflow/dags:ro
+    - ./airflow/logs:/opt/airflow/logs
+    - ./src:/opt/airflow/project/src:ro
+    - ./sql:/opt/airflow/project/sql:ro
+    - ./data/warehouse:/opt/airflow/project/data/warehouse
+  depends_on:
+    postgres:
+      condition: service_healthy
+    seaweedfs:
+      condition: service_healthy
+  profiles:
+    - airflow
+
 services:
   postgres:
     image: postgres:18.6
@@ -50,6 +92,20 @@ services:
       retries: 20
       start_period: 10s
     restart: unless-stopped
+
+  airflow-api-server:
+    <<: *airflow-common
+    command: api-server
+    ports:
+      - "${AIRFLOW_PORT:-8080}:8080"
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+
+  airflow-dag-processor:
+    <<: *airflow-common
+    command: dag-processor
 
 volumes:
   postgres_data:
