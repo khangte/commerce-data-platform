@@ -259,10 +259,10 @@ Manifest Object를 재다운로드해 HEAD Checksum과 `orphan.py`가 쓰던 Man
 
 ### 4. Retry와 오류 분류
 
-- [ ] `P4-14` Retryable/Non-retryable Error Taxonomy 구현
-- [ ] `P4-15` Exponential Backoff와 최대 Retry 설정
-- [ ] `P4-16` 부분 성공 재실행과 COMMITTED Table 재사용 구현
-- [ ] `P4-17` Task Timeout/종료 시 Lease 만료 또는 해제 검증
+- [x] `P4-14` Retryable/Non-retryable Error Taxonomy 구현
+- [x] `P4-15` Exponential Backoff와 최대 Retry 설정
+- [x] `P4-16` 부분 성공 재실행과 COMMITTED Table 재사용 구현
+- [x] `P4-17` Task Timeout/종료 시 Lease 만료 또는 해제 검증
 
 재시도 가능:
 
@@ -289,6 +289,30 @@ DBT_BUILD_ERROR / DBT_TEST_ERROR
 기본값은 PRD를 따라 `retries=2`, `retry_delay=60초`, exponential backoff, `max_retry_delay=10분`으로
 시작한다. 구현 시 예외 타입을 위 Error Type으로 변환하는 단일 분류 함수를 두고, 최종 예외·재시도 횟수·
 다음 재시도 시각을 Task Log와 `pipeline_runs`에 남긴다.
+
+`src/ingestion/errors.py`에 `classify_error()`/`is_retryable()`을 신설했다. `LeaseUnavailableError`/
+`TableLeaseUnavailableError`는 `LEASE_UNAVAILABLE`, `psycopg.OperationalError`/`ConnectionError`/
+`TimeoutError`는 `SOURCE_CONNECTION_ERROR`로 분류해 재시도 가능 목록에 둔다. `LeaseOwnershipLostError`/
+`TableLeaseOwnershipLostError`/`SourceContractError`(schema·validation 두 정의 모두)/
+`RejectRateExceededError`/`BronzeCommitVerificationError`/`WatermarkConflictError`/
+`BatchIdentityConflictError`는 각각 문서의 Non-retryable Error Type으로 분류하고, 그 외 예외는
+`CONFIGURATION_ERROR`로 처리한다. `warehouse_pipeline_dag`/`source_simulation_dag`의 Task는 Phase 3/2
+API 호출을 try/except로 감싸 `classify_error()` 결과가 Retryable이면 원래 예외를 그대로 다시 던져 Airflow
+기본 재시도(`retries=2`, `retry_delay=60초`, Exponential Backoff, `max_retry_delay=10분`,
+`execution_timeout=20분`)를 적용하고, Non-retryable이면 `AirflowFailException`으로 감싸 재시도 없이
+즉시 실패시킨다. Task Timeout(20분)은 원천 데이터 동시성 잠금 TTL(30분)보다 짧게 둬 Task가 비정상
+종료돼도 Lease가 TTL로 자연 만료되도록 했다.
+
+검증:
+
+- `classify_error()`가 문서에 정의된 6개 Non-retryable 예외(`BatchIdentityConflictError`,
+  `WatermarkConflictError`, 두 `SourceContractError`, `BronzeCommitVerificationError`,
+  `RejectRateExceededError`)를 각각 올바른 Error Type으로 분류하고 `is_retryable()`이 모두 `False`를
+  반환함을 확인했다. `LeaseUnavailableError`/`ConnectionError`는 `is_retryable() == True`,
+  `LeaseOwnershipLostError`/`ValueError`는 `False`임을 확인했다.
+- `uv run pytest tests/` 84 passed로 회귀가 없음을 확인했다.
+- `airflow dags list-import-errors`로 Import Error 0건, `airflow dags test`로 두 DAG 모두 재시도
+  로직 추가 후에도 기존과 동일하게 `success`로 끝남을 재확인했다.
 
 ### 5. XCom 제한
 
@@ -431,4 +455,7 @@ Project/CLI와 Test를 완성한 뒤, Warehouse DAG의 `dbt_build` 호출 경계
 | `src/ingestion/verification.py`                 | 생성 | Batch의 6개 Table이 모두 COMMITTED이고 Manifest/Object/Hash/Row Count/Watermark가 일치하는지 재확인하는 `verify_bronze_commit()`을 추가했다. |
 | `src/ingestion/manifest.py`                     | 수정 | `orphan.py`가 쓰던 Manifest 파싱·Type 검증 로직을 `parse_bronze_manifest_payload()`로 공개해 `verification.py`와 공유하도록 정리했다. |
 | `src/ingestion/orphan.py`                       | 수정 | 중복이던 Manifest 파싱·Type 검증 Private 함수를 제거하고 `manifest.py`의 공개 함수를 사용하도록 정리했다. |
-| `docs/phases/phase-04-airflow-orchestration.md` | 수정 | P4-01/P4-02/P4-05~P4-10/P4-12/P4-13 완료 상태와 Airflow Runtime 구성 범위, Fresh Boot·DAG 실행 검증 결과를 기록했다. |
+| `src/ingestion/errors.py`                       | 생성 | 예외를 문서 정의 Retryable/Non-retryable Error Type으로 변환하는 `classify_error()`/`is_retryable()`을 추가했다. |
+| `airflow/dags/warehouse_pipeline_dag.py`        | 수정 | `default_args`로 재시도·Backoff·Timeout을 설정하고, 각 Task를 `classify_error()` 기반으로 Retryable은 재시도, Non-retryable은 `AirflowFailException`으로 즉시 실패하도록 감쌌다. |
+| `airflow/dags/source_simulation_dag.py`         | 수정 | 동일한 `default_args`와 `classify_error()` 기반 즉시 실패 처리를 Generator Task에 적용했다. |
+| `docs/phases/phase-04-airflow-orchestration.md` | 수정 | P4-01/P4-02/P4-05~P4-10/P4-12~P4-17 완료 상태와 Airflow Runtime 구성 범위, Fresh Boot·DAG 실행·Error Taxonomy 검증 결과를 기록했다. |
