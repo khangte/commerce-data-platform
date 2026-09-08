@@ -9,6 +9,13 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from src.common.database import PostgresSettings
+from src.generator.lease import (
+    WAREHOUSE_OWNER_TYPE,
+    SourceMutationLease,
+    acquire_source_mutation_lease,
+    assert_source_mutation_lease,
+    release_source_mutation_lease,
+)
 from src.ingestion.batch import (
     BatchIdentity,
     BatchIdentityConflictError,
@@ -25,6 +32,12 @@ from src.ingestion.bronze import (
 )
 from src.ingestion.corruption import CorruptionPlan
 from src.ingestion.extract import SourcePage, open_table_snapshot
+from src.ingestion.lease import (
+    TableLease,
+    acquire_table_lease,
+    assert_table_lease,
+    release_table_lease,
+)
 from src.ingestion.manifest import BronzeManifest, QuarantineManifest
 from src.ingestion.metadata import (
     PipelineRun,
@@ -195,11 +208,13 @@ def ingest_table(
     *,
     local_directory: Path,
     now: datetime | None = None,
+    source_lease: SourceMutationLease | None = None,
 ) -> TableIngestionResult:
     """- 6개 Table의 고정 범위를 검증·격리·Bronze Commit까지 처리한다."""
     current_time = _utc_now(now)
     config = table_config(request.source_table)
     pipeline_name = request.resolved_pipeline_name
+    run_id = request.run_id or uuid.uuid4()
     ensure_bucket(storage)
     watermark = get_or_create_watermark(postgres, pipeline_name, config.source_table, now=current_time)
     identity = _table_batch_identity(request, config)
@@ -207,9 +222,31 @@ def ingest_table(
     if existing is not None:
         return _reuse_or_reject_committed_batch(postgres, request, config, watermark, existing, current_time)
 
-    with open_table_snapshot(postgres, config, watermark.cursor, page_size=request.page_size) as snapshot:
+    owned_source_lease = source_lease is None
+    active_source_lease = source_lease or acquire_source_mutation_lease(
+        postgres, owner_type=WAREHOUSE_OWNER_TYPE, owner_id=run_id, now=current_time
+    )
+    table_lease: TableLease | None = None
+    try:
+        assert_source_mutation_lease(postgres, active_source_lease, now=current_time)
+        table_lease = acquire_table_lease(
+            postgres,
+            pipeline_name=pipeline_name,
+            source_table=config.source_table,
+            owner_id=run_id,
+            now=current_time,
+        )
+    except Exception as error:
+        _record_lease_failure(postgres, request, config, watermark, run_id, error, current_time)
+        if owned_source_lease:
+            with suppress(Exception):
+                release_source_mutation_lease(postgres, active_source_lease, now=current_time)
+        raise
+
+    try:
+      with open_table_snapshot(postgres, config, watermark.cursor, page_size=request.page_size) as snapshot:
         run = PipelineRun(
-            run_id=request.run_id or uuid.uuid4(),
+            run_id=run_id,
             pipeline_name=pipeline_name,
             source_table=config.source_table,
             batch_id=request.batch_id,
@@ -231,6 +268,8 @@ def ingest_table(
                 rows_rejected,
                 rows_corrupted,
             ) = _write_local_artifacts(snapshot, request, run, config, local_directory, current_time)
+            assert_source_mutation_lease(postgres, active_source_lease, now=current_time)
+            assert_table_lease(postgres, table_lease, now=current_time)
             assert_reject_rate(total_rows=rows_extracted, rejected_rows=rows_rejected)
             verified_object = _upload_and_verify_bronze(
                 storage, request, run, config, bronze_artifact, current_time
@@ -238,6 +277,8 @@ def ingest_table(
             quarantine_batch = _publish_quarantine(
                 storage, request, run, config, quarantine_artifact, current_time
             )
+            assert_source_mutation_lease(postgres, active_source_lease, now=current_time)
+            assert_table_lease(postgres, table_lease, now=current_time)
             commit_table_run(
                 postgres,
                 TableCommit(
@@ -256,16 +297,23 @@ def ingest_table(
             _record_failure_without_masking(postgres, run, error, current_time)
             raise
 
-    return TableIngestionResult(
-        run=run,
-        status="SUCCESS",
-        object_key=verified_object.object_key,
-        manifest_key=verified_object.manifest_key,
-        row_count=verified_object.row_count,
-        rows_rejected=rows_rejected,
-        rows_corrupted=rows_corrupted,
-        quarantine_object_key=quarantine_batch.object_key if quarantine_batch is not None else None,
-    )
+      return TableIngestionResult(
+          run=run,
+          status="SUCCESS",
+          object_key=verified_object.object_key,
+          manifest_key=verified_object.manifest_key,
+          row_count=verified_object.row_count,
+          rows_rejected=rows_rejected,
+          rows_corrupted=rows_corrupted,
+          quarantine_object_key=quarantine_batch.object_key if quarantine_batch is not None else None,
+      )
+    finally:
+        if table_lease is not None:
+            with suppress(Exception):
+                release_table_lease(postgres, table_lease, now=current_time)
+        if owned_source_lease:
+            with suppress(Exception):
+                release_source_mutation_lease(postgres, active_source_lease, now=current_time)
 
 
 def ingest_orders(
@@ -448,6 +496,38 @@ def _record_failure_without_masking(postgres: PostgresSettings, run: PipelineRun
     """- 실패 원인을 남기되 기존 실행 오류를 Metadata 오류로 가리지 않는다."""
     with suppress(Exception):
         record_failed_run(postgres, run, error_type=type(error).__name__[:64], error_message=str(error) or None, now=current_time)
+
+
+def _record_lease_failure(
+    postgres: PostgresSettings,
+    request: TableIngestionRequest,
+    config: TableConfig,
+    watermark,
+    run_id: uuid.UUID,
+    error: Exception,
+    current_time: datetime,
+) -> None:
+    """- Lease 충돌 Run을 Source Snapshot 없이 FAILED Metadata로 기록한다."""
+    run = PipelineRun(
+        run_id=run_id,
+        pipeline_name=request.resolved_pipeline_name,
+        source_table=config.source_table,
+        batch_id=request.batch_id,
+        logical_date=request.logical_date,
+        attempt_number=request.attempt_number,
+        watermark_before=watermark.cursor,
+        extract_upper_bound=None,
+    )
+    error_type = "SOURCE_MUTATION_CONFLICT" if isinstance(error, RuntimeError) else type(error).__name__
+    with suppress(Exception):
+        record_started_run(postgres, run, now=current_time)
+        record_failed_run(
+            postgres,
+            run,
+            error_type=error_type[:64],
+            error_message=str(error) or None,
+            now=current_time,
+        )
 
 
 def _assert_nonempty_batch_id(batch_id: str) -> None:

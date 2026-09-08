@@ -210,15 +210,30 @@ Watermark CAS와 같은 Metadata Transaction에서 기록한다.
 
 ## Phase 3D. 동시성, Catalog, Schema Version
 
-- [ ] `P3-20` Table Lease 획득/TTL/Renewal/Release 구현
-- [ ] `P3-21` Global Source Lease로 Warehouse Run 전체 Source Freeze
-- [ ] `P3-22` 동시 Extract에서 Lock 실패 Run의 Source Read/Object 생성 차단
-- [ ] `P3-23` Orphan 탐지와 안전한 Reconciliation 구현
-- [ ] `P3-24` Metadata COMMITTED Object만 읽는 Bronze File Catalog 구현
-- [ ] `P3-25` `schema_version=1` 및 지원 Version Contract 구현
-- [ ] `P3-26` 미지원 Version을 `SOURCE_CONTRACT_ERROR`로 차단
+- [x] `P3-20` Table Lease 획득/TTL/Renewal/Release 구현
+- [x] `P3-21` Global Source Lease로 Warehouse Run 전체 Source Freeze
+- [x] `P3-22` 동시 Extract에서 Lock 실패 Run의 Source Read/Object 생성 차단
+- [x] `P3-23` Orphan 탐지와 안전한 Reconciliation 구현
+- [x] `P3-24` Metadata COMMITTED Object만 읽는 Bronze File Catalog 구현
+- [x] `P3-25` `schema_version=1` 및 지원 Version Contract 구현
+- [x] `P3-26` 미지원 Version을 `SOURCE_CONTRACT_ERROR`로 차단
 
 Global Lease는 Generator와 Warehouse 사이의 Source Mutation을 막고, Table Lease는 Warehouse Run끼리 동일 Watermark를 갱신하는 것을 막는다.
+
+`warehouse_source_freeze()` Context는 하나의 Warehouse Run이 공유할 `WAREHOUSE` Global
+Lease를 획득·해제한다. `ingest_table()`은 전달된 Global Lease를 Fencing하고, 없으면 Table
+실행 동안 자체 Lease를 획득한다. 이어서 Watermark 행의 Table Lease를 확보한 뒤에만 Snapshot을
+열며, Lease 실패 Run은 `FAILED`로 기록하고 Source Read·Final Object 생성을 하지 않는다.
+
+`sync_bronze_catalog()`은 `bronze_objects.status='COMMITTED'` Object만 DuckDB
+`control.bronze_files`로 교체 동기화한다. Version 1만 지원하며, 미지원 Version은
+`SOURCE_CONTRACT_ERROR`로 DuckDB 쓰기 전에 차단한다.
+
+`find_orphan_candidates()`는 Bronze Final Parquet와 VERIFIED Manifest가 있으나 Metadata
+`COMMITTED`가 없는 Object만 찾는다. `reconcile_orphan()`은 HEAD Size·SHA-256, 재수신 Parquet
+Row Count, Manifest 범위·Schema Version, Recoverable Run, 현재 Watermark를 모두 검증한 뒤
+Bronze Object·Pipeline Run·Watermark를 하나의 Transaction으로 복원한다. Reject가 있거나
+증적이 하나라도 다르면 자동 복원을 거부한다.
 
 ## Object 구조
 
@@ -311,6 +326,10 @@ Phase 3에서는 Framework-independent Python Pipeline을 완성하고 Phase 4�
 | `src/ingestion/references.py`                                    | 생성 | Child Page의 Orders·Products·Sellers Parent Key를 같은 Snapshot Connection에서 검사하며 공통 수집 서비스가 결과를 Reject로 연결한다. |
 | `src/ingestion/batch.py`                                         | 생성 | DAG·UTC Logical Date 기반 6개 Table Batch Identity와 Commit 범위·Schema 재사용/Conflict 판정을 추가했다. |
 | `src/ingestion/validation.py`                                    | 생성 | Source Schema·Type·Key·Batch Duplicate·Status Domain·Numeric·Broken Reference·Cursor 범위를 검사해 Valid/Reject를 분리하고 Schema·Cursor 계약 오류를 Batch Failure로 전환한다. |
+| `src/ingestion/lease.py`                                         | 생성 | Watermark 기반 Table Lease의 획득·30분 TTL·Renewal·Fencing·Release와 여러 Table이 공유하는 Warehouse Global Source Freeze Context를 추가했다. |
+| `src/ingestion/catalog.py`                                       | 생성 | Metadata의 COMMITTED Bronze Object만 DuckDB `control.bronze_files`로 원자적으로 동기화한다. |
+| `src/ingestion/schema.py`                                        | 생성 | 지원 Bronze Schema Version 1을 정의하고 미지원 Version을 `SOURCE_CONTRACT_ERROR`로 차단한다. |
+| `src/ingestion/orphan.py`                                        | 생성 | Storage·Manifest·Metadata·Watermark 증적이 모두 일치하는 Reject 0건 Orphan만 트랜잭션으로 재조정하고 나머지는 거부한다. |
 | `src/ingestion/quarantine.py`                                    | 생성 | `table_batch_id + 추출 순번` 결정 ID, `_detected_at`, Raw Payload·오류 Code Quarantine Parquet Writer와 5% Reject Threshold 정책을 추가했다. |
 | `src/ingestion/corruption.py`                                    | 생성 | Extract 후 Validation 전 복제본에 NULL Key, Invalid Status, 음수값, Type, Broken Reference 5종 오류를 결정적으로 주입한다. |
 | `src/ingestion/manifest.py`                                      | 생성·수정 | Credential·Local 경로·Metadata Commit 상태 없이 Bronze와 Quarantine의 `VERIFIED` Object 증적을 기록하는 Canonical JSON Manifest를 추가했다. |
@@ -327,6 +346,8 @@ Phase 3에서는 Framework-independent Python Pipeline을 완성하고 Phase 4�
 | `tests/ingestion/test_quarantine.py`                             | 생성 | 결정적 Quarantine Record, Raw Payload·오류 집계와 Reject Threshold를 검증한다. |
 | `tests/ingestion/test_corruption.py`                             | 생성 | 5종 In-memory Corruption의 Source 무오염, Valid/Reject·Error Code Count 분리를 검증한다. |
 | `tests/ingestion/test_table_bronze.py`                           | 생성 | `orders` 외 Decimal Table도 공통 Bronze Writer와 실행 독립 Logical Hash를 사용하는지 검증한다. |
+| `tests/ingestion/test_catalog.py`                                | 생성 | COMMITTED Snapshot만 DuckDB Catalog에 남기고 미지원 Schema Version이 쓰기 전에 차단되는지 검증한다. |
+| `tests/ingestion/test_schema.py`                                 | 생성 | Version 1 지원과 미지원 Version의 `SOURCE_CONTRACT_ERROR` 계약을 검증한다. |
 | `tests/ingestion/test_manifest.py`                               | 생성 | VERIFIED Manifest의 공개 필드와 Metadata Commit 경계를 검증한다.                                                      |
 | `tests/integration/test_ingestion_metadata_integration.py`       | 생성 | 성공 Commit과 Watermark 충돌 시 Rollback·실패 상태 전이를 PostgreSQL에서 검증했다.                                    |
 | `tests/integration/test_orders_incremental_integration.py`       | 생성 | `orders` Composite Cursor의 같은 Timestamp Page 경계와 Empty Range를 검증한다.                                        |
@@ -338,7 +359,8 @@ Phase 3에서는 Framework-independent Python Pipeline을 완성하고 Phase 4�
 | `tests/integration/test_child_table_extraction_integration.py` | 생성 | 실제 `order_items`·`order_payments`의 전체 복합 PK Keyset Page 경계를 검증한다. |
 | `tests/integration/test_child_parent_references_integration.py` | 생성 | 실제 Child Page가 동일 Snapshot의 모든 Parent Key를 참조하는지 검증한다. |
 | `tests/integration/test_validation_integration.py` | 생성 | 실제 `orders` Snapshot Page가 Schema·Domain·Cursor 검증에서 Reject 없이 통과하는지 검증한다. |
-| `docs/phases/phase-03-incremental-ingestion.md`                  | 수정 | Phase 3A Decimal, Phase 3B 6개 Table 공통 Commit, Phase 3C Quarantine·Threshold·Corruption 구현 상태와 파일별 변경 요약을 기록했다.                 |
+| `tests/integration/test_ingestion_lease_integration.py` | 생성 | 실제 PostgreSQL에서 Table Lease의 충돌·갱신·해제와 Warehouse Global Source Freeze 해제를 검증한다. |
+| `docs/phases/phase-03-incremental-ingestion.md`                  | 수정 | Phase 3A Decimal, Phase 3B 공통 Commit, Phase 3C Quarantine, Phase 3D Lease·Catalog·Schema Contract 진행 상태와 파일별 변경 요약을 기록했다.                 |
 
 ## Definition of Done
 
