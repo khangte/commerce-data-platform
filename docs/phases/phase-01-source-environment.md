@@ -12,7 +12,7 @@ Olist Raw 데이터를 원본 Naming과 값을 최대한 유지하는 PostgreSQL
 ## 핵심 계약
 
 - PostgreSQL과 이후 Bronze는 선택한 Olist Column Name을 유지한다.
-- 분석용 Rename과 상태 Canonicalization은 Source가 아니라 dbt Staging에서 수행한다.
+- 분석용 Rename과 상태 표준화는 Source가 아니라 dbt Staging에서 수행한다.
 - Source 확장은 `created_at`, `updated_at`과 Synthetic 시나리오 필드로 제한한다.
 - Timestamp는 UTC `TIMESTAMPTZ`, 금액은 PRD에 정의된 고정 Precision을 사용한다.
 - Seed는 임시 Staging을 거친 Transactional UPSERT로 처리한다.
@@ -94,9 +94,9 @@ customers   products   sellers
 ## 범위 밖
 
 - Synthetic 신규/변경 Row 생성
-- Pipeline Corruption 주입
+- 파이프라인 오류 주입
 - Bronze 적재와 Watermark 관리
-- 분석용 Column Rename 또는 상태 Canonicalization
+- 분석용 Column Rename 또는 상태 표준화
 - SCD2와 Mart 구축
 
 ## 테스트
@@ -168,7 +168,7 @@ Source Schema Allowlist
 | `tests/integration/test_seed_integration.py`     | 생성      | 멱등 적재, Source Allowlist, Seed Guard 통합 테스트를 추가했다.            |
 | `pyproject.toml`                                 | 수정      | pytest 경로와 PostgreSQL 통합 테스트 Marker를 추가했다.                    |
 | `README.md`                                      | 수정      | PostgreSQL 기동, Seed 실행, 통합 테스트 명령을 추가했다.                   |
-| `docs/phases/phase-01-source-environment.md`     | 수정      | 완료 상태, 체크리스트, 검증 증적과 이 변경 요약을 반영했다.                |
+| `docs/phases/phase-01-source-environment.md`     | 수정      | 완료 상태, 체크리스트, 검증 증적, 내부 용어의 한국어 표기를 반영했다.      |
 
 ## Definition of Done
 

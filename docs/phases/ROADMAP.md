@@ -394,12 +394,12 @@ P2-17 과거 Event의 Late Update
 P2-18 Membership Change
 ```
 
-Pipeline Corruption은 Phase 3/6에서 처리한다.
+파이프라인 오류 주입은 Phase 3/6에서 처리한다.
 
-### 2-6. Source Mutation 동시성
+### 2-6. 원천 변경 동시성
 
 ```text
-P2-19 Global Source Mutation Lease Schema/Client
+P2-19 원천 데이터 동시성 잠금 스키마/클라이언트
 P2-20 Lease 획득 실패 시 Source 변경 전 종료
 P2-21 Generator Transaction 종료 후 Lease 해제
 P2-22 Lease 소유권 상실 시 Fencing 검증
@@ -628,7 +628,7 @@ TTL
 Lease Renewal
 CAS
 Concurrent Extract
-Source Mutation Coordination
+원천 변경 동시성 조정
 ```
 
 처음부터 동시성 기능까지 한 번에 만들지 않는다.
@@ -807,7 +807,7 @@ product_category_name
 → category_name
 ```
 
-Canonical Status도 Staging에서 처리한다.
+표준화 상태값도 Staging에서 처리한다.
 
 ```text
 approved / processing / invoiced
@@ -912,7 +912,7 @@ Current 정확히 1개
 - AC-10 Temporal Join
 - AC-12 Referential Integrity
 - AC-19 Staging Naming
-- AC-22 Canonical Status
+- AC-22 표준화 상태값
 
 ---
 

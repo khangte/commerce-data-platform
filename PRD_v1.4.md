@@ -14,33 +14,33 @@
 
 ## 0. v1.4 변경 요약
 
-v1.4는 v1.3의 Source 원본 보존, 증분 수집, Bronze 불변성, SCD2, Late Arrival, 재처리 계약을 유지하면서 **증분 Cursor의 안전성, Source 동시성, 상태 Canonicalization, Bronze Commit 의미**를 보강한다.
+v1.4는 v1.3의 Source 원본 보존, 증분 수집, Bronze 불변성, SCD2, Late Arrival, 재처리 계약을 유지하면서 **증분 Cursor의 안전성, Source 동시성, 상태 표준화, Bronze Commit 의미**를 보강한다.
 
-- `updated_at`을 Business Event Time과 분리된 **Source Mutation Time**으로 명확히 정의
-- 기존 Row 변경 시 `updated_at`은 직전 값보다 반드시 커야 하며, Late Arrival은 과거 Business Event Time + 현재 Mutation Time으로 표현
-- Synthetic Generator와 Warehouse Extract가 동시에 Source를 변경/관측하지 않도록 **Global Source Mutation Lease** 추가
-- Warehouse Run 전체의 Source 변경을 Freeze하여 Parent/Child 관측 불일치 방지
-- Broken Reference 검증을 동일 Batch Parent Task 완료 순서에 의존하지 않고 Freeze된 Source Parent Key 기준으로 수행
+- `updated_at`을 Business Event Time과 분리된 **원천 변경 시각**으로 명확히 정의
+- 기존 Row 변경 시 `updated_at`은 직전 값보다 반드시 커야 하며, Late Arrival은 과거 Business Event Time + 현재 원천 변경 시각으로 표현
+- Synthetic Generator와 Warehouse Extract가 동시에 Source를 변경/관측하지 않도록 **원천 데이터 동시성 잠금** 추가
+- Warehouse 수집 중 원천 변경을 차단해 Parent/Child 관측 불일치 방지
+- Broken Reference 검증을 동일 Batch Parent Task 완료 순서에 의존하지 않고 변경이 차단된 Source Parent Key 기준으로 수행
 - Olist `invoiced` 상태를 `SHIPPED`가 아니라 `APPROVED`로 Canonical Mapping하도록 수정
 - Manifest의 `status=COMMITTED`를 제거하고 `object_state=VERIFIED`로 변경
 - **Metadata DB의 `bronze_objects.status=COMMITTED`만 Commit Source of Truth**로 확정
 - Bronze `schema_version` 증가·호환성 정책 추가
 - `fact_orders` Measure를 명시해 Item/Payment Fan-out과 Revenue 의미 혼동 방지
 - AC-20~AC-24 추가
-- Source Mutation 동시성, Manifest/Metadata Commit Authority, Bronze Schema Evolution ADR 추가
+- 원천 변경 동시성, Manifest/메타데이터 커밋 상태 기준, Bronze Schema Evolution ADR 추가
 
 v1.3에서 확정한 다음 계약은 유지한다.
 
 - PostgreSQL과 Bronze에서 선택한 Olist 원본 Table/Column Name과 값을 최대한 보존
 - `customer_id`는 Source PK/FK, `customer_unique_id`는 dbt 이후 분석 고객 Business Key로 역할 분리
-- Entity Prefix 제거, Timestamp Rename, 상태 Canonicalization은 dbt Staging 책임
+- Entity Prefix 제거, Timestamp Rename, 상태 표준화는 dbt Staging 책임
 - 증분용 `created_at`/`updated_at`과 Synthetic 시나리오 필드만 Source 확장으로 허용
 - V1 미사용 컬럼 6개는 Raw CSV에만 보존
 - 모든 운영 시간은 UTC `TIMESTAMPTZ`
 - Seed Loader는 Staging + Transactional UPSERT
 - Source PK/FK/CHECK/Numeric Precision/Incremental Index 정의
 - 증분 범위는 `(watermark_before, extract_upper_bound]`
-- Keyset Pagination, 빈 Batch, Table Lease, Watermark CAS
+- Keyset Pagination, 빈 Batch, 테이블별 수집 잠금, Watermark CAS
 - `batch_id`, `run_id`, `table_batch_id`, `reprocess_id` 의미 분리
 - Bronze 기술 컬럼, Manifest, Checksum, Commit Protocol
 - Quarantine은 SeaweedFS Parquet Prefix
@@ -90,13 +90,13 @@ Olist CSV
    ▼
 PostgreSQL: commerce_source ◀── Deterministic Synthetic Generator
    │                              │
-   │◀──── Global Source Mutation Lease ────▶│
+   │◀──── 원천 데이터 동시성 잠금 ────▶│
    ▼
 Airflow LocalExecutor
    │ Incremental Extract / Validate
    ▼
 SeaweedFS: Parquet Bronze + Quarantine
-   │ Metadata-backed Committed File Catalog
+   │ 메타데이터 기반 커밋 파일 목록
    ▼
 dbt + DuckDB
    ├── staging
@@ -109,14 +109,14 @@ PostgreSQL: pipeline_metadata
 
 ### 2.2 계층별 책임
 
-| 계층        | 책임                                                     | 하지 않는 일                                   |
-| ----------- | -------------------------------------------------------- | ---------------------------------------------- |
-| Source DB   | Olist 호환 Naming, 현재 서비스 상태, OLTP 무결성         | 분석용 Naming, 집계, Corruption 저장           |
-| Ingestion   | Source Freeze, 범위 고정, 추출, 기본 검증, Bronze Commit | Mart 계산                                      |
-| Bronze      | 재처리 가능한 Source 관측 이력                           | 분석용 Canonicalization, Silver/Gold 중복 저장 |
-| DuckDB/dbt  | Naming/값 표준화, 최신 상태, 이력, Dimension/Fact        | Source Watermark 관리                          |
-| Metadata DB | 제어 상태와 실행 증적, Commit Authority                  | 대용량 Payload 저장                            |
-| Metabase    | 검증 완료 Mart 소비                                      | Raw Source 직접 조회                           |
+| 계층        | 책임                                                              | 하지 않는 일                         |
+| ----------- | ----------------------------------------------------------------- | ------------------------------------ |
+| Source DB   | Olist 호환 Naming, 현재 서비스 상태, OLTP 무결성                  | 분석용 Naming, 집계, Corruption 저장 |
+| Ingestion   | 수집 중 원천 변경 차단, 범위 고정, 추출, 기본 검증, Bronze Commit | Mart 계산                            |
+| Bronze      | 재처리 가능한 Source 관측 이력                                    | 분석용 표준화, Silver/Gold 중복 저장 |
+| DuckDB/dbt  | Naming/값 표준화, 최신 상태, 이력, Dimension/Fact                 | Source Watermark 관리                |
+| Metadata DB | 제어 상태와 실행 증적, 메타데이터 커밋 상태 기준                  | 대용량 Payload 저장                  |
+| Metabase    | 검증 완료 Mart 소비                                               | Raw Source 직접 조회                 |
 
 ### 2.3 불변 조건
 
@@ -193,7 +193,7 @@ dbt test
 DuckDB → SeaweedFS Parquet Read
 Incremental Merge
 동일 Batch Re-run
-Source Mutation Lease Test
+원천 데이터 동시성 잠금 Test
 ```
 
 Root Compose 파일은 `compose.yaml`, Secret 원본은 Git 제외된 `.env`, 공개 Template은 `.env.example`이다.
@@ -210,12 +210,12 @@ Root Compose 파일은 `compose.yaml`, Secret 원본은 Git 제외된 `.env`, �
 - Airflow Logical Date와 Data Interval은 UTC로 해석한다.
 - Olist의 timezone 없는 Timestamp는 UTC naive 값으로 간주한다. 브라질 현지시각으로 추정하지 않으며 이 한계를 ADR에 남긴다.
 
-| 시간                 | 의미                                                                 |
-| -------------------- | -------------------------------------------------------------------- |
-| Business Event Time  | 주문·승인·배송 등 실제 비즈니스 사건 시간                            |
-| Source Mutation Time | 현재 Source Row Version이 생성·변경된 시간. `updated_at` Cursor 의미 |
-| Ingestion Time       | Bronze에 수집한 시간                                                 |
-| Logical Date         | Generator와 Batch의 결정적 실행 기준                                 |
+| 시간                | 의미                                                                 |
+| ------------------- | -------------------------------------------------------------------- |
+| Business Event Time | 주문·승인·배송 등 실제 비즈니스 사건 시간                            |
+| 원천 변경 시각      | 현재 Source Row Version이 생성·변경된 시간. `updated_at` Cursor 의미 |
+| Ingestion Time      | Bronze에 수집한 시간                                                 |
+| Logical Date        | Generator와 Batch의 결정적 실행 기준                                 |
 
 #### `updated_at` 안전성 계약
 
@@ -242,8 +242,8 @@ Mutable Row 변경 규칙:
 
 - Source/Bronze는 선택한 Olist 컬럼의 `snake_case` 이름과 Prefix를 그대로 보존한다.
 - 프로젝트 확장 Column만 기존 Olist Column과 충돌하지 않는 `snake_case` 이름을 사용한다.
-- dbt Staging이 Prefix 제거, Timestamp Suffix 통일과 Canonical Status 변환을 담당한다.
-- Canonical Status는 Staging 이후 대문자 문자열이다.
+- dbt Staging이 Prefix 제거, Timestamp Suffix 통일과 표준화 상태값 변환을 담당한다.
+- 표준화 상태값은 Staging 이후 대문자 문자열이다.
 - 금액은 `NUMERIC(14,2)` / Parquet `decimal128(14,2)`다.
 - 의미 없는 빈 문자열은 `NULL`로 정규화한다.
 - Watermark Column과 PK는 `NOT NULL`이다.
@@ -281,7 +281,7 @@ Mutable Row 변경 규칙:
 
 ### 5.2 보존 원칙
 
-Seed Loader는 분석용 Canonicalization을 수행하지 않는다.
+Seed Loader는 분석용 표준화를 수행하지 않는다.
 
 1. V1 사용 컬럼을 명시적 Allowlist로 선택하고 선택된 CSV Header와 PostgreSQL Source Column Name을 동일하게 유지한다.
 2. `customer_id`, `customer_unique_id`와 주문의 `customer_id`를 원본 그대로 적재한다.
@@ -474,15 +474,15 @@ order_payments  (updated_at, order_id, payment_sequential)
 
 Index와 Extract 정렬 순서는 같아야 하며 문자열 Key는 `COLLATE "C"` 비교 규칙과 일치시킨다.
 
-### 6.3 Transaction과 Mutation Time
+### 6.3 Transaction과 원천 변경 시각
 
 - Order/Item/Payment 생성은 하나의 Transaction이다.
 - 상태와 관련 Timestamp 변경은 하나의 Transaction이다.
 - 완료 주문 수 재계산과 동일 `customer_unique_id`의 모든 Customer Row Membership 갱신도 같은 Transaction에 포함한다.
-- `updated_at`은 **결정적으로 주입된 Source Mutation Time**이다.
-- Generator에서는 `logical_date`가 Source Mutation Time 역할을 한다.
-- 기존 Row를 변경하는 Transaction은 해당 Row의 직전 `updated_at`보다 큰 Mutation Time만 허용한다.
-- Business Event Time은 Mutation Time보다 과거일 수 있다.
+- `updated_at`은 **결정적으로 주입된 원천 변경 시각**이다.
+- Generator에서는 `logical_date`가 원천 변경 시각 역할을 한다.
+- 기존 Row를 변경하는 Transaction은 해당 Row의 직전 `updated_at`보다 큰 원천 변경 시각만 허용한다.
+- Business Event Time은 원천 변경 시각보다 과거일 수 있다.
 - `updated_at` 역행 및 동일 Cursor 위치의 서로 다른 내용은 금지한다.
 
 ---
@@ -557,7 +557,7 @@ Synthetic 고객:
 - 주소 변경은 새 Customer Record에 반영하고 과거 Row는 유지
 - Membership 변경은 같은 `customer_unique_id`의 모든 Row를 동일 Transaction에서 갱신
 
-### 7.3 Global Source Mutation Lease
+### 7.3 원천 데이터 동시성 잠금
 
 V1에서 Source Writer는 Seed Loader와 Synthetic Generator뿐이다. Seed는 Generator 시작 전만 허용하므로 Runtime 동시성 대상은 Generator와 Warehouse다.
 
@@ -578,7 +578,7 @@ updated_at          TIMESTAMPTZ
 - Warehouse는 모든 Table Upper Bound 계산 전 `WAREHOUSE` Lease 획득
 - 두 Lease는 상호 배타적
 - Warehouse는 모든 Table Extract/Validation 종료까지 Lease 유지
-- Warehouse Lease 중 Generator Source Mutation 금지
+- Warehouse의 원천 데이터 동시성 잠금 중 Generator 원천 변경 금지
 - 기본 TTL 30분, 5분마다 연장
 - 실패 경로 Release Task는 `all_done`
 - 만료 Lease 인수는 CAS/version 검증
@@ -590,9 +590,9 @@ updated_at          TIMESTAMPTZ
 - Service-level: Late Order, Delayed Payment, 과거 Event의 늦은 Update, Membership 변경
 - Pipeline-level: Duplicate, NULL Key, Broken FK, Invalid Status, 음수 금액
 
-Pipeline Corruption은 Extract 후 Validation 직전 복제본에 결정적으로 주입하며 Source에는 쓰지 않는다.
+파이프라인 오류 주입은 Extract 후 Validation 직전 복제본에 결정적으로 주입하며 Source에는 쓰지 않는다.
 
-Broken Reference는 Warehouse Source Lease가 유지되는 동안 **Freeze된 Source Parent Table Key**를 기준으로 검증한다. 병렬 Parent Task의 완료 순서에 의존하지 않는다.
+Broken Reference는 원천 데이터 동시성 잠금이 유지되는 동안 **변경이 차단된 원천 상위 테이블 키**를 기준으로 검증한다. 병렬 Parent Task의 완료 순서에 의존하지 않는다.
 
 ### 7.5 SCD2 관측 한계
 
@@ -615,19 +615,19 @@ Source는 현재 상태만 보관하므로 성공 수집 사이의 중간 변경
 
 초기 Watermark는 논리적 `-infinity`와 Table별 최소 Key로 해석한다.
 
-### 8.2 Warehouse Source Freeze
+### 8.2 수집 중 원천 변경 차단 구간
 
 ```text
-Global Source Lease 획득
+원천 데이터 동시성 잠금 획득
 → 6개 Table Task 병렬 시작
 → Table별 REPEATABLE READ Read-only Snapshot
 → Table별 Upper Bound 고정
 → Extract / Validate / Commit
 → 모든 Table 종료
-→ Global Source Lease 해제
+→ 원천 데이터 동시성 잠금 해제
 ```
 
-Global Lease는 Table Snapshot이 같은 PostgreSQL Transaction Snapshot을 공유한다는 뜻은 아니다. **추출 중 Source Writer가 새 Transaction을 Commit하지 못하게 해 Cross-table 관측 차이를 방지**한다.
+원천 데이터 동시성 잠금은 Table Snapshot이 같은 PostgreSQL Transaction Snapshot을 공유한다는 뜻은 아니다. **추출 중 Source Writer가 새 Transaction을 Commit하지 못하게 해 Cross-table 관측 차이를 방지**한다.
 
 ### 8.3 고정 범위와 Pagination
 
@@ -648,7 +648,7 @@ LIMIT :page_size
 - 빈 범위는 Object 없이 `SUCCESS_NO_DATA`, Watermark 유지
 - Composite PK 전체 Tie-breaker 포함
 
-### 8.4 Table Lease와 CAS
+### 8.4 테이블별 수집 잠금과 CAS
 
 - 동일 `pipeline_name + source_table` 실행은 하나만 허용
 - Metadata Watermark Row의 `lease_owner`, `lease_expires_at` 원자적 획득
@@ -659,31 +659,31 @@ LIMIT :page_size
 Lease 책임:
 
 ```text
-Global Source Lease
-→ Generator vs Warehouse Source Mutation 충돌 방지
+원천 데이터 동시성 잠금
+→ Generator와 Warehouse의 원천 변경 충돌 방지
 
-Table Lease
+테이블별 수집 잠금
 → Warehouse Run끼리 동일 Table Watermark 충돌 방지
 ```
 
 ### 8.5 Commit 순서
 
 ```text
-Global Source Lease
-→ Table Lease
+원천 데이터 동시성 잠금
+→ 테이블별 수집 잠금
 → 범위 고정
 → Extract
 → Validate
 → Local Parquet
-→ SeaweedFS Final Object Upload
+→ SeaweedFS 최종 Bronze 객체 Upload
 → HEAD / Checksum / Row Count 검증
 → Manifest(object_state=VERIFIED)
 → Metadata Transaction
    - bronze_objects COMMITTED
    - pipeline_runs SUCCESS
    - watermark CAS Update
-→ Table Lease 해제
-→ 모든 Table 종료 후 Global Source Lease 해제
+→ 테이블별 수집 잠금 해제
+→ 모든 Table 종료 후 원천 데이터 동시성 잠금 해제
 ```
 
 Validation/Upload/검증/Metadata Commit 실패 시 해당 Table Watermark는 유지한다. dbt 실패는 Bronze Commit 이후이므로 Bronze와 Watermark를 유지한다.
@@ -701,9 +701,9 @@ table_batch_id  = {batch_id}__{source_table}
 - 동일 Logical Date 재실행 → 같은 `batch_id`, 새 `run_id`
 - 같은 Table Batch가 `COMMITTED`이고 Range/Schema Version 같음 → Skip
 - Commit Range 다름 → `BATCH_IDENTITY_CONFLICT`
-- Final Object 존재 + Metadata 없음 → Orphan 후보
+- 최종 Bronze 객체 존재 + Metadata 없음 → Orphan 후보
 - Orphan은 Manifest/Checksum/Range/Schema Version 검증 후 Reconciliation
-- Commit Final Object는 덮어쓰기/삭제 금지
+- Commit 최종 Bronze 객체는 덮어쓰기/삭제 금지
 - 같은 Logical Date 다른 범위 강제 처리 → `reprocess_id`가 붙은 Backfill Batch
 
 Checksum:
@@ -797,7 +797,7 @@ Raw Payload
 status=COMMITTED
 ```
 
-### 10.3 Commit Authority
+### 10.3 메타데이터 커밋 상태 기준
 
 Commit Source of Truth:
 
@@ -1072,7 +1072,7 @@ publish_run_summary
 Table Task 내부:
 
 ```text
-Table Lease
+테이블별 수집 잠금
 → Snapshot / Upper Bound
 → Extract
 → Validation
@@ -1367,10 +1367,10 @@ AND order.purchase_at < COALESCE(dim_customer.valid_to, TIMESTAMPTZ 'infinity')
 
 ## 16. Late Arrival, Backfill, Re-run
 
-Late Arrival의 핵심은 Business Event Time과 Source Mutation Time 분리다.
+Late Arrival의 핵심은 Business Event Time과 원천 변경 시각 분리다.
 
 ```text
-Business Event Time < Source Mutation Time
+Business Event Time < 원천 변경 시각
 ```
 
 추출 여부는 `updated_at` Cursor가 결정한다.
@@ -1419,7 +1419,7 @@ SCD2 유효 구간 중첩 = 0
 Fact FK 누락 = 0
 Fact Business Key 중복 = 0
 정상 E2E Unknown 참조 = 0
-Canonical Status Mapping 누락 = 0
+표준화 상태값 매핑 누락 = 0
 fact_orders Item/Payment Fan-out = 0
 ```
 
@@ -1433,8 +1433,8 @@ Warehouse 실패 시 Bronze/Watermark는 유지한다. Metabase는 마지막 성
 
 ```text
 Batch / Run / Logical Date
-Global Source Lease
-Table Lease
+원천 데이터 동시성 잠금
+테이블별 수집 잠금
 Table Status
 Cursor Before / Upper / After
 단계별 Count
@@ -1541,61 +1541,61 @@ result_hash
 
 ## 21. 기능 요구사항
 
-| ID    | 요구사항                                | 우선순위 |
-| ----- | --------------------------------------- | -------- |
-| FR-01 | Raw-compatible Olist Seed               | P0       |
-| FR-02 | Deterministic Generator                 | P0       |
-| FR-03 | 고정 범위 Incremental Extract           | P0       |
-| FR-04 | Composite Watermark + Table Lease + CAS | P0       |
-| FR-05 | Global Source Mutation Lease            | P0       |
-| FR-06 | Run/Object Metadata                     | P0       |
-| FR-07 | SeaweedFS Parquet Bronze                | P0       |
-| FR-08 | Idempotency와 Orphan Recovery           | P0       |
-| FR-09 | Airflow Pipeline                        | P0       |
-| FR-10 | dbt Staging/Intermediate/Mart           | P0       |
-| FR-11 | Star Schema/Fact Grain                  | P0       |
-| FR-12 | Ingestion/Warehouse Quality             | P0       |
-| FR-13 | Backfill Replay/Re-extract              | P0       |
-| FR-14 | Late Arrival 재처리                     | P0       |
-| FR-15 | SCD2/Temporal Join                      | P0       |
-| FR-16 | Quarantine                              | P0       |
-| FR-17 | Bronze Schema Version                   | P0       |
-| FR-18 | Metabase                                | P1       |
-| FR-19 | 1M+ Scale                               | P1       |
-| FR-20 | Benchmark                               | P1       |
-| FR-21 | Cloud PoC                               | P2       |
-| FR-22 | CDC                                     | P2       |
+| ID    | 요구사항                                       | 우선순위 |
+| ----- | ---------------------------------------------- | -------- |
+| FR-01 | Raw-compatible Olist Seed                      | P0       |
+| FR-02 | Deterministic Generator                        | P0       |
+| FR-03 | 고정 범위 Incremental Extract                  | P0       |
+| FR-04 | Composite Watermark + 테이블별 수집 잠금 + CAS | P0       |
+| FR-05 | 원천 데이터 동시성 잠금                        | P0       |
+| FR-06 | Run/Object Metadata                            | P0       |
+| FR-07 | SeaweedFS Parquet Bronze                       | P0       |
+| FR-08 | Idempotency와 Orphan Recovery                  | P0       |
+| FR-09 | Airflow Pipeline                               | P0       |
+| FR-10 | dbt Staging/Intermediate/Mart                  | P0       |
+| FR-11 | Star Schema/Fact Grain                         | P0       |
+| FR-12 | Ingestion/Warehouse Quality                    | P0       |
+| FR-13 | Backfill Replay/Re-extract                     | P0       |
+| FR-14 | Late Arrival 재처리                            | P0       |
+| FR-15 | SCD2/Temporal Join                             | P0       |
+| FR-16 | Quarantine                                     | P0       |
+| FR-17 | Bronze Schema Version                          | P0       |
+| FR-18 | Metabase                                       | P1       |
+| FR-19 | 1M+ Scale                                      | P1       |
+| FR-20 | Benchmark                                      | P1       |
+| FR-21 | Cloud PoC                                      | P2       |
+| FR-22 | CDC                                            | P2       |
 
 ---
 
 ## 22. Acceptance Criteria
 
-| ID    | 시나리오                    | 합격 조건                                                                            |
-| ----- | --------------------------- | ------------------------------------------------------------------------------------ |
-| AC-01 | E2E                         | 고정 주문이 Source→Bronze Catalog→Fact에 존재, Count 추적 가능                       |
-| AC-02 | Incremental                 | Cursor 조건과 실제 신규·변경 Key Set 일치                                            |
-| AC-03 | 동일 Batch 3회              | Object 수/Key Count/Mart Hash 동일, 중복 0                                           |
-| AC-04 | Upload 전후 실패            | 실패 중 Watermark 유지, 성공 뒤 Upper로 전진                                         |
-| AC-05 | 동일 Timestamp가 Page 초과  | Page/Batch 경계 누락·중복 0                                                          |
-| AC-06 | 동시 Extract                | 하나만 Table Lease, 다른 Run은 Object 없이 Conflict                                  |
-| AC-07 | Backfill Replay             | 같은 범위 Full Refresh와 Key별 값/Hash 동일                                          |
-| AC-08 | 5종 Corruption              | 기대 Reject 일치, Source 무오염, Record 추적 가능                                    |
-| AC-09 | BRONZE→SILVER→GOLD          | 3 Version, 구간 중첩 0, Current 1                                                    |
-| AC-10 | 구간별 주문                 | 발생 시점 Customer Key 참조                                                          |
-| AC-11 | 3일 전 Late Order           | 과거 Business Time + 새 `updated_at`으로 정확히 수집, 과거 Mart 갱신                 |
-| AC-12 | Referential Integrity       | FK/Unique 통과, 정상 Unknown 0                                                       |
-| AC-13 | Observability               | 성공/빈/실패/재실행을 SQL 한 번으로 조회                                             |
-| AC-14 | Seed 2회                    | Count/Content Hash 동일, PK/FK 위반 0                                                |
-| AC-15 | Generator 재현              | 동일 Snapshot/Input Key Set/Hash 동일                                                |
-| AC-16 | 새 Clone                    | Version/Health/Seed/E2E/dbt Test 성공                                                |
-| AC-17 | Benchmark                   | Raw 5회/Median/Hash/환경 Metadata 존재                                               |
-| AC-18 | Source Schema Allowlist     | 6개 제외 컬럼이 PostgreSQL/Bronze에 없고 나머지 선택 컬럼 이름/값 유지               |
-| AC-19 | Staging Naming              | Alias/상태 Mapping이 값 손실 없이 적용, Intermediate가 Raw Prefix 직접 참조하지 않음 |
-| AC-20 | Mutation Time Cursor Safety | 과거 Business Event를 새 `updated_at`으로 갱신하면 다음 Batch에서 정확히 1회 수집    |
-| AC-21 | Generator vs Warehouse      | Warehouse Lease 중 Generator Source 변경 0, Parent/Child 관측 불일치 0               |
-| AC-22 | Canonical Status            | `invoiced/processing/approved→APPROVED`, `shipped→SHIPPED` 등 정의 Mapping 100% 일치 |
-| AC-23 | Manifest vs Metadata        | VERIFIED Manifest만 있고 Metadata COMMITTED가 없으면 Catalog/dbt Read 0              |
-| AC-24 | Schema Version              | 지원하지 않는 Bronze Schema Version은 dbt Build 전에 Contract Error                  |
+| ID    | 시나리오                     | 합격 조건                                                                                  |
+| ----- | ---------------------------- | ------------------------------------------------------------------------------------------ |
+| AC-01 | E2E                          | 고정 주문이 Source→Bronze Catalog→Fact에 존재, Count 추적 가능                             |
+| AC-02 | Incremental                  | Cursor 조건과 실제 신규·변경 Key Set 일치                                                  |
+| AC-03 | 동일 Batch 3회               | Object 수/Key Count/Mart Hash 동일, 중복 0                                                 |
+| AC-04 | Upload 전후 실패             | 실패 중 Watermark 유지, 성공 뒤 Upper로 전진                                               |
+| AC-05 | 동일 Timestamp가 Page 초과   | Page/Batch 경계 누락·중복 0                                                                |
+| AC-06 | 동시 Extract                 | 하나만 테이블별 수집 잠금, 다른 Run은 Object 없이 Conflict                                 |
+| AC-07 | Backfill Replay              | 같은 범위 Full Refresh와 Key별 값/Hash 동일                                                |
+| AC-08 | 5종 Corruption               | 기대 Reject 일치, Source 무오염, Record 추적 가능                                          |
+| AC-09 | BRONZE→SILVER→GOLD           | 3 Version, 구간 중첩 0, Current 1                                                          |
+| AC-10 | 구간별 주문                  | 발생 시점 Customer Key 참조                                                                |
+| AC-11 | 3일 전 Late Order            | 과거 Business Time + 새 `updated_at`으로 정확히 수집, 과거 Mart 갱신                       |
+| AC-12 | Referential Integrity        | FK/Unique 통과, 정상 Unknown 0                                                             |
+| AC-13 | Observability                | 성공/빈/실패/재실행을 SQL 한 번으로 조회                                                   |
+| AC-14 | Seed 2회                     | Count/Content Hash 동일, PK/FK 위반 0                                                      |
+| AC-15 | Generator 재현               | 동일 Snapshot/Input Key Set/Hash 동일                                                      |
+| AC-16 | 새 Clone                     | Version/Health/Seed/E2E/dbt Test 성공                                                      |
+| AC-17 | Benchmark                    | Raw 5회/Median/Hash/환경 Metadata 존재                                                     |
+| AC-18 | Source Schema Allowlist      | 6개 제외 컬럼이 PostgreSQL/Bronze에 없고 나머지 선택 컬럼 이름/값 유지                     |
+| AC-19 | Staging Naming               | Alias/상태 Mapping이 값 손실 없이 적용, Intermediate가 Raw Prefix 직접 참조하지 않음       |
+| AC-20 | 원천 변경 시각 Cursor Safety | 과거 Business Event를 새 `updated_at`으로 갱신하면 다음 Batch에서 정확히 1회 수집          |
+| AC-21 | Generator vs Warehouse       | Warehouse의 원천 데이터 동시성 잠금 중 Generator Source 변경 0, Parent/Child 관측 불일치 0 |
+| AC-22 | 표준화 상태값                | `invoiced/processing/approved→APPROVED`, `shipped→SHIPPED` 등 정의 Mapping 100% 일치       |
+| AC-23 | Manifest vs Metadata         | VERIFIED Manifest만 있고 Metadata COMMITTED가 없으면 Catalog/dbt Read 0                    |
+| AC-24 | Schema Version               | 지원하지 않는 Bronze Schema Version은 dbt Build 전에 Contract Error                        |
 
 절대 처리시간 목표 대신 Baseline과 개선 전후를 비교한다.
 
@@ -1665,18 +1665,18 @@ commerce-data-platform/
 
 ## 24. 개발 단계와 Definition of Done
 
-| Phase         | 구현                                                                | 완료 조건                           |
-| ------------- | ------------------------------------------------------------------- | ----------------------------------- |
-| 0 Bootstrap   | Python/uv, 구조, 환경, Compose, Download                            | Sync/Version/Compose/Git Ignore     |
-| 1 Source      | PostgreSQL, Raw-compatible DDL/Seed                                 | 원본 Naming/PK/FK, Seed Hash, AC-18 |
-| 2 Generator   | 결정 ID, 상태, Mutation Time, Global Lease, Membership, Late        | AC-15/20/21, 허용 전이              |
-| 3 Ingestion   | Cursor, Table Lease, Metadata, Bronze, Quarantine, Commit Authority | AC-02~06, AC-08, AC-23/24           |
-| 4 Airflow     | DAG, Dynamic Task, Retry, XCom, Global Lease Release                | E2E, Retry, 부분 성공 재사용        |
-| 5 Modeling    | Catalog, Naming Staging, Mart, SCD2, Measure Contract               | AC-09/10/12/19/22                   |
-| 6 Quality     | Corruption, Threshold, Test, Publish                                | 지정 오류 탐지, 정상 오탐 0         |
-| 7 Reliability | 실패/충돌/Late/Backfill/Orphan Runbook                              | 문제→재현→관측→원인→해결→재검증     |
-| 8 Benchmark   | 고정 조건, 5회, Median                                              | Raw/Hash/비교 문서                  |
-| 9 BI          | Driver Gate, 3 Dashboard                                            | Mart만 조회, Serving ADR            |
+| Phase         | 구현                                                                                | 완료 조건                           |
+| ------------- | ----------------------------------------------------------------------------------- | ----------------------------------- |
+| 0 Bootstrap   | Python/uv, 구조, 환경, Compose, Download                                            | Sync/Version/Compose/Git Ignore     |
+| 1 Source      | PostgreSQL, Raw-compatible DDL/Seed                                                 | 원본 Naming/PK/FK, Seed Hash, AC-18 |
+| 2 Generator   | 결정 ID, 상태, 원천 변경 시각, 원천 데이터 동시성 잠금, Membership, Late            | AC-15/20/21, 허용 전이              |
+| 3 Ingestion   | Cursor, 테이블별 수집 잠금, Metadata, Bronze, Quarantine, 메타데이터 커밋 상태 기준 | AC-02~06, AC-08, AC-23/24           |
+| 4 Airflow     | DAG, Dynamic Task, Retry, XCom, 원천 데이터 동시성 잠금 해제                        | E2E, Retry, 부분 성공 재사용        |
+| 5 Modeling    | Catalog, Naming Staging, Mart, SCD2, Measure Contract                               | AC-09/10/12/19/22                   |
+| 6 Quality     | Corruption, Threshold, Test, Publish                                                | 지정 오류 탐지, 정상 오탐 0         |
+| 7 Reliability | 실패/충돌/Late/Backfill/Orphan Runbook                                              | 문제→재현→관측→원인→해결→재검증     |
+| 8 Benchmark   | 고정 조건, 5회, Median                                                              | Raw/Hash/비교 문서                  |
+| 9 BI          | Driver Gate, 3 Dashboard                                                            | Mart만 조회, Serving ADR            |
 
 ---
 
@@ -1715,20 +1715,20 @@ Validation
 
 ## 26. 알려진 제한과 대응
 
-| 제한                                             | V1 대응                                                                    |
-| ------------------------------------------------ | -------------------------------------------------------------------------- |
-| Source 현재 상태만 보관                          | 중간 변경 관측 불가 명시, Generator 변경 제한                              |
-| Source Writer가 Synthetic Generator뿐            | Global Lease로 Freeze 가능, 실제 외부 Source는 CDC/DB-native Snapshot 필요 |
-| Delete 미지원                                    | Tombstone/CDC는 V2                                                         |
-| Olist timezone 부재                              | UTC naive로 일관 해석                                                      |
-| S3 원자 Rename 부재                              | Final Object Verify + Metadata Commit Authority + Orphan Reconciliation    |
-| Object-Metadata 분산 Commit                      | Checksum, VERIFIED Manifest, Metadata COMMITTED                            |
-| DuckDB Single-writer                             | `max_active_runs=1`, dbt 단일 Process                                      |
-| Metabase 호환성                                  | Phase 9 Gate, Serving DB 대안                                              |
-| 8GB RAM의 5M Scale                               | Page Write, 관측 후 조정                                                   |
-| Reject 후 Watermark 전진                         | 영구 Quarantine, Reject Threshold                                          |
-| Seed에 실제 과거 Customer Attribute History 없음 | Baseline Snapshot으로만 취급                                               |
-| SeaweedFS S3 API ≠ AWS S3 100%                   | Phase 3 Compatibility Smoke Test                                           |
+| 제한                                             | V1 대응                                                                                            |
+| ------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
+| Source 현재 상태만 보관                          | 중간 변경 관측 불가 명시, Generator 변경 제한                                                      |
+| Source Writer가 Synthetic Generator뿐            | 원천 데이터 동시성 잠금으로 수집 중 변경 차단 가능, 실제 외부 Source는 CDC/DB-native Snapshot 필요 |
+| Delete 미지원                                    | Tombstone/CDC는 V2                                                                                 |
+| Olist timezone 부재                              | UTC naive로 일관 해석                                                                              |
+| S3 원자 Rename 부재                              | 최종 Bronze 객체 Verify + 메타데이터 커밋 상태 기준 + Orphan Reconciliation                        |
+| Object-Metadata 분산 Commit                      | Checksum, VERIFIED Manifest, Metadata COMMITTED                                                    |
+| DuckDB Single-writer                             | `max_active_runs=1`, dbt 단일 Process                                                              |
+| Metabase 호환성                                  | Phase 9 Gate, Serving DB 대안                                                                      |
+| 8GB RAM의 5M Scale                               | Page Write, 관측 후 조정                                                                           |
+| Reject 후 Watermark 전진                         | 영구 Quarantine, Reject Threshold                                                                  |
+| Seed에 실제 과거 Customer Attribute History 없음 | Baseline Snapshot으로만 취급                                                                       |
+| SeaweedFS S3 API ≠ AWS S3 100%                   | Phase 3 Compatibility Smoke Test                                                                   |
 
 ---
 
@@ -1739,8 +1739,8 @@ Architecture Diagram
 Source 원본 Naming 보존
 Staging Naming Mapping
 Customer Business Key 변환
-Source Mutation Time vs Business Event Time
-Global Source Lease 동시성 Test
+원천 변경 시각 vs Business Event Time
+원천 데이터 동시성 잠금 동시성 Test
 Cursor / Index / Upper Bound
 Watermark Failure
 동일 Batch Hash
@@ -1759,10 +1759,10 @@ Failure Runbook
 
 면접 핵심 설명:
 
-> Source/Bronze는 원본 계보와 재처리 가능성을 위해 Source-aligned 상태를 유지하고, 분석 Naming과 Canonicalization은 dbt Staging으로 분리했다. `updated_at`은 Business Event Time이 아니라 Source Mutation Time으로 정의해 Incremental Cursor의 누락을 방지했으며, Synthetic Source Writer와 Warehouse Extract 사이에는 Global Lease를 두어 Cross-table 관측 일관성을 보장했다. Bronze Object 검증과 Pipeline Commit을 분리하고 Metadata의 COMMITTED 상태만 읽도록 해 Object Storage와 제어 상태의 불일치를 명시적으로 처리한다.
+> Source/Bronze는 원본 계보와 재처리 가능성을 위해 원천 보존 상태를 유지하고, 분석 Naming과 표준화는 dbt Staging으로 분리했다. `updated_at`은 Business Event Time이 아니라 원천 변경 시각으로 정의해 Incremental Cursor의 누락을 방지했으며, Synthetic Source Writer와 Warehouse Extract 사이에는 원천 데이터 동시성 잠금을 두어 Cross-table 관측 일관성을 보장했다. Bronze Object 검증과 Pipeline Commit을 분리하고 Metadata의 COMMITTED 상태만 읽도록 해 Object Storage와 제어 상태의 불일치를 명시적으로 처리한다.
 
 ---
 
 ## 28. 최종 확정 문장
 
-> **Python 3.12 + WSL2 Ubuntu + Docker 환경에서 V1 사용 컬럼을 Allowlist로 선택하고 Olist Naming을 보존한 PostgreSQL OLTP Source를 구성한다. Business Event Time과 Source Mutation Time을 분리하고 Mutable Row의 `updated_at` 단조 증가를 증분 Cursor 계약으로 사용한다. Synthetic Generator와 Warehouse Extract는 Global Source Mutation Lease로 상호 배타적으로 동작하며, Airflow는 Table별 Composite Cursor와 고정 Upper Bound로 데이터를 수집한다. 수집 결과는 SeaweedFS의 불변 Parquet Bronze로 저장하고 Object 검증은 VERIFIED Manifest, 최종 Commit은 Metadata의 COMMITTED 상태로 분리한다. dbt Staging에서 Prefix 제거·Timestamp 표준화·상태 Canonicalization을 수행하고 DuckDB에서 Star Schema, Incremental Fact, SCD Type 2와 Temporal Join을 구축한다. Lease, Metadata, Manifest, Checksum, Schema Version, Data Quality, Quarantine, Backfill, Late Arrival, Orphan Recovery Test로 동시성·실패·재실행을 검증하고 Version Pinning과 실행 Metadata로 재현성을 확보한다.**
+> **Python 3.12 + WSL2 Ubuntu + Docker 환경에서 V1 사용 컬럼을 Allowlist로 선택하고 Olist Naming을 보존한 PostgreSQL OLTP Source를 구성한다. Business Event Time과 원천 변경 시각을 분리하고 Mutable Row의 `updated_at` 단조 증가를 증분 Cursor 계약으로 사용한다. Synthetic Generator와 Warehouse Extract는 원천 데이터 동시성 잠금으로 상호 배타적으로 동작하며, Airflow는 Table별 Composite Cursor와 고정 Upper Bound로 데이터를 수집한다. 수집 결과는 SeaweedFS의 불변 Parquet Bronze로 저장하고 Object 검증은 VERIFIED Manifest, 최종 Commit은 Metadata의 COMMITTED 상태로 분리한다. dbt Staging에서 Prefix 제거·Timestamp 표준화·상태 표준화를 수행하고 DuckDB에서 Star Schema, Incremental Fact, SCD Type 2와 Temporal Join을 구축한다. Lease, Metadata, Manifest, Checksum, Schema Version, Data Quality, Quarantine, Backfill, Late Arrival, Orphan Recovery Test로 동시성·실패·재실행을 검증하고 Version Pinning과 실행 Metadata로 재현성을 확보한다.**
