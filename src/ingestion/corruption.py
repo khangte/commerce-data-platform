@@ -1,4 +1,4 @@
-"""- 테스트·검증용 결정적 In-memory Pipeline Corruption을 제공한다."""
+"""테스트·검증용 결정적 In-memory Pipeline Corruption을 제공한다."""
 
 from __future__ import annotations
 
@@ -20,17 +20,17 @@ SUPPORTED_CORRUPTION_KINDS = frozenset(
 
 @dataclass(frozen=True)
 class CorruptionPlan:
-    """- Batch 내 추출 순번별로 적용할 결정적 Corruption 종류를 보관한다."""
+    """Batch 내 추출 순번별로 적용할 결정적 Corruption 종류를 보관한다."""
 
     rules: Mapping[int, str]
 
     def __post_init__(self) -> None:
-        """- 음수 순번과 지원하지 않는 Corruption 종류를 막는다."""
+        """음수 순번과 지원하지 않는 Corruption 종류를 막는다."""
         if any(ordinal < 0 or kind not in SUPPORTED_CORRUPTION_KINDS for ordinal, kind in self.rules.items()):
             raise ValueError("Corruption rules must use non-negative ordinals and supported kinds")
 
     def apply(self, record: SourceRecord, ordinal: int) -> SourceRecord:
-        """- 지정 순번에만 Source를 쓰지 않는 복제본 Corruption을 적용한다."""
+        """지정 순번에만 Source를 쓰지 않는 복제본 Corruption을 적용한다."""
         kind = self.rules.get(ordinal)
         if kind is None:
             return record
@@ -56,7 +56,7 @@ class CorruptionPlan:
 
 
 def _child_reference_column(record: SourceRecord) -> str:
-    """- Broken Reference를 만들 수 있는 Child FK Column을 반환한다."""
+    """Broken Reference를 만들 수 있는 Child FK Column을 반환한다."""
     if record.config.source_table in {"order_items", "order_payments"}:
         return "order_id"
     raise ValueError("BROKEN_REFERENCE requires a child table record")

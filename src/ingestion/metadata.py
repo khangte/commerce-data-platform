@@ -121,7 +121,7 @@ class VerifiedBronzeObject:
 
 @dataclass(frozen=True)
 class QuarantineBatch:
-    """- Metadata Commit에 함께 기록할 검증된 Quarantine Object 증적이다."""
+    """Metadata Commit에 함께 기록할 검증된 Quarantine Object 증적이다."""
 
     table_batch_id: str
     object_key: str
@@ -129,7 +129,7 @@ class QuarantineBatch:
     error_counts: dict[str, int]
 
     def __post_init__(self) -> None:
-        """- Table Batch·Object Key·Row Count·오류 집계의 유효성을 검증한다."""
+        """Table Batch·Object Key·Row Count·오류 집계의 유효성을 검증한다."""
         _assert_nonempty(self.table_batch_id, "table_batch_id", 320)
         _assert_nonempty(self.object_key, "object_key")
         if self.row_count < 0 or any(not code or count < 0 for code, count in self.error_counts.items()):

@@ -1,4 +1,4 @@
-"""- `orders` 외 Table도 공통 Commit 서비스로 Bronze까지 수집하는지 검증한다."""
+"""`orders` 외 Table도 공통 Commit 서비스로 Bronze까지 수집하는지 검증한다."""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ pytestmark = pytest.mark.integration
     reason="Set PostgreSQL and SeaweedFS integration environment flags after starting containers.",
 )
 def test_customers_table_uses_the_same_bronze_commit_protocol_as_orders(tmp_path) -> None:
-    """- Mutable `customers`도 공통 Writer·Manifest·Metadata CAS로 3개 Row를 Commit한다."""
+    """Mutable `customers`도 공통 Writer·Manifest·Metadata CAS로 3개 Row를 Commit한다."""
     postgres = PostgresSettings.from_environment()
     storage = SeaweedFSSettings.from_environment()
     now = datetime(2026, 9, 7, tzinfo=UTC)
@@ -64,7 +64,7 @@ def test_customers_table_uses_the_same_bronze_commit_protocol_as_orders(tmp_path
 
 
 def _set_customers_watermark(settings: PostgresSettings, pipeline_name: str, now: datetime) -> None:
-    """- 여러 Page를 만들도록 최신 세 Customer 직전 Cursor를 Watermark로 설정한다."""
+    """여러 Page를 만들도록 최신 세 Customer 직전 Cursor를 Watermark로 설정한다."""
     with settings.source_connection() as connection:
         row = connection.execute(
             """
@@ -93,7 +93,7 @@ def _cleanup(
     pipeline_name: str,
     request: TableIngestionRequest,
 ) -> None:
-    """- 테스트가 만든 정확한 Customer Metadata와 Final Object만 정리한다."""
+    """테스트가 만든 정확한 Customer Metadata와 Final Object만 정리한다."""
     object_key, manifest_key = table_object_keys("customers", request.batch_id, request.logical_date)
     client = seaweedfs_s3_client(storage)
     for key in (manifest_key, object_key):

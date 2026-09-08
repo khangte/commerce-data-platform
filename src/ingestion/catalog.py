@@ -1,4 +1,4 @@
-"""- Metadata의 Commit된 Bronze Object만 DuckDB File Catalog로 동기화한다."""
+"""Metadata의 Commit된 Bronze Object만 DuckDB File Catalog로 동기화한다."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from src.ingestion.schema import assert_supported_schema_version
 
 @dataclass(frozen=True)
 class BronzeCatalogEntry:
-    """- DuckDB Bronze File Catalog의 한 Commit된 Object 행이다."""
+    """DuckDB Bronze File Catalog의 한 Commit된 Object 행이다."""
 
     source_table: str
     object_key: str
@@ -25,7 +25,7 @@ class BronzeCatalogEntry:
 
 
 def sync_bronze_catalog(settings: PostgresSettings, database_path: Path) -> tuple[BronzeCatalogEntry, ...]:
-    """- Metadata COMMITTED Object만 `control.bronze_files`에 원자적으로 다시 동기화한다."""
+    """Metadata COMMITTED Object만 `control.bronze_files`에 원자적으로 다시 동기화한다."""
     entries = _committed_entries(settings)
     for entry in entries:
         assert_supported_schema_version(entry.schema_version)
@@ -76,7 +76,7 @@ def sync_bronze_catalog(settings: PostgresSettings, database_path: Path) -> tupl
 
 
 def _committed_entries(settings: PostgresSettings) -> tuple[BronzeCatalogEntry, ...]:
-    """- Metadata Source of Truth에서 Commit된 Object만 정렬해 읽는다."""
+    """Metadata Source of Truth에서 Commit된 Object만 정렬해 읽는다."""
     with settings.pipeline_connection() as connection:
         rows = connection.execute(
             """

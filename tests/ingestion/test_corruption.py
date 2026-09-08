@@ -1,4 +1,4 @@
-"""- 결정적 Pipeline Corruption의 원본 보존·오류 Count 분리를 검증한다."""
+"""결정적 Pipeline Corruption의 원본 보존·오류 Count 분리를 검증한다."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ from src.ingestion.validation import ValidationPipeline
 
 
 def test_corruption_plan_keeps_source_unchanged_and_separates_input_corrupted_valid_rejected_counts() -> None:
-    """- 다섯 종류 복제본 오류가 Source를 바꾸지 않고 각 Error Code로 분리된다."""
+    """다섯 종류 복제본 오류가 Source를 바꾸지 않고 각 Error Code로 분리된다."""
     base = datetime(2026, 9, 7, tzinfo=UTC)
     orders = tuple(_order(base + timedelta(seconds=index), index) for index in range(4))
     order_plan = CorruptionPlan(
@@ -69,7 +69,7 @@ def test_corruption_plan_keeps_source_unchanged_and_separates_input_corrupted_va
 
 
 def _order(timestamp: datetime, ordinal: int) -> SourceRecord:
-    """- Orders Corruption 검증에 쓸 정상 Source Record를 만든다."""
+    """Orders Corruption 검증에 쓸 정상 Source Record를 만든다."""
     values = {
         "order_id": f"order-{ordinal:04d}",
         "customer_id": "customer-0001",
@@ -86,7 +86,7 @@ def _order(timestamp: datetime, ordinal: int) -> SourceRecord:
 
 
 def _item(timestamp: datetime, item_id: int) -> SourceRecord:
-    """- Child Corruption 검증에 쓸 정상 Item Source Record를 만든다."""
+    """Child Corruption 검증에 쓸 정상 Item Source Record를 만든다."""
     values = {
         "order_id": "order-0001",
         "order_item_id": item_id,

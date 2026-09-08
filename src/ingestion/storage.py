@@ -140,12 +140,12 @@ def verify_parquet_object(
 
 
 def read_object_bytes(settings: SeaweedFSSettings, key: str) -> bytes:
-    """- 지정 Final Object의 전체 Byte를 검증·Manifest 처리용으로 읽는다."""
+    """지정 Final Object의 전체 Byte를 검증·Manifest 처리용으로 읽는다."""
     return seaweedfs_s3_client(settings).get_object(Bucket=settings.bucket, Key=key)["Body"].read()
 
 
 def list_object_keys(settings: SeaweedFSSettings, prefix: str) -> tuple[str, ...]:
-    """- 지정 Prefix 아래의 Object Key를 페이지 처리해 정렬 반환한다."""
+    """지정 Prefix 아래의 Object Key를 페이지 처리해 정렬 반환한다."""
     client = seaweedfs_s3_client(settings)
     keys: list[str] = []
     continuation: str | None = None
@@ -161,7 +161,7 @@ def list_object_keys(settings: SeaweedFSSettings, prefix: str) -> tuple[str, ...
 
 
 def stored_object_from_head(settings: SeaweedFSSettings, key: str) -> StoredObject:
-    """- HEAD의 크기·SHA-256 Metadata를 검증 가능한 Object 증적으로 복원한다."""
+    """HEAD의 크기·SHA-256 Metadata를 검증 가능한 Object 증적으로 복원한다."""
     head = seaweedfs_s3_client(settings).head_object(Bucket=settings.bucket, Key=key)
     metadata = head.get("Metadata")
     checksum = metadata.get("sha256") if isinstance(metadata, Mapping) else None
