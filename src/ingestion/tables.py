@@ -9,6 +9,8 @@ from types import MappingProxyType
 
 import pyarrow as pa
 
+from src.ingestion.schema import assert_supported_schema_version
+
 BRONZE_SCHEMA_VERSION = 1
 
 
@@ -48,8 +50,7 @@ class TableConfig:
             raise ValueError("primary_key_columns and cursor_key_columns must not be empty")
         if self.primary_key_columns != self.cursor_key_columns:
             raise ValueError("Cursor key columns must contain the complete primary key in order")
-        if self.schema_version != BRONZE_SCHEMA_VERSION:
-            raise ValueError(f"Unsupported Bronze schema_version: {self.schema_version}")
+        assert_supported_schema_version(self.schema_version)
         names = self.source_column_names
         if len(names) != len(set(names)):
             raise ValueError("Source column names must be unique")
