@@ -339,6 +339,22 @@ Credential / Secret
 `source_lease_token`에는 앞서 정의한 소유자·UUID·만료 시각·Version만 포함한다. Airflow Connection URI,
 비밀번호, Object Storage Key는 포함하지 않는다.
 
+검증:
+
+- `source_simulation_dag`/`warehouse_pipeline_dag`의 모든 Task 리턴값(XCom Payload)을 코드로
+  전수 대조했다. `generator_run_id`/`result_counts`/`logical_content_hash`/`reused_successful_run`,
+  `batch_id`/`logical_date`, Lease Token 4개 필드, `source_table`/`status`/`object_key`/`row_count`,
+  `verified_table_count`/`catalog_entry_count`만 존재하며 DataFrame·Arrow Table·Parquet
+  Bytes·Raw Row·Credential은 없다. `PostgresSettings`/`SeaweedFSSettings`는 각 Task 안에서
+  `from_environment()`로 새로 만들고 XCom으로 전달하지 않는다.
+- `warehouse_pipeline_dag`의 Task Dependency를 `airflow dags` 조회로 재확인해
+  `release_source_snapshot_lease`가 `sync_bronze_catalog_task`와 독립 Branch로 `extract_validate_load`
+  직후 실행됨을 확인했다. 실제 `airflow dags test` 실행 로그에서도 `release_source_snapshot_lease`가
+  `sync_bronze_catalog_task`보다 먼저 끝나, Catalog 동기화 구간에는 원천 데이터 동시성 잠금이 이미
+  해제돼 있음을 확인했다.
+- Dynamic Task Mapping 입력 순서가 `customers, products, sellers, orders, order_items, order_payments`
+  고정임을 `SOURCE_TABLES` 튜플로 확인했다.
+
 ## 범위 밖
 
 - Phase 3 Python Pipeline의 재구현
@@ -410,15 +426,15 @@ AC-01과 AC-16의 Fact/dbt 부분은 Phase 5~6에서 완성한다.
 
 ## Definition of Done
 
-- [ ] 모든 `P4-*` Task가 완료됐다.
-- [ ] 두 DAG가 Import Error 없이 Parse된다.
-- [ ] Warehouse E2E가 Phase 3 API를 통해 실행된다.
-- [ ] Retryable Error만 재시도한다.
-- [ ] 부분 성공 재실행에서 COMMITTED Table을 재사용한다.
-- [ ] 모든 종료 경로에서 원천 데이터 동시성 잠금이 해제되거나 안전하게 만료된다.
-- [ ] XCom 금지 Payload가 존재하지 않는다.
-- [ ] Lease 해제 후 Catalog/dbt 구간에서 Generator가 원천 데이터 동시성 잠금을 획득할 수 있다.
-- [ ] dbt Project 미구현 상태에서 Warehouse DAG가 dbt 성공을 가장하지 않는다.
+- [ ] 모든 `P4-*` Task가 완료됐다. (`P4-11` dbt Build 호출 경계는 Phase 5 이후로 의도적으로 보류)
+- [x] 두 DAG가 Import Error 없이 Parse된다.
+- [x] Warehouse E2E가 Phase 3 API를 통해 실행된다.
+- [x] Retryable Error만 재시도한다.
+- [x] 부분 성공 재실행에서 COMMITTED Table을 재사용한다.
+- [x] 모든 종료 경로에서 원천 데이터 동시성 잠금이 해제되거나 안전하게 만료된다.
+- [x] XCom 금지 Payload가 존재하지 않는다.
+- [x] Lease 해제 후 Catalog/dbt 구간에서 Generator가 원천 데이터 동시성 잠금을 획득할 수 있다.
+- [x] dbt Project 미구현 상태에서 Warehouse DAG가 dbt 성공을 가장하지 않는다.
 
 ## Portfolio Evidence
 
