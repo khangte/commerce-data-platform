@@ -12,9 +12,21 @@ import pytest
 from psycopg.types.json import Jsonb
 
 from src.common.database import PostgresSettings
+from src.generator.lease import (
+    GENERATOR_OWNER_TYPE,
+    LeaseUnavailableError,
+    acquire_source_mutation_lease,
+    release_source_mutation_lease,
+)
+from src.ingestion import service as ingestion_service
 from src.ingestion.batch import BatchIdentityConflictError
 from src.ingestion.corruption import INVALID_STATUS, CorruptionPlan
 from src.ingestion.metadata import CursorPosition, get_or_create_watermark
+from src.ingestion.orphan import (
+    OrphanReconciliationError,
+    find_orphan_candidates,
+    reconcile_orphan,
+)
 from src.ingestion.service import (
     OrdersIngestionRequest,
     ingest_orders,
@@ -24,6 +36,10 @@ from src.ingestion.service import (
 from src.ingestion.storage import SeaweedFSSettings, ensure_bucket, seaweedfs_s3_client
 
 pytestmark = pytest.mark.integration
+
+
+class _CrashAfterFinalObject(BaseException):
+    """Metadata Commit 직전 Process 중단을 재현하는 테스트 전용 예외다."""
 
 
 @pytest.mark.skipif(
@@ -327,7 +343,7 @@ def test_orders_service_rejects_a_standard_batch_when_the_current_range_differs(
 def test_orders_service_commits_valid_rows_and_verified_quarantine_metadata_for_low_reject_rate(
     tmp_path,
 ) -> None:
-    """- 20개 중 1개 복제본 오류는 Valid Bronze·Quarantine·Count를 함께 Commit한다."""
+    """20개 중 1개 복제본 오류는 Valid Bronze·Quarantine·Count를 함께 Commit한다."""
     postgres = PostgresSettings.from_environment()
     storage = SeaweedFSSettings.from_environment()
     now = datetime(2026, 9, 7, tzinfo=UTC)
@@ -382,6 +398,158 @@ def test_orders_service_commits_valid_rows_and_verified_quarantine_metadata_for_
         _delete_test_rows_and_objects(postgres, storage, pipeline_name, request)
 
 
+@pytest.mark.skipif(
+    os.environ.get("RUN_POSTGRES_INTEGRATION") != "1"
+    or os.environ.get("RUN_SEAWEEDFS_INTEGRATION") != "1",
+    reason="Set PostgreSQL and SeaweedFS integration environment flags after starting containers.",
+)
+def test_orders_service_does_not_read_or_publish_when_generator_holds_the_global_lease(
+    tmp_path,
+) -> None:
+    """Generator Global Lease 충돌은 Source Snapshot·Final Bronze Object 전에 실패한다."""
+    postgres = PostgresSettings.from_environment()
+    storage = SeaweedFSSettings.from_environment()
+    now = datetime(2026, 9, 7, tzinfo=UTC)
+    pipeline_name = f"test_orders_lease_conflict_{uuid.uuid4().hex}"
+    request = OrdersIngestionRequest.for_dag_run(
+        dag_id=f"warehouse_{uuid.uuid4().hex}", logical_date=now, pipeline_name=pipeline_name
+    )
+    _set_watermark(postgres, pipeline_name, _lower_bound_before_five_latest_rows(postgres), now)
+    generator_lease = acquire_source_mutation_lease(
+        postgres, owner_type=GENERATOR_OWNER_TYPE, owner_id=uuid.uuid4(), now=now
+    )
+    object_key, _ = orders_object_keys(request.batch_id, request.logical_date)
+    try:
+        with pytest.raises(LeaseUnavailableError):
+            ingest_orders(postgres, storage, request, local_directory=tmp_path, now=now)
+
+        assert object_key not in _bucket_keys(storage, object_key)
+        with postgres.pipeline_connection() as connection:
+            run_row = connection.execute(
+                """
+                SELECT status, error_type FROM pipeline_runs
+                WHERE pipeline_name = %s AND source_table = 'orders'
+                """,
+                (pipeline_name,),
+            ).fetchone()
+        assert run_row == ("FAILED", "SOURCE_MUTATION_CONFLICT")
+    finally:
+        release_source_mutation_lease(postgres, generator_lease, now=now)
+        _delete_test_rows_and_objects(postgres, storage, pipeline_name, request)
+
+
+@pytest.mark.skipif(
+    os.environ.get("RUN_POSTGRES_INTEGRATION") != "1"
+    or os.environ.get("RUN_SEAWEEDFS_INTEGRATION") != "1",
+    reason="Set PostgreSQL and SeaweedFS integration environment flags after starting containers.",
+)
+def test_orphan_reconciliation_commits_an_interrupted_verified_bronze_object(
+    monkeypatch, tmp_path
+) -> None:
+    """Commit 직전 중단된 Reject 0건 Object는 증적 검증 뒤 Metadata와 Watermark를 복원한다."""
+    postgres = PostgresSettings.from_environment()
+    storage = SeaweedFSSettings.from_environment()
+    now = datetime(2026, 9, 7, tzinfo=UTC)
+    pipeline_name = f"test_orders_orphan_{uuid.uuid4().hex}"
+    request = OrdersIngestionRequest.for_dag_run(
+        dag_id=f"warehouse_{uuid.uuid4().hex}",
+        logical_date=now,
+        pipeline_name=pipeline_name,
+        page_size=2,
+    )
+    lower_bound = _lower_bound_before_five_latest_rows(postgres)
+    _set_watermark(postgres, pipeline_name, lower_bound, now)
+
+    def _interrupt_commit(*_: object, **__: object) -> None:
+        """Final Object 게시 후 Transaction 전 중단을 재현한다."""
+        raise _CrashAfterFinalObject()
+
+    monkeypatch.setattr(ingestion_service, "commit_table_run", _interrupt_commit)
+    object_key, _ = orders_object_keys(request.batch_id, request.logical_date)
+    try:
+        with pytest.raises(_CrashAfterFinalObject):
+            ingest_orders(postgres, storage, request, local_directory=tmp_path, now=now)
+
+        candidate = next(
+            item
+            for item in find_orphan_candidates(postgres, storage)
+            if item.object_key == object_key
+        )
+        reconcile_orphan(postgres, storage, candidate, now=now)
+
+        with postgres.pipeline_connection() as connection:
+            run_row = connection.execute(
+                """
+                SELECT status, rows_extracted, rows_valid, rows_rejected, rows_loaded
+                FROM pipeline_runs WHERE pipeline_name = %s AND source_table = 'orders'
+                """,
+                (pipeline_name,),
+            ).fetchone()
+            watermark_row = connection.execute(
+                """
+                SELECT watermark_timestamp, watermark_keys
+                FROM watermarks WHERE pipeline_name = %s AND source_table = 'orders'
+                """,
+                (pipeline_name,),
+            ).fetchone()
+        assert run_row == ("SUCCESS", 5, 5, 0, 5)
+        assert watermark_row != (lower_bound.timestamp, lower_bound.as_json())
+    finally:
+        _delete_test_rows_and_objects(postgres, storage, pipeline_name, request)
+
+
+@pytest.mark.skipif(
+    os.environ.get("RUN_POSTGRES_INTEGRATION") != "1"
+    or os.environ.get("RUN_SEAWEEDFS_INTEGRATION") != "1",
+    reason="Set PostgreSQL and SeaweedFS integration environment flags after starting containers.",
+)
+def test_orphan_reconciliation_rejects_a_batch_with_a_quarantine_object(
+    monkeypatch, tmp_path
+) -> None:
+    """Reject Quarantine가 먼저 게시된 Orphan은 Count 추측 없이 수동 처리로 남긴다."""
+    postgres = PostgresSettings.from_environment()
+    storage = SeaweedFSSettings.from_environment()
+    now = datetime(2026, 9, 7, tzinfo=UTC)
+    pipeline_name = f"test_orders_orphan_reject_{uuid.uuid4().hex}"
+    request = OrdersIngestionRequest.for_dag_run(
+        dag_id=f"warehouse_{uuid.uuid4().hex}",
+        logical_date=now,
+        pipeline_name=pipeline_name,
+        page_size=7,
+        corruption_plan=CorruptionPlan({0: INVALID_STATUS}),
+    )
+    _set_watermark(postgres, pipeline_name, _lower_bound_before_twenty_latest_rows(postgres), now)
+
+    def _interrupt_commit(*_: object, **__: object) -> None:
+        """Quarantine와 Bronze 게시 후 Metadata Commit 직전 중단을 재현한다."""
+        raise _CrashAfterFinalObject()
+
+    monkeypatch.setattr(ingestion_service, "commit_table_run", _interrupt_commit)
+    object_key, _ = orders_object_keys(request.batch_id, request.logical_date)
+    try:
+        with pytest.raises(_CrashAfterFinalObject):
+            ingest_orders(postgres, storage, request, local_directory=tmp_path, now=now)
+
+        candidate = next(
+            item
+            for item in find_orphan_candidates(postgres, storage)
+            if item.object_key == object_key
+        )
+        with pytest.raises(OrphanReconciliationError, match="rejects"):
+            reconcile_orphan(postgres, storage, candidate, now=now)
+        with postgres.pipeline_connection() as connection:
+            status = connection.execute(
+                """
+                SELECT status FROM pipeline_runs
+                WHERE pipeline_name = %s AND source_table = 'orders'
+                """,
+                (pipeline_name,),
+            ).fetchone()
+        assert status == ("RUNNING",)
+    finally:
+        _delete_test_rows_and_objects(postgres, storage, pipeline_name, request)
+
+
 def _lower_bound_before_five_latest_rows(settings: PostgresSettings) -> CursorPosition:
     """작고 여러 Page인 실제 범위를 만들 최신 다섯 Row 직전 Cursor를 읽는다."""
     with settings.source_connection() as connection:
@@ -397,7 +565,7 @@ def _lower_bound_before_five_latest_rows(settings: PostgresSettings) -> CursorPo
 
 
 def _lower_bound_before_twenty_latest_rows(settings: PostgresSettings) -> CursorPosition:
-    """- Threshold 이하 Reject 통합 검증용 최신 20개 Row 직전 Cursor를 읽는다."""
+    """Threshold 이하 Reject 통합 검증용 최신 20개 Row 직전 Cursor를 읽는다."""
     with settings.source_connection() as connection:
         row = connection.execute(
             """
@@ -422,6 +590,12 @@ def _maximum_cursor(settings: PostgresSettings) -> CursorPosition:
     if row is None:
         raise RuntimeError("The seeded source must contain orders")
     return CursorPosition(row[0], (row[1],))
+
+
+def _bucket_keys(storage: SeaweedFSSettings, prefix: str) -> set[str]:
+    """지정 Prefix 아래의 실제 Bucket Key를 테스트 단언용 Set으로 읽는다."""
+    response = seaweedfs_s3_client(storage).list_objects_v2(Bucket=storage.bucket, Prefix=prefix)
+    return {item["Key"] for item in response.get("Contents", ())}
 
 
 def _set_watermark(

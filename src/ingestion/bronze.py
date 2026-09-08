@@ -36,7 +36,7 @@ ORDERS_BRONZE_SCHEMA = ORDERS_TABLE.bronze_schema
 
 @dataclass(frozen=True)
 class BronzeWriteContext:
-    """- 한 Table Batch의 Bronze 기술 Column에 반복 기록할 고정 값이다."""
+    """한 Table Batch의 Bronze 기술 Column에 반복 기록할 고정 값이다."""
 
     batch_id: str
     run_id: uuid.UUID
@@ -45,7 +45,7 @@ class BronzeWriteContext:
     schema_version: int = BRONZE_SCHEMA_VERSION
 
     def __post_init__(self) -> None:
-        """- Batch 식별자, UTC 수집 시각, Source Table과 Schema Version을 검증한다."""
+        """Batch 식별자, UTC 수집 시각, Source Table과 Schema Version을 검증한다."""
         if not self.batch_id or not self.batch_id.strip():
             raise ValueError("batch_id must not be empty")
         if self.ingested_at.tzinfo is None or self.ingested_at.utcoffset() != UTC.utcoffset(None):
@@ -58,14 +58,14 @@ class BronzeWriteContext:
 
 @dataclass(frozen=True)
 class LocalParquetArtifact:
-    """- 닫힌 Local Bronze Parquet의 경로와 최종 Row Count다."""
+    """닫힌 Local Bronze Parquet의 경로와 최종 Row Count다."""
 
     path: Path
     row_count: int
 
 
 class TableBronzeWriter:
-    """- 등록된 Source Table의 Valid Record를 Local Bronze Parquet으로 기록한다."""
+    """등록된 Source Table의 Valid Record를 Local Bronze Parquet으로 기록한다."""
 
     def __init__(
         self,
@@ -75,7 +75,7 @@ class TableBronzeWriter:
         *,
         row_group_target_rows: int = ROW_GROUP_TARGET_ROWS,
     ) -> None:
-        """- 새 Local 파일 Writer를 열고 Table Schema·Context 일치를 검증한다."""
+        """새 Local 파일 Writer를 열고 Table Schema·Context 일치를 검증한다."""
         if context.source_table != config.source_table:
             raise ValueError("Bronze write context source_table differs from the table config")
         if row_group_target_rows <= 0:
@@ -98,11 +98,11 @@ class TableBronzeWriter:
         self._closed = False
 
     def write_page(self, page: SourcePage) -> None:
-        """- Valid Source Page의 모든 Record를 명시적 Arrow Schema로 기록한다."""
+        """Valid Source Page의 모든 Record를 명시적 Arrow Schema로 기록한다."""
         self.write_records(page.records)
 
     def write_records(self, records: tuple[SourceRecord, ...]) -> None:
-        """- 비어 있지 않은 Valid Record 묶음을 Row Group 크기로 나눠 기록한다."""
+        """비어 있지 않은 Valid Record 묶음을 Row Group 크기로 나눠 기록한다."""
         if self._closed:
             raise RuntimeError("Table Bronze Writer is already closed")
         if not records:
@@ -117,15 +117,16 @@ class TableBronzeWriter:
         self._row_count += table.num_rows
 
     def close(self) -> LocalParquetArtifact:
-        """- Writer를 닫고 Local Artifact 경로와 Row Count를 반환한다."""
+        """Writer를 닫고 Local Artifact 경로와 Row Count를 반환한다."""
         if self._closed:
             raise RuntimeError("Table Bronze Writer is already closed")
         self._writer.close()
         self._closed = True
         return LocalParquetArtifact(path=self._path, row_count=self._row_count)
 
+
 class OrdersBronzeWriter:
-    """- `orders` Page를 제한된 Row Group Buffer로 Local Parquet에 순차 기록한다."""
+    """`orders` Page를 제한된 Row Group Buffer로 Local Parquet에 순차 기록한다."""
 
     def __init__(
         self,
@@ -134,7 +135,7 @@ class OrdersBronzeWriter:
         *,
         row_group_target_rows: int = ROW_GROUP_TARGET_ROWS,
     ) -> None:
-        """- 새 Local 파일 Writer를 열고 최대 128K Row의 메모리 Buffer를 준비한다."""
+        """새 Local 파일 Writer를 열고 최대 128K Row의 메모리 Buffer를 준비한다."""
         if row_group_target_rows <= 0:
             raise ValueError("row_group_target_rows must be greater than zero")
         if output_path.exists():
@@ -156,7 +157,7 @@ class OrdersBronzeWriter:
         self._closed = False
 
     def write_page(self, page: OrdersPage) -> None:
-        """- 한 Keyset Page를 Arrow Table로 변환해 제한된 Row Group Buffer에 추가한다."""
+        """한 Keyset Page를 Arrow Table로 변환해 제한된 Row Group Buffer에 추가한다."""
         self._assert_open()
         table = _orders_page_to_arrow_table(page, self._context)
         self._row_count += table.num_rows
@@ -171,7 +172,7 @@ class OrdersBronzeWriter:
                 self._flush_row_group()
 
     def close(self) -> LocalParquetArtifact:
-        """- 남은 Row Group을 쓰고 파일을 닫은 뒤 Local Artifact 증적을 반환한다."""
+        """남은 Row Group을 쓰고 파일을 닫은 뒤 Local Artifact 증적을 반환한다."""
         self._assert_open()
         try:
             self._flush_row_group()
@@ -181,7 +182,7 @@ class OrdersBronzeWriter:
         return LocalParquetArtifact(path=self._path, row_count=self._row_count)
 
     def _flush_row_group(self) -> None:
-        """- 현재 Buffer를 한 Row Group으로 기록하고 메모리를 비운다."""
+        """현재 Buffer를 한 Row Group으로 기록하고 메모리를 비운다."""
         if not self._buffer:
             return
         table = pa.concat_tables(self._buffer)
@@ -190,19 +191,19 @@ class OrdersBronzeWriter:
         self._buffer_row_count = 0
 
     def _assert_open(self) -> None:
-        """- 닫힌 Writer에 대한 추가 쓰기 또는 중복 Close를 막는다."""
+        """닫힌 Writer에 대한 추가 쓰기 또는 중복 Close를 막는다."""
         if self._closed:
             raise RuntimeError("Orders Bronze Writer is already closed")
 
 
 def _orders_page_to_arrow_table(page: OrdersPage, context: BronzeWriteContext) -> pa.Table:
-    """- Raw-compatible Source Order Page와 기술 Column을 Arrow Schema로 변환한다."""
+    """Raw-compatible Source Order Page와 기술 Column을 Arrow Schema로 변환한다."""
     rows = [_order_row(record, context) for record in page.records]
     return pa.Table.from_pylist(rows, schema=ORDERS_BRONZE_SCHEMA)
 
 
 def _order_row(record: SourceOrderRecord, context: BronzeWriteContext) -> dict[str, object]:
-    """- Source Order와 고정 기술 Column을 Bronze Arrow Row 표현으로 변환한다."""
+    """Source Order와 고정 기술 Column을 Bronze Arrow Row 표현으로 변환한다."""
     return {
         "order_id": record.order_id,
         "customer_id": record.customer_id,
@@ -223,7 +224,7 @@ def _order_row(record: SourceOrderRecord, context: BronzeWriteContext) -> dict[s
 
 
 def orders_logical_hash(path: Path) -> str:
-    """- Local Bronze를 PK 순서 Business Column Canonical JSON으로 Hash한다."""
+    """Local Bronze를 PK 순서 Business Column Canonical JSON으로 Hash한다."""
     digest = hashlib.sha256()
     column_list = ", ".join(ORDERS_BUSINESS_COLUMNS)
     connection = duckdb.connect()
@@ -241,7 +242,7 @@ def orders_logical_hash(path: Path) -> str:
 
 
 def _canonical_business_json(row: dict[str, object]) -> str:
-    """- Timestamp를 UTC ISO 문자열로 통일한 Business Row JSON을 반환한다."""
+    """Timestamp를 UTC ISO 문자열로 통일한 Business Row JSON을 반환한다."""
     return json.dumps(
         row,
         default=_json_default,
@@ -252,7 +253,7 @@ def _canonical_business_json(row: dict[str, object]) -> str:
 
 
 def _json_default(value: object) -> str:
-    """- Business Hash JSON의 UTC Timestamp 표현을 결정적으로 변환한다."""
+    """Business Hash JSON의 UTC Timestamp 표현을 결정적으로 변환한다."""
     if isinstance(value, datetime):
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("Business timestamp must include a UTC offset")
@@ -263,26 +264,49 @@ def _json_default(value: object) -> str:
 
 
 def table_logical_hash(path: Path, config: TableConfig) -> str:
-    """- 기술 Column을 제외한 Source Column을 PK 순서로 Canonical Hash한다."""
-    digest = hashlib.sha256()
+    """기술 Column을 제외한 Source Column을 PK 순서로 Canonical Hash한다."""
     column_list = ", ".join(f'"{column}"' for column in config.source_column_names)
     order_by = ", ".join(f'"{column}"' for column in config.primary_key_columns)
     connection = duckdb.connect()
     try:
-        batches = connection.execute(
-            f"SELECT {column_list} FROM read_parquet(?) ORDER BY {order_by}", [str(path)]
-        ).to_arrow_reader(batch_size=50_000)
-        for batch in batches:
-            for row in batch.to_pylist():
-                digest.update(_canonical_business_json(row).encode("utf-8"))
-                digest.update(b"\n")
+        return _hash_ordered_business_rows(
+            connection,
+            f"SELECT {column_list} FROM read_parquet(?) ORDER BY {order_by}",
+            [str(path)],
+        )
     finally:
         connection.close()
+
+
+def table_logical_hash_bytes(payload: bytes, config: TableConfig) -> str:
+    """재수신한 Bronze Parquet Byte의 PK 정렬 Business Hash를 다시 계산한다."""
+    column_list = ", ".join(f'"{column}"' for column in config.source_column_names)
+    order_by = ", ".join(f'"{column}"' for column in config.primary_key_columns)
+    connection = duckdb.connect()
+    try:
+        connection.register("bronze_rows", pq.read_table(pa.BufferReader(payload)))
+        return _hash_ordered_business_rows(
+            connection, f"SELECT {column_list} FROM bronze_rows ORDER BY {order_by}"
+        )
+    finally:
+        connection.close()
+
+
+def _hash_ordered_business_rows(
+    connection: duckdb.DuckDBPyConnection, query: str, parameters: list[str] | None = None
+) -> str:
+    """정렬 Query 결과의 Business Row를 Canonical JSON SHA-256으로 축적한다."""
+    digest = hashlib.sha256()
+    batches = connection.execute(query, parameters or []).to_arrow_reader(batch_size=50_000)
+    for batch in batches:
+        for row in batch.to_pylist():
+            digest.update(_canonical_business_json(row).encode("utf-8"))
+            digest.update(b"\n")
     return digest.hexdigest()
 
 
 def _source_record_row(record: SourceRecord, context: BronzeWriteContext) -> dict[str, object]:
-    """- 일반 Source Record와 공통 기술 Column을 Bronze Arrow Row로 바꾼다."""
+    """일반 Source Record와 공통 기술 Column을 Bronze Arrow Row로 바꾼다."""
     return {
         **record.values,
         "_batch_id": context.batch_id,
