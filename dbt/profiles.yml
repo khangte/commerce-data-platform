@@ -1,0 +1,17 @@
+commerce_data_platform:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: "{{ env_var('WAREHOUSE_PATH', 'data/warehouse/warehouse.duckdb') }}"
+      schema: main
+      threads: 1
+      extensions:
+        - httpfs
+      settings:
+        s3_endpoint: "{{ env_var('SEAWEEDFS_HOST', 'localhost') }}:{{ env_var('SEAWEEDFS_S3_PORT', '8333') }}"
+        s3_region: us-east-1
+        s3_url_style: path
+        s3_use_ssl: false
+        s3_access_key_id: "{{ env_var('SEAWEEDFS_ACCESS_KEY', '') }}"
+        s3_secret_access_key: "{{ env_var('SEAWEEDFS_SECRET_KEY', '') }}"

@@ -43,11 +43,11 @@ facts         incremental
 
 ## Phase 5A. Bronze File Catalog
 
-- [ ] `P5-01` DuckDB `control.bronze_files` Schema와 동기화 구현
-- [ ] `P5-02` Catalog 기반 `read_parquet([...])` dbt Macro 구현
-- [ ] `P5-03` 지원하지 않는 Bronze Schema Version 사전 차단
-- [ ] `P5-04` 빈 Object 목록과 신규 Object 증분 동기화 처리
-- [ ] S3 Prefix 전체 Glob을 사용하는 Model/Macro가 없는지 정적 검사
+- [x] `P5-01` DuckDB `control.bronze_files` Schema와 동기화 구현
+- [x] `P5-02` Catalog 기반 `read_parquet([...])` dbt Macro 구현
+- [x] `P5-03` 지원하지 않는 Bronze Schema Version 사전 차단
+- [x] `P5-04` 빈 Object 목록과 신규 Object 증분 동기화 처리
+- [x] S3 Prefix 전체 Glob을 사용하는 Model/Macro가 없는지 정적 검사
 
 ```text
 pipeline_metadata.bronze_objects(COMMITTED)
@@ -69,12 +69,12 @@ dbt source macro
 6. `stg_customers_current`
 7. `stg_customer_observations`
 
-- [ ] `P5-05` Product/Seller Naming과 Type 표준화
-- [ ] `P5-06` Order Item/Payment Naming과 Type 표준화
-- [ ] `P5-07` Order Timestamp Rename과 8개 표준 상태 매핑
-- [ ] `P5-08` Customer Business Key 변환과 Current 선택
-- [ ] `P5-09` Customer Observation Deduplication
-- [ ] `P5-10` Staging Mapping 자동 검증
+- [x] `P5-05` Product/Seller Naming과 Type 표준화
+- [x] `P5-06` Order Item/Payment Naming과 Type 표준화
+- [x] `P5-07` Order Timestamp Rename과 8개 표준 상태 매핑
+- [x] `P5-08` Customer Business Key 변환과 Current 선택
+- [x] `P5-09` Customer Observation Deduplication
+- [x] `P5-10` Staging Mapping 자동 검증
 
 Customer Mapping:
 
@@ -156,23 +156,28 @@ order_id DESC
 source_customer_id DESC
 ```
 
+`stg_customers_current`의 출력 Grain은 주문 결합을 위한 `source_customer_id` 1행이다. 위 규칙으로
+사람별 대표 속성(`membership_level`, `city`, `state`)을 먼저 고른 뒤, 같은 사람의 모든 현재
+`source_customer_id` 매핑 행에 그 속성과 Group `created_at` 최소·`updated_at` 최대를 붙인다.
+대표 행만 출력하면 나머지 주문의 원천 고객 키가 사라져 `stg_orders` 결합이 누락되므로 허용하지 않는다.
+
 ## Phase 5C. Intermediate
 
-- [ ] `P5-11` `int_orders_enriched`
-- [ ] `P5-12` `int_order_items_enriched`
-- [ ] `P5-13` `int_payment_summary`
-- [ ] `P5-14` `int_customer_history`
-- [ ] `P5-15` `int_affected_business_dates`
-- [ ] `P5-16` `control.affected_keys` 기록과 Invocation ID 연결
+- [x] `P5-11` `int_orders_enriched`
+- [x] `P5-12` `int_order_items_enriched`
+- [x] `P5-13` `int_payment_summary`
+- [x] `P5-14` `int_customer_history`
+- [x] `P5-15` `int_affected_business_dates`
+- [x] `P5-16` `control.affected_keys` 기록과 Invocation ID 연결
 
 Late Arrival 영향 범위는 주문 구매일, 연결 주문 구매일, 고객 변경 구간, Product/Seller 사용 주문일을 기준으로 계산한다.
 
 ## Phase 5D. Dimension
 
-- [ ] `P5-17` `dim_product`
-- [ ] `P5-18` `dim_seller`
-- [ ] `P5-19` UTC 기준 `dim_date`
-- [ ] `P5-20` SCD Type 2 `dim_customer`
+- [x] `P5-17` `dim_product`
+- [x] `P5-18` `dim_seller`
+- [x] `P5-19` UTC 기준 `dim_date`
+- [x] `P5-20` SCD Type 2 `dim_customer`
 
 | Model          | Grain            | Unique Key     |
 | -------------- | ---------------- | -------------- |
@@ -335,7 +340,19 @@ AND order.purchase_at < COALESCE(dim_customer.valid_to, TIMESTAMPTZ 'infinity')
 
 | 경로                                          | 변경 내용                                                                                                                                                                                                                                                                                                           |
 | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `docs/phases/phase-05-dbt-duckdb-modeling.md` | 프로젝트 내부 용어를 한국어 중심으로 정리하고, 코드·DB 식별자와 `Logical Hash` 표기는 유지했다. Staging Mapping을 PRD Section 14.1 전체로 확장하고, 8개 주문 표준 상태 Mapping, SCD2 최초 Version `valid_from` 규칙을 보완했다. 다중 상태 집계는 필요할 때만 Macro 또는 Mapping Seed로 재사용하도록 정했다. Dimension Grain/Unique Key 표와 `P5-33` dbt 호출 경계 활성화 Task를 추가했다. |
+| `dbt/dbt_project.yml`                          | DuckDB dbt 프로젝트의 모델 경로와 계층별 Materialization·Schema를 정의했다.                                                                                                                           |
+| `dbt/profiles.yml`                             | 로컬 DuckDB Warehouse와 SeaweedFS Path-style S3 연결을 환경 변수 기반으로 구성했다. Credential은 파일에 저장하지 않는다.                                                                     |
+| `dbt/macros/bronze_source.sql`                 | COMMITTED File Catalog만 명시적 `read_parquet([...])` 목록으로 변환한다. 지원 Schema Version을 다시 확인하고, 빈 Catalog에는 Source 계약과 동일한 빈 Relation을 반환한다.                       |
+| `dbt/macros/generate_schema_name.sql`          | dbt 기본 Schema 접두어를 제거해 `staging`, `intermediate`, `dimensions`, `facts` Schema 이름을 Warehouse 계약과 일치시킨다.                                                                  |
+| `dbt/macros/current_bronze_records.sql`        | Mutable Entity의 최신 Bronze Version을 `updated_at`, `_ingested_at`, `_batch_id` 순서로 하나만 선택하는 공통 Macro를 추가했다.                                                                  |
+| `dbt/macros/status_standardization.sql`        | 주문 8개·결제 4개·고객 등급 3개 원천 상태를 명시적 대문자 표준값으로 바꾸는 Macro를 추가했다.                                                                                                      |
+| `dbt/models/staging/*.sql`                     | Product, Seller, Order Item, Payment, Order와 고객 Current·관측을 Staging View로 구현했다. 주문은 모든 `source_customer_id` 매핑을 유지해 분석 고객 Business Key 누락을 테스트로 차단한다.        |
+| `dbt/models/staging/schema.yml`                | Staging Key, 상태 도메인, 필수값의 dbt 자동 테스트를 정의했다.                                                                                                                                    |
+| `dbt/tests/stg_*_unique.sql`                   | 주문 Line, 결제 Sequence, 고객 관측의 문서화된 복합 Grain 중복을 검증한다.                                                                                                                        |
+| `dbt/tests/stg_source_mapping.sql`             | Bronze Current 행과 Staging의 Prefix 제거, Timestamp Rename, 상태 표준화, 고객 키·기간 경계를 행 단위로 대조한다.                                                                                |
+| `dbt/README.md`                                | 루트 기준 dbt 실행 명령과 Catalog Macro의 입력 경계를 기록했다.                                                                                                                               |
+| `tests/test_dbt_catalog_macro.py`               | 빈 Catalog 처리, Commit된 명시적 Parquet 목록 생성, 미지원 Schema Version의 dbt 사전 차단을 독립 DuckDB로 검증한다.                                                                            |
+| `docs/phases/phase-05-dbt-duckdb-modeling.md` | 프로젝트 내부 용어를 한국어 중심으로 정리하고, 코드·DB 식별자와 `Logical Hash` 표기는 유지했다. Staging Mapping을 PRD Section 14.1 전체로 확장하고, 8개 주문 표준 상태 Mapping, SCD2 최초 Version `valid_from` 규칙을 보완했다. 다중 상태 집계는 필요할 때만 Macro 또는 Mapping Seed로 재사용하도록 정했다. `stg_customers_current`는 대표 속성을 선택하되 모든 현재 원천 고객 키 매핑을 보존하도록 정했고, Phase 5A·5B 완료 항목과 Staging 구현·테스트를 기록했다. Dimension Grain/Unique Key 표와 `P5-33` dbt 호출 경계 활성화 Task를 추가했다. |
 
 ## Definition of Done
 

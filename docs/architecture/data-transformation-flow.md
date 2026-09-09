@@ -283,7 +283,12 @@ Business Key 교체의 직접적 결과다. `customer_unique_id` 하나에 여�
 | Bronze Version Current | 같은 PK의 여러 Batch Version 중 최신 선택 | `updated_at`, `_ingested_at`, `_batch_id`                                            |
 | 대표 Customer Row      | 한 사람의 여러 `customer_id` 중 대표 선택 | `updated_at`, 연결 주문 `order_purchase_timestamp`, `order_id`, `source_customer_id` |
 
-### 5.5 나머지 이름 변환
+`stg_customers_current`는 대표 행 자체만 반환하지 않는다. 주문 원천 키를 분석 고객 키에 연결할 수
+있도록 현재 `source_customer_id`마다 한 행을 유지하고, 대표 행에서 고른 `membership_level`, `city`,
+`state`와 사람 단위 `created_at` 최소·`updated_at` 최대를 각 매핑 행에 붙인다. 따라서
+`stg_orders`는 모든 주문의 `source_customer_id`를 잃지 않고 분석 `customer_id`로 바꿀 수 있다.
+
+<!--  -->### 5.5 나머지 이름 변환
 
 | PostgreSQL           | Staging            | 근거                                                                                                    |
 | -------------------- | ------------------ | ------------------------------------------------------------------------------------------------------- |

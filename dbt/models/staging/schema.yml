@@ -1,0 +1,91 @@
+version: 2
+
+models:
+  - name: stg_products
+    description: COMMITTED Bronze의 최신 상품 Version을 분석 Naming으로 노출한다.
+    columns:
+      - name: product_id
+        data_tests: [not_null, unique]
+
+  - name: stg_sellers
+    description: COMMITTED Bronze의 최신 판매자 Version을 분석 Naming으로 노출한다.
+    columns:
+      - name: seller_id
+        data_tests: [not_null, unique]
+
+  - name: stg_order_items
+    description: 주문 Line Grain Bronze를 이름 변경 없이 보존한다.
+    columns:
+      - name: order_id
+        data_tests: [not_null]
+      - name: order_item_id
+        data_tests: [not_null]
+
+  - name: stg_payments
+    description: 최신 결제 Version을 결제 Sequence Grain으로 표준화한다.
+    columns:
+      - name: order_id
+        data_tests: [not_null]
+      - name: payment_sequence
+        data_tests: [not_null]
+      - name: payment_status
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [PENDING, COMPLETED, FAILED, REFUNDED]
+
+  - name: stg_customer_observations
+    description: 고객 이력 SCD2 입력용으로 중복 제거한 고객 관측을 노출한다.
+    columns:
+      - name: source_customer_id
+        data_tests: [not_null]
+      - name: customer_id
+        data_tests: [not_null]
+      - name: membership_level
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [BRONZE, SILVER, GOLD]
+      - name: attribute_hash
+        data_tests: [not_null]
+      - name: created_at
+        data_tests: [not_null]
+      - name: updated_at
+        data_tests: [not_null]
+
+  - name: stg_customers_current
+    description: 고객 사람 단위 대표 Row와 고객 생성·변경 시각 경계를 노출한다.
+    columns:
+      - name: source_customer_id
+        data_tests: [not_null, unique]
+      - name: customer_id
+        data_tests: [not_null]
+      - name: membership_level
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [BRONZE, SILVER, GOLD]
+      - name: created_at
+        data_tests: [not_null]
+      - name: updated_at
+        data_tests: [not_null]
+
+  - name: stg_orders
+    description: 최신 주문 Version에 분석 고객 Business Key와 표준 상태를 연결한다.
+    columns:
+      - name: order_id
+        data_tests: [not_null, unique]
+      - name: source_customer_id
+        data_tests: [not_null]
+      - name: customer_id
+        data_tests: [not_null]
+      - name: order_status
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  [CREATED, APPROVED, PROCESSING, INVOICED, SHIPPED, DELIVERED, CANCELED, UNAVAILABLE]
