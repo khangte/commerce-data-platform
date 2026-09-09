@@ -56,7 +56,7 @@ Phase 3 `ingest_table()`이 담당한다. `src/ingestion/tables.py`의 `TableCon
 
 | 작업           | 내용                                                                       |
 | -------------- | -------------------------------------------------------------------------- |
-| 증분 추출      | `updated_at` Cursor 기준 Keyset Pagination                                 |
+| 증분 추출      | Table별 Cursor 컬럼 기준 Keyset Pagination (`customers`는 `created_at`, `customer_memberships`는 `updated_at` 등 Table마다 다르다) |
 | Type 고정      | PostgreSQL 타입을 Arrow 타입으로 명시 변환                                 |
 | 기술 컬럼 추가 | `_batch_id`, `_run_id`, `_ingested_at`, `_source_table`, `_schema_version` |
 | 검증과 격리    | 계약 위반 Row를 Quarantine으로 분리                                        |
@@ -398,7 +398,7 @@ int_payment_summary       → 주문 Grain 집계 ┘
 
 ### 8.1 Warehouse Mart ERD
 
-아래 ERD는 Intermediate Model이 아닌, 분석가와 BI가 조회하는 Warehouse Mart의 관계를 나타낸다. `fact_orders`가 주문 중심 Fact이고, 주문 Line과 결제 Sequence Fact는 `order_id`로 주문에 연결된다. 고객은 주문 시점의 SCD2 Version인 `customer_key`로 연결한다.
+아래 ERD는 Intermediate Model이 아닌, 분석가와 BI가 조회하는 Warehouse Mart의 관계를 나타낸다. `fact_orders`가 주문 중심 Fact이고, 주문 Line과 결제 Sequence Fact는 `order_id`로 주문에 연결된다. 고객은 주문 시점의 SCD2 Version인 `customer_key`로 연결한다. `city`/`state`는 [Membership Grain 분리](membership-grain-separation.md) 이후 고객 속성이 아니라 주문 시점 배송지 스냅샷이므로 `dim_customer`가 아닌 `fact_orders`에 `customer_city`/`customer_state`로 존재한다(`int_orders_enriched`에서 Join).
 
 ```mermaid
 erDiagram
@@ -413,8 +413,6 @@ erDiagram
         string customer_key PK
         string customer_id
         string membership_level
-        string city
-        string state
         timestamp valid_from
         timestamp valid_to
         boolean is_current
@@ -440,6 +438,8 @@ erDiagram
         string customer_key FK
         integer purchase_date_key FK
         string order_status
+        string customer_city
+        string customer_state
         decimal gross_order_value
         decimal payment_total
         integer order_count
