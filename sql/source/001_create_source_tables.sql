@@ -3,13 +3,48 @@ CREATE TABLE IF NOT EXISTS customers (
     customer_unique_id VARCHAR(64) COLLATE "C" NOT NULL,
     customer_city VARCHAR(128),
     customer_state CHAR(2),
+    created_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS customer_memberships (
+    customer_unique_id VARCHAR(64) COLLATE "C" PRIMARY KEY,
     membership_level VARCHAR(16) NOT NULL,
     created_at TIMESTAMPTZ NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL,
-    CONSTRAINT customers_membership_level_check
+    CONSTRAINT customer_memberships_level_check
         CHECK (membership_level IN ('bronze', 'silver', 'gold')),
-    CONSTRAINT customers_updated_at_check CHECK (updated_at >= created_at)
+    CONSTRAINT customer_memberships_updated_at_check CHECK (updated_at >= created_at)
 );
+
+-- 이전 계정 단위 멤버십 스키마를 안전하게 사람 단위 테이블로 올린다.
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'customers' AND column_name = 'membership_level'
+    ) THEN
+        INSERT INTO customer_memberships (
+            customer_unique_id, membership_level, created_at, updated_at
+        )
+        SELECT
+            customer_unique_id,
+            (array_agg(membership_level ORDER BY updated_at DESC, customer_id DESC))[1],
+            min(created_at),
+            max(updated_at)
+        FROM customers
+        GROUP BY customer_unique_id
+        ON CONFLICT (customer_unique_id) DO UPDATE
+        SET membership_level = EXCLUDED.membership_level,
+            created_at = LEAST(customer_memberships.created_at, EXCLUDED.created_at),
+            updated_at = GREATEST(customer_memberships.updated_at, EXCLUDED.updated_at);
+
+        ALTER TABLE customers DROP CONSTRAINT IF EXISTS customers_membership_level_check;
+        ALTER TABLE customers DROP CONSTRAINT IF EXISTS customers_updated_at_check;
+        ALTER TABLE customers DROP COLUMN membership_level;
+        ALTER TABLE customers DROP COLUMN updated_at;
+    END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS products (
     product_id VARCHAR(64) COLLATE "C" PRIMARY KEY,
@@ -89,8 +124,11 @@ CREATE TABLE IF NOT EXISTS order_payments (
     CONSTRAINT order_payments_updated_at_check CHECK (updated_at >= created_at)
 );
 
-CREATE INDEX IF NOT EXISTS customers_updated_at_customer_id_idx
-    ON customers (updated_at, customer_id COLLATE "C");
+DROP INDEX IF EXISTS customers_updated_at_customer_id_idx;
+CREATE INDEX IF NOT EXISTS customers_created_at_customer_id_idx
+    ON customers (created_at, customer_id COLLATE "C");
+CREATE INDEX IF NOT EXISTS customer_memberships_updated_at_customer_unique_id_idx
+    ON customer_memberships (updated_at, customer_unique_id COLLATE "C");
 CREATE INDEX IF NOT EXISTS products_updated_at_product_id_idx
     ON products (updated_at, product_id COLLATE "C");
 CREATE INDEX IF NOT EXISTS sellers_updated_at_seller_id_idx

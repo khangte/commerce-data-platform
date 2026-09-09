@@ -80,7 +80,7 @@ customers   products   sellers
 
 ### 4. Seed Loader
 
-먼저 `customers` 하나로 전체 흐름을 검증한 뒤 6개 Table로 확장한다.
+먼저 `customers` 하나로 전체 흐름을 검증한 뒤 7개 Table로 확장한다.
 
 - [x] `P1-19` 임시 PostgreSQL Staging Schema/Table 구성
 - [x] `P1-20` CSV 문자열을 Source Type으로 명시적 변환
@@ -144,7 +144,7 @@ Source Schema Allowlist
 ## 산출물
 
 - PostgreSQL Compose Service와 초기화 SQL
-- Source 6개 Table DDL 및 증분 Index
+- Source 7개 Table DDL 및 증분 Index
 - Raw Dataset 검증기와 Checksum 기록
 - Transactional Seed Loader/CLI
 - `seed_runs` Metadata DDL과 기록 로직
@@ -157,11 +157,11 @@ Source Schema Allowlist
 | `.env.example`                                   | 수정      | PostgreSQL 포트, Database, 역할별 계정 환경 변수 계약을 추가했다.          |
 | `compose.yaml`                                   | 수정      | PostgreSQL 18.6 서비스, 영속 Volume, 초기화 SQL, Health Check를 추가했다.  |
 | `sql/bootstrap/01-create-databases-and-roles.sh` | 생성      | Source·Metadata·Airflow Database와 역할을 멱등적으로 생성하도록 추가했다.  |
-| `sql/source/001_create_source_tables.sql`        | 생성      | Olist Source 6개 테이블, PK/FK/CHECK, 확장 컬럼, 증분 Index를 추가했다.    |
+| `sql/source/001_create_source_tables.sql`        | 수정      | 불변 계정 `customers`와 사람 단위 `customer_memberships` 7개 테이블, 기존 계정 멤버십의 호환 마이그레이션, Cursor Index를 반영했다. |
 | `sql/metadata/001_create_seed_metadata.sql`      | 생성      | Seed 실행 이력과 Count/Hash/상태를 기록하는 `seed_runs` 테이블을 추가했다. |
 | `src/common/database.py`                         | 생성      | `.env` 기반 PostgreSQL 연결과 SQL 적용 공통 기능을 추가했다.               |
 | `src/seed/contracts.py`                          | 생성      | CSV 파일·헤더·기본 키 계약 검증과 Raw Checksum 계산을 추가했다.            |
-| `src/seed/loader.py`                             | 생성      | CSV 변환, 검증, 임시 Staging, Transactional UPSERT, Seed Guard를 추가했다. |
+| `src/seed/loader.py`                             | 수정      | CSV 변환, 검증, 임시 Staging, Transactional UPSERT에 사람 단위 Membership Seed를 추가했다. |
 | `src/seed/__main__.py`                           | 생성      | `python -m src.seed` CLI와 `seeded_at` 입력 처리를 추가했다.               |
 | `src/__init__.py`, `src/seed/__init__.py`        | 생성·수정 | Seed 모듈을 Python Package로 구성했다.                                     |
 | `tests/seed/test_contracts.py`                   | 생성      | CSV 계약과 Timestamp/Checksum 단위 테스트를 추가했다.                      |
@@ -169,6 +169,10 @@ Source Schema Allowlist
 | `pyproject.toml`                                 | 수정      | pytest 경로와 PostgreSQL 통합 테스트 Marker를 추가했다.                    |
 | `README.md`                                      | 수정      | PostgreSQL 기동, Seed 실행, 통합 테스트 명령을 추가했다.                   |
 | `docs/phases/phase-01-source-environment.md`     | 수정      | 완료 상태, 체크리스트, 검증 증적, 내부 용어의 한국어 표기를 반영했다.      |
+
+Membership Grain 분리 후 `customers`는 계정 불변값과 `created_at`만 보관하고,
+`customer_memberships`가 사람 단위 등급과 `created_at`·`updated_at`을 보관한다. Seed는 완료
+주문 수를 `customer_unique_id`별로 집계해 정확히 한 Membership 행을 만든다.
 
 ## Definition of Done
 

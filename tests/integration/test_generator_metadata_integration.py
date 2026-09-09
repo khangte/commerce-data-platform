@@ -75,5 +75,7 @@ def test_generator_run_persists_deterministic_inputs_and_success_evidence() -> N
         )
     finally:
         with settings.pipeline_connection() as connection:
-            connection.execute("DELETE FROM generator_runs WHERE generator_run_id = %s", (generator_run_id,))
+            connection.execute(
+                "DELETE FROM generator_runs WHERE generator_run_id = %s", (generator_run_id,)
+            )
             connection.commit()

@@ -114,10 +114,18 @@ def _delete_bundles(settings: PostgresSettings, bundles) -> None:
     """통합 테스트가 생성한 정확한 Source Bundle을 FK 역순으로 제거한다."""
     with settings.source_connection() as connection:
         for bundle in bundles:
-            connection.execute("DELETE FROM order_payments WHERE order_id = %s", (bundle.order.order_id,))
-            connection.execute("DELETE FROM order_items WHERE order_id = %s", (bundle.order.order_id,))
+            connection.execute(
+                "DELETE FROM order_payments WHERE order_id = %s", (bundle.order.order_id,)
+            )
+            connection.execute(
+                "DELETE FROM order_items WHERE order_id = %s", (bundle.order.order_id,)
+            )
             connection.execute("DELETE FROM orders WHERE order_id = %s", (bundle.order.order_id,))
             connection.execute(
                 "DELETE FROM customers WHERE customer_id = %s", (bundle.customer.customer_id,)
+            )
+            connection.execute(
+                "DELETE FROM customer_memberships WHERE customer_unique_id = %s",
+                (bundle.customer.customer_unique_id,),
             )
         connection.commit()

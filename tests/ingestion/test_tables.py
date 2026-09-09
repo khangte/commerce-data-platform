@@ -1,4 +1,4 @@
-"""6개 Source Table 증분·Bronze Schema 설정 계약을 검증한다."""
+"""7개 Source Table 증분·Bronze Schema 설정 계약을 검증한다."""
 
 from __future__ import annotations
 
@@ -20,6 +20,7 @@ def test_table_configs_cover_all_source_tables_with_complete_composite_cursors()
     """모든 Source Table은 SQL Index와 같은 Timestamp·완전 PK Cursor를 가진다."""
     assert tuple(TABLE_CONFIGS) == (
         "customers",
+        "customer_memberships",
         "products",
         "sellers",
         "orders",
@@ -27,7 +28,8 @@ def test_table_configs_cover_all_source_tables_with_complete_composite_cursors()
         "order_payments",
     )
     assert {name: config.cursor_columns for name, config in TABLE_CONFIGS.items()} == {
-        "customers": ("updated_at", "customer_id"),
+        "customers": ("created_at", "customer_id"),
+        "customer_memberships": ("updated_at", "customer_unique_id"),
         "products": ("updated_at", "product_id"),
         "sellers": ("updated_at", "seller_id"),
         "orders": ("updated_at", "order_id"),
@@ -43,7 +45,10 @@ def test_table_configs_cover_all_source_tables_with_complete_composite_cursors()
 def test_table_configs_define_raw_compatible_schemas_and_decimal_money_columns() -> None:
     """Table Schema는 Source 순서·UTC Timestamp와 금액 Decimal 정밀도를 고정한다."""
     assert ORDERS_TABLE.bronze_schema == ORDERS_BRONZE_SCHEMA
-    assert TABLE_CONFIGS["customers"].source_schema.field("membership_level").nullable is False
+    assert (
+        TABLE_CONFIGS["customer_memberships"].source_schema.field("membership_level").nullable
+        is False
+    )
     assert TABLE_CONFIGS["order_items"].source_schema.field("price").type == pa.decimal128(14, 2)
     assert TABLE_CONFIGS["order_payments"].source_schema.field(
         "payment_value"

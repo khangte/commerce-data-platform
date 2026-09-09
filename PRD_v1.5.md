@@ -282,7 +282,8 @@ Seed Loader는 분석용 표준화를 수행하지 않는다.
 
 | Table          | 확장 필드                                      | 목적                            |
 | -------------- | ---------------------------------------------- | ------------------------------- |
-| customers      | `membership_level`, `created_at`, `updated_at` | Synthetic 고객 등급과 증분 수집 |
+| customers      | `created_at`                                   | 불변 주문 계정 증분 수집       |
+| customer_memberships | `membership_level`, `created_at`, `updated_at` | 사람 단위 Synthetic 등급과 증분 수집 |
 | products       | `created_at`, `updated_at`                     | 증분 수집                       |
 | sellers        | `created_at`, `updated_at`                     | 증분 수집                       |
 | orders         | `created_at`, `updated_at`                     | 생성/상태 변경 증분 수집        |
@@ -306,13 +307,15 @@ Seed Loader는 분석용 표준화를 수행하지 않는다.
 
 | Table            | 규칙                                                                                     |
 | ---------------- | ---------------------------------------------------------------------------------------- |
-| customers        | 연결 주문의 최초 `order_purchase_timestamp` → `created_at`, `--seeded-at` → `updated_at` |
+| customers        | 연결 주문의 최초 `order_purchase_timestamp` → `created_at`                                |
+| customer_memberships | 사람별 최소 계정 `created_at` → `created_at`, `--seeded-at` → `updated_at`          |
 | orders           | `order_purchase_timestamp` → `created_at`, `--seeded-at` → `updated_at`                  |
 | order_items      | 연결 주문의 `order_purchase_timestamp` → `created_at`                                    |
 | products/sellers | `created_at = updated_at = --seeded-at`                                                  |
 | order_payments   | 연결 주문의 `order_purchase_timestamp` → `created_at`, `--seeded-at` → `updated_at`      |
 
-Seed `membership_level`은 `customer_unique_id`별 `order_status='delivered'` 주문 수로 계산하고 같은 `customer_unique_id`의 모든 Customer Row에 동일하게 기록한다.
+Seed `membership_level`은 `customer_unique_id`별 `order_status='delivered'` 주문 수로 계산해
+사람 단위 `customer_memberships`에 정확히 한 행으로 기록한다.
 
 Seed `payment_status`는 연결 주문이 `canceled` 또는 `unavailable`이면 `failed`, 그 외에는 `completed`다.
 
@@ -362,6 +365,13 @@ Header/File 검증
 | `customer_unique_id` | VARCHAR(64)  | NOT NULL, 중복 허용            |
 | `customer_city`      | VARCHAR(128) | 원본 Prefix 보존               |
 | `customer_state`     | CHAR(2)      | 원본 Prefix 보존               |
+| `created_at`         | TIMESTAMPTZ  | NOT NULL                       |
+
+#### customer_memberships
+
+| Column               | Type         | Constraint                     |
+| -------------------- | ------------ | ------------------------------ |
+| `customer_unique_id` | VARCHAR(64)  | PK, 사람 Business Key          |
 | `membership_level`   | VARCHAR(16)  | NOT NULL, `bronze/silver/gold` |
 | `created_at`         | TIMESTAMPTZ  | NOT NULL                       |
 | `updated_at`         | TIMESTAMPTZ  | NOT NULL, `>= created_at`      |
@@ -454,7 +464,8 @@ refunded
 ### 6.2 증분 Index
 
 ```text
-customers       (updated_at, customer_id)
+customers       (created_at, customer_id)
+customer_memberships (updated_at, customer_unique_id)
 products        (updated_at, product_id)
 sellers         (updated_at, seller_id)
 orders          (updated_at, order_id)
@@ -598,7 +609,8 @@ Source는 현재 상태만 보관하므로 성공 수집 사이의 중간 변경
 
 | Table          | Cursor Tuple                                 |
 | -------------- | -------------------------------------------- |
-| customers      | `(updated_at, customer_id)`                  |
+| customers      | `(created_at, customer_id)`                  |
+| customer_memberships | `(updated_at, customer_unique_id)`     |
 | products       | `(updated_at, product_id)`                   |
 | sellers        | `(updated_at, seller_id)`                    |
 | orders         | `(updated_at, order_id)`                     |
@@ -611,7 +623,7 @@ Source는 현재 상태만 보관하므로 성공 수집 사이의 중간 변경
 
 ```text
 원천 데이터 동시성 잠금 획득
-→ 6개 Table Task 병렬 시작
+→ 7개 Table Task 병렬 시작
 → Table별 REPEATABLE READ Read-only Snapshot
 → Table별 Upper Bound 고정
 → Extract / Validate / Commit
@@ -1169,18 +1181,13 @@ Customer Mapping:
 | `customer_unique_id`    | `customer_id`             |
 | `customer_city`         | `city`                    |
 | `customer_state`        | `state`                   |
-| `membership_level`      | 대문자 `membership_level` |
-| Group 최소 `created_at` | `created_at`              |
-| Group 최대 `updated_at` | `updated_at`              |
+| `customers.created_at` | `created_at`              |
+| `customer_memberships.membership_level` | `stg_customer_observations.membership_level` |
+| `customer_memberships.created_at` | `stg_customer_observations.created_at` |
+| `customer_memberships.updated_at` | `stg_customer_observations.updated_at` |
 
-대표 Customer Row:
-
-```text
-updated_at DESC
-연결 주문 order_purchase_timestamp DESC
-order_id DESC
-source_customer_id DESC
-```
+`stg_customers_current`는 불변 계정의 `source_customer_id` 1행과 해당 주문 주소 스냅샷을
+보존한다. 사람 단위 Membership 관측은 `customer_memberships` Bronze 누적 행에서 별도로 만든다.
 
 Order Mapping:
 
@@ -1310,8 +1317,6 @@ dbt Staging customer_id
 
 ```text
 membership_level
-city
-state
 ```
 
 ```text
@@ -1325,8 +1330,6 @@ customer_key
 customer_id
 source_customer_unique_id
 membership_level
-city
-state
 attribute_hash
 valid_from
 valid_to

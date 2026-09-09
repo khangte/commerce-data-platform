@@ -6,7 +6,7 @@ from dataclasses import replace
 from datetime import datetime, timedelta
 
 from src.generator.config import GeneratorConfig
-from src.generator.customers import CustomerRecord, membership_change_records
+from src.generator.customers import CustomerRecord, MembershipRecord, membership_change_records
 from src.generator.orders import OrderBundle, OrderCatalog, new_order_bundle
 from src.generator.transitions import (
     OrderState,
@@ -64,16 +64,20 @@ def late_order_update_transition(
 
 def membership_change_scenario(
     config: GeneratorConfig,
-    records: tuple[CustomerRecord, ...],
+    records: tuple[MembershipRecord, ...],
     delivered_order_count: int,
-) -> tuple[CustomerRecord, ...]:
-    """한 인물의 모든 Customer Record를 결정적 Membership 변경 후보로 만든다."""
+) -> tuple[MembershipRecord, ...]:
+    """한 사람 Membership을 결정적 변경 후보로 만든다."""
     return membership_change_records(config, records, delivered_order_count)
 
 
-def _assert_past_business_event_time(business_event_time: datetime, mutation_time: datetime) -> None:
+def _assert_past_business_event_time(
+    business_event_time: datetime, mutation_time: datetime
+) -> None:
     """Late 시나리오의 Business Event Time이 현재 Mutation Time보다 과거인지 확인한다."""
     if business_event_time.tzinfo is None or business_event_time.utcoffset() != timedelta(0):
         raise ValueError("business_event_time must be normalized to UTC")
     if business_event_time >= mutation_time:
-        raise ValueError("business_event_time must be earlier than mutation_time for a late scenario")
+        raise ValueError(
+            "business_event_time must be earlier than mutation_time for a late scenario"
+        )

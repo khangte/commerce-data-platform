@@ -8,7 +8,12 @@ from datetime import timedelta
 
 from src.common.database import PostgresSettings
 from src.generator.config import EXECUTABLE_ANOMALY_PROFILES, GeneratorConfig
-from src.generator.customers import new_customer_record
+from src.generator.customers import (
+    MembershipRecord,
+    membership_change_records,
+    new_customer_record,
+    persist_membership_records,
+)
 from src.generator.ids import logical_hash
 from src.generator.lease import (
     GENERATOR_OWNER_TYPE,
@@ -66,7 +71,7 @@ def run_generator(config: GeneratorConfig, settings: PostgresSettings) -> Genera
         executable_profiles = ", ".join(sorted(EXECUTABLE_ANOMALY_PROFILES))
         raise ValueError(
             f"The executable generator currently supports {executable_profiles} profiles; "
-            "delayed-payment and membership-change are reusable scenario fixtures."
+            "delayed-payment remains a reusable scenario fixture."
         )
 
     ensure_generator_metadata(settings)
@@ -103,9 +108,17 @@ def run_generator(config: GeneratorConfig, settings: PostgresSettings) -> Genera
                         "customer_id": bundle.customer.customer_id,
                         "order_id": bundle.order.order_id,
                         "item_ids": [item.order_item_id for item in bundle.items],
-                        "payment_sequences": [payment.payment_sequential for payment in bundle.payments],
+                        "payment_sequences": [
+                            payment.payment_sequential for payment in bundle.payments
+                        ],
                     }
                 )
+            if config.anomaly_profile == "membership-change":
+                membership_result, membership_row = _apply_membership_change(connection, config)
+                result_counts["memberships_inserted"] += membership_result.inserted
+                result_counts["memberships_updated"] += membership_result.updated
+                result_counts["memberships_skipped"] += membership_result.skipped
+                logical_rows.append(membership_row)
 
         logical_content_hash = logical_hash(
             {
@@ -177,9 +190,7 @@ def _successful_result(
     )
 
 
-def _bundle_for_profile(
-    config: GeneratorConfig, customer, catalog, order_ordinal: int
-):
+def _bundle_for_profile(config: GeneratorConfig, customer, catalog, order_ordinal: int):
     """실행 가능한 Anomaly Profile에 맞는 결정적 Order Bundle을 만든다."""
     if config.anomaly_profile == "late-arrival":
         business_event_time = config.logical_date - timedelta(days=3 + order_ordinal % 3)
@@ -193,6 +204,9 @@ def _empty_result_counts() -> dict[str, int]:
         "customers_inserted": 0,
         "customers_updated": 0,
         "customers_skipped": 0,
+        "memberships_inserted": 0,
+        "memberships_updated": 0,
+        "memberships_skipped": 0,
         "orders_inserted": 0,
         "orders_skipped": 0,
         "order_items_inserted": 0,
@@ -207,9 +221,45 @@ def _add_mutation_counts(result_counts: dict[str, int], mutation_result) -> None
     result_counts["customers_inserted"] += mutation_result.customer.inserted
     result_counts["customers_updated"] += mutation_result.customer.updated
     result_counts["customers_skipped"] += mutation_result.customer.skipped
+    result_counts["memberships_inserted"] += mutation_result.membership.inserted
+    result_counts["memberships_updated"] += mutation_result.membership.updated
+    result_counts["memberships_skipped"] += mutation_result.membership.skipped
     result_counts["orders_inserted"] += mutation_result.orders_inserted
     result_counts["orders_skipped"] += mutation_result.orders_skipped
     result_counts["order_items_inserted"] += mutation_result.items_inserted
     result_counts["order_items_skipped"] += mutation_result.items_skipped
     result_counts["payments_inserted"] += mutation_result.payments_inserted
     result_counts["payments_skipped"] += mutation_result.payments_skipped
+
+
+def _apply_membership_change(connection, config: GeneratorConfig):
+    """현재 bronze·silver 사람 하나를 결정적으로 선택해 Membership 변경을 저장한다."""
+    rows = connection.execute(
+        """
+        SELECT customer_unique_id, membership_level, created_at, updated_at
+        FROM customer_memberships
+        WHERE membership_level IN ('bronze', 'silver')
+        ORDER BY customer_unique_id COLLATE "C"
+        """
+    ).fetchall()
+    if not rows:
+        raise ValueError("membership-change requires at least one bronze or silver membership")
+    candidates = tuple(MembershipRecord(*row) for row in rows)
+    selector = int(
+        logical_hash(
+            {
+                "generator_inputs": config.deterministic_inputs(),
+                "entity": "membership-change-selection",
+            }
+        ),
+        16,
+    ) % len(candidates)
+    current = candidates[selector]
+    delivered_order_count = 5 if current.membership_level == "bronze" else 15
+    changed = membership_change_records(config, (current,), delivered_order_count)
+    result = persist_membership_records(connection, changed)
+    return result, {
+        "customer_unique_id": current.customer_unique_id,
+        "membership_level": changed[0].membership_level,
+        "membership_updated_at": changed[0].updated_at.isoformat(),
+    }

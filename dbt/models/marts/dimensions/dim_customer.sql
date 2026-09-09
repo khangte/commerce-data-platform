@@ -3,8 +3,6 @@ select
     customer_id,
     customer_id as source_customer_unique_id,
     membership_level,
-    city,
-    state,
     attribute_hash,
     valid_from,
     valid_to,

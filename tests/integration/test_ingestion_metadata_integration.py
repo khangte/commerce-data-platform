@@ -40,9 +40,7 @@ def test_table_commit_moves_object_run_and_watermark_together() -> None:
 
     ensure_ingestion_metadata(settings)
     try:
-        initial = get_or_create_watermark(
-            settings, run.pipeline_name, run.source_table, now=now
-        )
+        initial = get_or_create_watermark(settings, run.pipeline_name, run.source_table, now=now)
         assert initial.cursor == CursorPosition(None)
         record_started_run(settings, run, now=now)
         commit_table_run(
@@ -115,9 +113,7 @@ def test_watermark_conflict_rolls_back_object_and_success_state() -> None:
 
     ensure_ingestion_metadata(settings)
     try:
-        initial = get_or_create_watermark(
-            settings, run.pipeline_name, run.source_table, now=now
-        )
+        initial = get_or_create_watermark(settings, run.pipeline_name, run.source_table, now=now)
         record_started_run(settings, run, now=now)
         with settings.pipeline_connection() as connection:
             connection.execute(
@@ -146,14 +142,20 @@ def test_watermark_conflict_rolls_back_object_and_success_state() -> None:
             )
 
         with settings.pipeline_connection() as connection:
-            assert connection.execute(
-                "SELECT count(*) FROM bronze_objects WHERE table_batch_id = %s",
-                (object.table_batch_id,),
-            ).fetchone()[0] == 0
-            assert connection.execute(
-                "SELECT status FROM pipeline_runs WHERE run_id = %s AND source_table = %s",
-                (run.run_id, run.source_table),
-            ).fetchone()[0] == "RUNNING"
+            assert (
+                connection.execute(
+                    "SELECT count(*) FROM bronze_objects WHERE table_batch_id = %s",
+                    (object.table_batch_id,),
+                ).fetchone()[0]
+                == 0
+            )
+            assert (
+                connection.execute(
+                    "SELECT status FROM pipeline_runs WHERE run_id = %s AND source_table = %s",
+                    (run.run_id, run.source_table),
+                ).fetchone()[0]
+                == "RUNNING"
+            )
 
         record_failed_run(
             settings,
@@ -213,7 +215,9 @@ def _delete_test_metadata(
 ) -> None:
     """통합 테스트가 만든 정확한 Metadata Row를 역순으로 정리한다."""
     with settings.pipeline_connection() as connection:
-        connection.execute("DELETE FROM bronze_objects WHERE table_batch_id = %s", (object.table_batch_id,))
+        connection.execute(
+            "DELETE FROM bronze_objects WHERE table_batch_id = %s", (object.table_batch_id,)
+        )
         connection.execute(
             "DELETE FROM pipeline_runs WHERE run_id = %s AND source_table = %s",
             (run.run_id, run.source_table),

@@ -1,6 +1,6 @@
 {% macro bronze_source(source_table) -%}
     {%- set supported_tables = [
-        'customers', 'products', 'sellers', 'orders', 'order_items', 'order_payments'
+        'customers', 'customer_memberships', 'products', 'sellers', 'orders', 'order_items', 'order_payments'
     ] -%}
     {%- if source_table not in supported_tables -%}
         {{ exceptions.raise_compiler_error('SOURCE_CONTRACT_ERROR: unsupported source_table=' ~ source_table) }}
@@ -47,7 +47,10 @@
         'customers': [
             ('customer_id', 'varchar'), ('customer_unique_id', 'varchar'),
             ('customer_city', 'varchar'), ('customer_state', 'varchar'),
-            ('membership_level', 'varchar'), ('created_at', 'timestamptz'),
+            ('created_at', 'timestamptz')
+        ],
+        'customer_memberships': [
+            ('customer_unique_id', 'varchar'), ('membership_level', 'varchar'), ('created_at', 'timestamptz'),
             ('updated_at', 'timestamptz')
         ],
         'products': [
@@ -106,7 +109,7 @@
             ) }}
         {%- endif -%}
         {%- for source_table in [
-            'customers', 'products', 'sellers', 'orders', 'order_items', 'order_payments'
+            'customers', 'customer_memberships', 'products', 'sellers', 'orders', 'order_items', 'order_payments'
         ] -%}
             {%- set relation = bronze_source(source_table) -%}
             {%- do log('Validated Bronze catalog relation for ' ~ source_table ~ ': ' ~ relation, info=True) -%}
