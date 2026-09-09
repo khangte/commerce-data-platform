@@ -3,7 +3,7 @@
 > 상태: 구현 완료 · `orders` 최초 Bronze 적재 완료
 > Milestone: 2 — Data Platform Core  
 > 선행 Phase: [Phase 2. Deterministic Generator](phase-02-deterministic-generator.md)  
-> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.4](../../PRD_v1.4.md)
+> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.5](../../PRD_v1.5.md)
 
 ## 목표
 

@@ -3,7 +3,8 @@
 > 상태: Planned  
 > Milestone: 2 — Data Platform Core  
 > 선행 Phase: [Phase 4. Airflow Orchestration](phase-04-airflow-orchestration.md)  
-> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.4](../../PRD_v1.4.md)
+> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.5](../../PRD_v1.5.md)  
+> 참고: [데이터 변환 흐름](../architecture/data-transformation-flow.md) — 계층별 이름·타입·Grain 변환의 근거
 
 ## 목표
 
@@ -14,7 +15,8 @@ Metadata에서 COMMITTED인 Bronze Object만 읽어 DuckDB에 Staging, Intermedi
 - S3 Prefix Glob이 아니라 `control.bronze_files`의 COMMITTED Object 목록만 읽는다.
 - Source Prefix 제거, Timestamp Rename, 상태 표준화는 Staging에서 처음 수행한다.
 - Intermediate/Mart는 Raw Source Prefix를 직접 참조하지 않는다.
-- Mutable Entity는 `updated_at`, `_ingested_at`, `_batch_id` 순으로 Current를 결정한다.
+- Bronze 기술 컬럼 `_batch_id`, `_ingested_at`은 Staging에서 보존한다. Current 선택과 SCD2 정렬의 Tie-breaker가 이 컬럼을 사용한다.
+- Mutable Entity는 `updated_at`, `_ingested_at`, `_batch_id` 순으로 Bronze Version 중 Current를 결정한다.
 - 모든 Mart는 문서화된 Grain과 `unique_key`를 가진다.
 - Item과 Payment를 각각 주문 Grain으로 집계한 뒤 `fact_orders`에 Join한다.
 - SCD2 구간은 `[valid_from, valid_to)`이고 고객별 Current Version은 정확히 하나다.
@@ -22,8 +24,8 @@ Metadata에서 COMMITTED인 Bronze Object만 읽어 DuckDB에 Staging, Intermedi
 
 ## 선행 조건
 
-- Phase 3의 Catalog에 COMMITTED Bronze만 동기화된다.
-- Phase 4 Warehouse DAG가 `sync_bronze_catalog`와 dbt 실행 경계를 제공한다.
+- Phase 3의 `sync_bronze_catalog`가 COMMITTED Bronze만 `control.bronze_files`에 동기화한다.
+- Phase 4 Warehouse DAG가 `sync_bronze_catalog_task`를 실행한다. `P4-11` dbt Build 호출 경계는 아직 비어 있고, 이 Phase가 dbt Project와 CLI를 완성한 뒤 활성화한다.
 - 지원 가능한 Bronze `schema_version` 목록이 정의됐다.
 - Phase 2의 Membership/Address 변경 Fixture가 존재한다.
 
@@ -35,7 +37,8 @@ data/warehouse/warehouse.duckdb
 control       table
 staging       view
 intermediate  view
-marts         table 또는 incremental
+dimensions    table 또는 incremental
+facts         incremental
 ```
 
 ## Phase 5A. Bronze File Catalog
@@ -68,30 +71,89 @@ dbt source macro
 
 - [ ] `P5-05` Product/Seller Naming과 Type 표준화
 - [ ] `P5-06` Order Item/Payment Naming과 Type 표준화
-- [ ] `P5-07` Order Timestamp Rename과 표준화 상태값 매핑
+- [ ] `P5-07` Order Timestamp Rename과 8개 표준 상태 매핑
 - [ ] `P5-08` Customer Business Key 변환과 Current 선택
 - [ ] `P5-09` Customer Observation Deduplication
 - [ ] `P5-10` Staging Mapping 자동 검증
 
-대표 Mapping:
+Customer Mapping:
 
-| Source/Bronze                     | Staging              |
-| --------------------------------- | -------------------- |
-| `customers.customer_id`           | `source_customer_id` |
-| `customers.customer_unique_id`    | `customer_id`        |
-| `customer_city`, `customer_state` | `city`, `state`      |
-| `order_purchase_timestamp`        | `purchase_at`        |
-| `order_approved_at`               | `approved_at`        |
-| `payment_sequential`              | `payment_sequence`   |
-| `product_category_name`           | `category_name`      |
+| Source/Bronze           | Staging                   |
+| ----------------------- | ------------------------- |
+| `customer_id`           | `source_customer_id`      |
+| `customer_unique_id`    | `customer_id`             |
+| `customer_city`         | `city`                    |
+| `customer_state`        | `state`                   |
+| `membership_level`      | 대문자 `membership_level` |
+| Group 최소 `created_at` | `created_at`              |
+| Group 최대 `updated_at` | `updated_at`              |
 
-Order Status Mapping은 단일 Macro 또는 Seed Mapping Source로 관리한다.
+Order Mapping:
+
+| Source/Bronze                       | Staging                  |
+| ----------------------------------- | ------------------------ |
+| `customer_id`                       | `source_customer_id`     |
+| customers Join `customer_unique_id` | `customer_id`            |
+| `order_purchase_timestamp`          | `purchase_at`            |
+| `order_approved_at`                 | `approved_at`            |
+| `order_delivered_carrier_date`      | `carrier_at`             |
+| `order_delivered_customer_date`     | `delivered_at`           |
+| `order_estimated_delivery_date`     | `estimated_delivery_at`  |
+| `order_status`                      | 대문자 8개 `order_status` |
+
+`stg_orders`의 `customer_id`는 Source에 없다. `stg_customers_current`를 `source_customer_id`로 Join해 `customer_unique_id`를 가져와야 한다.
+
+Payment Mapping:
+
+| Source/Bronze          | Staging                 |
+| ---------------------- | ----------------------- |
+| `payment_sequential`   | `payment_sequence`      |
+| `payment_installments` | `installments`          |
+| `payment_status`       | 대문자 `payment_status` |
+
+Product/Seller Mapping:
+
+| Source/Bronze           | Staging         |
+| ----------------------- | --------------- |
+| `product_category_name` | `category_name` |
+| `product_weight_g`      | `weight_g`      |
+| `product_length_cm`     | `length_cm`     |
+| `product_height_cm`     | `height_cm`     |
+| `product_width_cm`      | `width_cm`      |
+| `seller_city`           | `city`          |
+| `seller_state`          | `state`         |
+
+Order Status Mapping은 PRD Section 7.1을 단일 Macro 또는 Seed Mapping Source로 재사용한다. `tables.py`의 `ORDERS_TABLE.status_domains`가 허용하는 8개 값을 모두 `order_status`에 Mapping해야 한다.
 
 ```text
-approved / processing / invoiced → APPROVED
-shipped                         → SHIPPED
-delivered                       → DELIVERED
-canceled / unavailable          → CANCELLED
+created     → CREATED
+approved    → APPROVED
+processing  → PROCESSING
+invoiced    → INVOICED
+shipped     → SHIPPED
+delivered   → DELIVERED
+canceled    → CANCELED
+unavailable → UNAVAILABLE
+```
+
+다중 상태를 묶는 집계가 여러 Model이나 대시보드에서 반복될 때만 dbt Macro 또는 Mapping Seed로 조건을 재사용한다. 별도 분석 그룹 컬럼은 Staging·Intermediate·Fact에 저장하지 않는다.
+
+Payment Status Mapping:
+
+```text
+pending   → PENDING
+completed → COMPLETED
+failed    → FAILED
+refunded  → REFUNDED
+```
+
+`stg_customers_current` 대표 Row 선택은 Bronze Version Current 선택과 다른 규칙이다. 한 `customer_unique_id`에 여러 `customer_id`가 붙는 Olist 구조 때문에 필요하다.
+
+```text
+updated_at DESC
+연결 주문 order_purchase_timestamp DESC
+order_id DESC
+source_customer_id DESC
 ```
 
 ## Phase 5C. Intermediate
@@ -112,6 +174,13 @@ Late Arrival 영향 범위는 주문 구매일, 연결 주문 구매일, 고객 
 - [ ] `P5-19` UTC 기준 `dim_date`
 - [ ] `P5-20` SCD Type 2 `dim_customer`
 
+| Model          | Grain            | Unique Key     |
+| -------------- | ---------------- | -------------- |
+| `dim_customer` | 고객 Version 1행 | `customer_key` |
+| `dim_product`  | 상품 1행         | `product_id`   |
+| `dim_seller`   | 판매자 1행       | `seller_id`    |
+| `dim_date`     | UTC Date 1행     | `date_key`     |
+
 SCD2 추적 속성:
 
 ```text
@@ -122,11 +191,32 @@ state
 
 SCD2 규칙:
 
+- `(customer_id, updated_at, _ingested_at, _batch_id)` 순으로 관측을 정렬한다.
 - `customer_id + updated_at + tracked_attribute_hash` 관측을 Deduplicate한다.
 - 속성 Hash가 같으면 새 Version을 만들지 않는다.
+- 최초 Version의 `valid_from`은 `created_at`이다. Olist Seed에 과거 속성 이력이 없으므로 최초 Version을 Baseline Snapshot으로 간주한다.
+- 이후 변경 Version의 `valid_from`은 `updated_at`이다.
+- 다음 Version의 `valid_from`이 현재 Version의 `valid_to`다.
 - `customer_key = Hash(customer_id, valid_from, attribute_hash)`로 만든다.
 - 마지막 Version만 `valid_to=NULL`, `is_current=true`다.
 - 동일 고객/동일 `updated_at`의 서로 다른 Hash는 Contract Error다.
+
+최초 Version의 `valid_from`을 `updated_at`으로 잡으면 그 이전 구매 주문이 유효한 Customer Version을 찾지 못해 Unknown Customer Key가 발생한다. AC-12를 위반하므로 `created_at` 규칙은 필수다.
+
+`dim_customer` Schema:
+
+```text
+customer_key
+customer_id
+source_customer_unique_id
+membership_level
+city
+state
+attribute_hash
+valid_from
+valid_to
+is_current
+```
 
 ## Phase 5E. Fact와 Measure
 
@@ -142,6 +232,14 @@ SCD2 규칙:
 | `fact_order_items` | 주문 Line 1행     | `(order_id, order_item_id)`    |
 | `fact_payments`    | 결제 Sequence 1행 | `(order_id, payment_sequence)` |
 | `fact_orders`      | 주문 1행          | `order_id`                     |
+
+`fact_order_items` Measure:
+
+```text
+item_price       = price
+freight_value    = freight_value
+line_gross_value = item_price + freight_value
+```
 
 `fact_orders` Measure:
 
@@ -173,6 +271,7 @@ AND order.purchase_at < COALESCE(dim_customer.valid_to, TIMESTAMPTZ 'infinity')
 - [ ] `P5-30` 영향 Key/Business Date 재계산
 - [ ] `P5-31` Incremental과 Full Refresh Logical Hash 비교
 - [ ] `P5-32` Bronze Replay와 Re-extract 입력 경계 제공
+- [ ] `P5-33` Phase 4 Warehouse DAG의 `P4-11` dbt Build 호출 경계 활성화
 
 ## 범위 밖
 
@@ -197,7 +296,10 @@ AND order.purchase_at < COALESCE(dim_customer.valid_to, TIMESTAMPTZ 'infinity')
 - Model별 Grain/Unique Key 중복 0
 - Item/Payment Fan-out 방지 SQL Test
 - `gross_order_value`와 `payment_total` 계산 Test
-- Current 선택 Tie-breaker Test
+- Bronze Version Current 선택 Tie-breaker Test
+- `stg_customers_current` 대표 Row 선택 Tie-breaker Test
+- Order Status 8개 표준 상태 전체 Mapping Test
+- SCD2 최초 Version `valid_from = created_at` Test
 - 동일 Timestamp/다른 Attribute Hash Contract Error
 - Incremental/Full Refresh Key별 값과 Logical Hash 일치
 
@@ -231,16 +333,17 @@ AND order.purchase_at < COALESCE(dim_customer.valid_to, TIMESTAMPTZ 'infinity')
 
 ## 파일·폴더별 변경 요약
 
-| 경로                                          | 변경 내용                                                                                       |
-| --------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `docs/phases/phase-05-dbt-duckdb-modeling.md` | 프로젝트 내부 용어를 한국어 중심으로 정리하고, 코드·DB 식별자와 `Logical Hash` 표기는 유지했다. |
+| 경로                                          | 변경 내용                                                                                                                                                                                                                                                                                                           |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `docs/phases/phase-05-dbt-duckdb-modeling.md` | 프로젝트 내부 용어를 한국어 중심으로 정리하고, 코드·DB 식별자와 `Logical Hash` 표기는 유지했다. Staging Mapping을 PRD Section 14.1 전체로 확장하고, 8개 주문 표준 상태 Mapping, SCD2 최초 Version `valid_from` 규칙을 보완했다. 다중 상태 집계는 필요할 때만 Macro 또는 Mapping Seed로 재사용하도록 정했다. Dimension Grain/Unique Key 표와 `P5-33` dbt 호출 경계 활성화 Task를 추가했다. |
 
 ## Definition of Done
 
 - [ ] 모든 `P5-*` Task가 완료됐다.
 - [ ] dbt가 COMMITTED Catalog Object만 읽는다.
 - [ ] Staging Naming/상태 Mapping이 100% 일치한다.
-- [ ] 모든 Mart의 Grain과 Unique Key가 검증된다.
+- [ ] 모든 Mart의 Grain과 Unique Key가 검증된다. Dimension 4개와 Fact 3개를 모두 포함한다.
+- [ ] Phase 4 Warehouse DAG의 `dbt_build` 호출 경계가 활성화된다.
 - [ ] Customer SCD2 구간 중첩이 0이고 Current가 정확히 1개다.
 - [ ] 주문이 구매 시점에 유효한 Customer Version을 참조한다.
 - [ ] Incremental과 Full Refresh의 Logical Hash가 같다.
@@ -263,4 +366,4 @@ feat: build duckdb marts with dbt
 
 ## 다음 Phase 인계
 
-Phase 6은 이 Phase의 Model Test를 통합 품질 Gate로 묶고, 실패한 Build가 마지막 성공 Mart를 훼손하지 않는 Publish 절차를 완성한다.
+Phase 6은 이 Phase의 Model Test를 통합 품질 Gate로 묶고, 실패한 Build가 마지막 성공 Mart를 훼손하지 않는 Publish 절차를 완성한다. 이 Phase가 `P5-33`으로 Phase 4의 `P4-11`을 채우므로, Phase 6 시작 시점에는 모든 `P4-*` Task가 완료된 상태여야 한다.
