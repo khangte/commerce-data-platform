@@ -23,7 +23,7 @@ pytestmark = pytest.mark.integration
     reason="Set PostgreSQL and SeaweedFS integration environment flags after starting containers.",
 )
 def test_customers_table_uses_the_same_bronze_commit_protocol_as_orders(tmp_path) -> None:
-    """Mutable `customers`도 공통 Writer·Manifest·Metadata CAS로 3개 Row를 Commit한다."""
+    """불변 `customers`도 공통 Writer·Manifest·Metadata CAS로 3개 Row를 Commit한다."""
     postgres = PostgresSettings.from_environment()
     storage = SeaweedFSSettings.from_environment()
     now = datetime(2026, 9, 7, tzinfo=UTC)
@@ -68,8 +68,8 @@ def _set_customers_watermark(settings: PostgresSettings, pipeline_name: str, now
     with settings.source_connection() as connection:
         row = connection.execute(
             """
-            SELECT updated_at, customer_id FROM customers
-            ORDER BY updated_at DESC, customer_id COLLATE "C" DESC OFFSET 3 LIMIT 1
+            SELECT created_at, customer_id FROM customers
+            ORDER BY created_at DESC, customer_id COLLATE "C" DESC OFFSET 3 LIMIT 1
             """
         ).fetchone()
     if row is None:
@@ -94,7 +94,9 @@ def _cleanup(
     request: TableIngestionRequest,
 ) -> None:
     """테스트가 만든 정확한 Customer Metadata와 Final Object만 정리한다."""
-    object_key, manifest_key = table_object_keys("customers", request.batch_id, request.logical_date)
+    object_key, manifest_key = table_object_keys(
+        "customers", request.batch_id, request.logical_date
+    )
     client = seaweedfs_s3_client(storage)
     for key in (manifest_key, object_key):
         client.delete_object(Bucket=storage.bucket, Key=key)

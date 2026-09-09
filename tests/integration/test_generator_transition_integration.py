@@ -55,7 +55,9 @@ def test_order_and_payment_transitions_are_idempotent_and_version_safe() -> None
             created_order = fetch_order_state(connection, bundle.order.order_id)
             pending_payment = fetch_payment_state(connection, bundle.order.order_id, 1)
 
-        approve = plan_order_transition(created_order, "approved", config.logical_date + timedelta(days=1))
+        approve = plan_order_transition(
+            created_order, "approved", config.logical_date + timedelta(days=1)
+        )
         assert apply_order_transition(settings, approve).updated == 1
         assert apply_order_transition(settings, approve).skipped == 1
 
@@ -79,7 +81,10 @@ def test_order_and_payment_transitions_are_idempotent_and_version_safe() -> None
         assert apply_payment_transition(settings, complete).updated == 1
         assert apply_payment_transition(settings, complete).skipped == 1
         with settings.source_connection() as connection:
-            assert fetch_payment_state(connection, bundle.order.order_id, 1).payment_status == "completed"
+            assert (
+                fetch_payment_state(connection, bundle.order.order_id, 1).payment_status
+                == "completed"
+            )
     finally:
         _delete_bundle(settings, bundle)
 
@@ -87,8 +92,16 @@ def test_order_and_payment_transitions_are_idempotent_and_version_safe() -> None
 def _delete_bundle(settings: PostgresSettings, bundle: OrderBundle) -> None:
     """통합 테스트가 생성한 정확한 Source Row만 FK 역순으로 제거한다."""
     with settings.source_connection() as connection:
-        connection.execute("DELETE FROM order_payments WHERE order_id = %s", (bundle.order.order_id,))
+        connection.execute(
+            "DELETE FROM order_payments WHERE order_id = %s", (bundle.order.order_id,)
+        )
         connection.execute("DELETE FROM order_items WHERE order_id = %s", (bundle.order.order_id,))
         connection.execute("DELETE FROM orders WHERE order_id = %s", (bundle.order.order_id,))
-        connection.execute("DELETE FROM customers WHERE customer_id = %s", (bundle.customer.customer_id,))
+        connection.execute(
+            "DELETE FROM customers WHERE customer_id = %s", (bundle.customer.customer_id,)
+        )
+        connection.execute(
+            "DELETE FROM customer_memberships WHERE customer_unique_id = %s",
+            (bundle.customer.customer_unique_id,),
+        )
         connection.commit()

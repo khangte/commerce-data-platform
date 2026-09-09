@@ -8,8 +8,7 @@ import pytest
 
 from src.generator.config import GENERATOR_VERSION, GeneratorConfig
 from src.generator.customers import (
-    CustomerAddress,
-    CustomerRecord,
+    MembershipRecord,
     address_change_customer_record,
     membership_change_records,
     membership_level,
@@ -41,8 +40,7 @@ def test_new_customer_record_uses_stable_person_and_order_record_ids() -> None:
     assert len(first.customer_id) == 32
     assert first.customer_unique_id != another.customer_unique_id
     assert first.customer_id != another.customer_id
-    assert first.membership_level == "bronze"
-    assert first.created_at == first.updated_at == _config().logical_date
+    assert first.created_at == _config().logical_date
 
 
 def test_repurchase_uses_existing_person_with_a_new_customer_record() -> None:
@@ -60,9 +58,7 @@ def test_repurchase_uses_existing_person_with_a_new_customer_record() -> None:
     }
     assert purchase_from_original.customer_id not in {first.customer_id, second.customer_id}
     selected = (
-        first
-        if purchase_from_original.customer_unique_id == first.customer_unique_id
-        else second
+        first if purchase_from_original.customer_unique_id == first.customer_unique_id else second
     )
     assert purchase_from_original.address == selected.address
 
@@ -90,39 +86,31 @@ def test_membership_level_matches_the_seed_membership_thresholds(
     assert membership_level(delivered_order_count) == expected
 
 
-def test_membership_change_updates_every_record_for_one_person() -> None:
-    """Membership 변경은 동일 인물의 과거·신규 Record를 모두 같은 Transaction 후보로 만든다."""
+def test_membership_change_updates_one_person_grain_record() -> None:
+    """Membership 변경은 사람 단위 Record 하나만 갱신 후보로 만든다."""
     old_time = _config().logical_date - timedelta(days=1)
-    newer_time = old_time + timedelta(hours=1)
-    original = CustomerRecord(
-        customer_id="customer-1",
+    original = MembershipRecord(
         customer_unique_id="person-1",
-        address=CustomerAddress("sao paulo", "SP"),
         membership_level="bronze",
         created_at=old_time,
         updated_at=old_time,
     )
-    newer = CustomerRecord(
-        customer_id="customer-2",
-        customer_unique_id="person-1",
-        address=CustomerAddress("curitiba", "PR"),
-        membership_level="bronze",
-        created_at=newer_time,
-        updated_at=newer_time,
-    )
+    changed = membership_change_records(_config(), (original,), delivered_order_count=5)
 
-    changed = membership_change_records(_config(), (newer, original), delivered_order_count=5)
-
-    assert [record.customer_id for record in changed] == ["customer-1", "customer-2"]
+    assert [record.customer_unique_id for record in changed] == ["person-1"]
     assert {record.membership_level for record in changed} == {"silver"}
     assert changed[0].updated_at == _config().logical_date
-    assert changed[1].updated_at == _config().logical_date
     assert changed[0].created_at == original.created_at
 
 
 def test_membership_change_rejects_a_non_increasing_mutation_time() -> None:
     """기존 Membership을 바꾸는 시각은 이전 updated_at보다 반드시 커야 한다."""
-    current = new_customer_record(_config(), 1)
+    current = MembershipRecord(
+        customer_unique_id="person-1",
+        membership_level="bronze",
+        created_at=_config().logical_date,
+        updated_at=_config().logical_date,
+    )
 
     with pytest.raises(ValueError, match="logical_date"):
         membership_change_records(_config(), (current,), delivered_order_count=5)

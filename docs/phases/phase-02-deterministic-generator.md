@@ -16,7 +16,7 @@
 
 - Business ID는 UUIDv5 또는 결정적 Hash로 생성한다.
 - `customer_unique_id`는 동일 인물의 Business Key, `customer_id`는 주문 시점 Customer Record다.
-- 기존 Mutable Row의 새 `updated_at`은 직전 값보다 반드시 크다.
+- 기존 가변 Membership 행의 새 `updated_at`은 직전 값보다 반드시 크다. 계정 행은 생성 후 불변이다.
 - Late Arrival은 과거 Business Event Time과 현재 원천 변경 시각으로 표현한다.
 - Order/Item/Payment 묶음은 하나의 Transaction으로 생성한다.
 - Warehouse가 원천 데이터 동시성 잠금을 보유하는 동안 Generator는 Source를 변경하지 않는다.
@@ -104,9 +104,10 @@ Payment: pending → completed → refunded
 - [x] Lease 보호 아래 결정적 Order Bundle 생성과 `generator_runs` 결과 기록
 - [x] 동일 성공 입력의 결과 재사용과 Warehouse의 원천 데이터 동시성 잠금 중 Source 변경 0 검증
 
-CLI가 직접 실행하는 Profile은 `default`, `late-arrival`이다. `delayed-payment`,
-`membership-change`는 Phase 3 검증에서도 조합할 수 있는 재사용 가능한 Source Scenario Fixture로
-제공한다.
+CLI가 직접 실행하는 Profile은 `default`, `late-arrival`, `membership-change`다.
+`membership-change`는 bronze 또는 silver 사람 한 명을 결정적으로 골라 사람 단위
+`customer_memberships` 행만 갱신한다. `delayed-payment`는 Phase 3 검증에서도 조합할 수 있는
+재사용 가능한 Source Scenario Fixture로 제공한다.
 
 ## 범위 밖
 
@@ -170,12 +171,12 @@ AC-20과 AC-21의 전체 E2E 판정은 Phase 3의 Ingestion과 결합해 완료�
 | `src/generator/config.py`                                     | 생성·수정 | 결정성 실행 Config, UTC `logical_date`, 지원 Version·Profile 검증과 CLI 실행 Profile 범위를 추가했다.                 |
 | `src/generator/ids.py`                                        | 생성      | UUIDv5 Business ID와 안정적인 Logical Hash 유틸리티를 추가했다.                                                       |
 | `src/generator/metadata.py`                                   | 생성      | `generator_runs` Schema 준비와 RUNNING/완료 실행 이력 기록 기능을 추가했다.                                           |
-| `src/generator/customers.py`                                  | 생성      | 신규·재구매·주소 변경 Customer Record와 결정적 Membership 변경 계획을 추가했다.                                       |
-| `src/generator/orders.py`                                     | 생성      | Order·Item·Payment Bundle 생성, Seed Catalog 선택, 원자적 멱등 저장을 추가했다.                                       |
+| `src/generator/customers.py`                                  | 수정      | 불변 Customer 계정과 사람 단위 `MembershipRecord`를 분리하고 Membership의 단조 변경 저장을 추가했다.                  |
+| `src/generator/orders.py`                                     | 수정      | Order·Item·Payment Bundle 저장 시 새 사람의 최초 Membership을 함께 보장하도록 변경했다.                               |
 | `src/generator/transitions.py`                                | 생성      | Order·Payment 허용 상태 전이, 기대 Version, 원천 변경 시각 검증을 추가했다.                                           |
 | `src/generator/scenarios.py`                                  | 생성      | Late Order·Delayed Payment·Late Update·Membership Change Scenario를 추가했다.                                         |
 | `src/generator/lease.py`                                      | 생성      | Generator·Warehouse 원천 데이터 동시성 잠금의 획득·갱신·Fencing·해제를 추가했다.                                      |
-| `src/generator/service.py`                                    | 생성      | Seed Snapshot 검증, Lease 보호 Source 생성, 실행 결과 재사용과 Fixture Profile 경계를 추가했다.                       |
+| `src/generator/service.py`                                    | 수정      | Seed Snapshot 검증, Lease 보호 Source 생성, 실행 결과 재사용과 실제 Membership 변경 Profile 실행을 추가했다.          |
 | `src/generator/__main__.py`                                   | 생성·수정 | Generator CLI 기반을 만들고, 기본 실행 적재·`--validate-only`·실행 가능 Profile 선택을 지원하도록 변경했다.           |
 | `sql/metadata/002_create_generator_metadata.sql`              | 생성·수정 | Generator 실행 Metadata Schema를 만들고, 성공 실행 입력만 Unique하게 보관해 실패 실행의 재시도를 허용하도록 변경했다. |
 | `sql/metadata/003_create_source_mutation_leases.sql`          | 생성      | `commerce_source` 원천 데이터 동시성 잠금 Table을 추가했다.                                                           |

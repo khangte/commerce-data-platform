@@ -1,6 +1,6 @@
 # Membership Grain 분리 기획안
 
-> 상태: Proposed
+> 상태: Implemented
 > 작성일: 2026-09-09
 > 관련 문서: [PRD v1.5](../../PRD_v1.5.md), [데이터 변환 흐름](data-transformation-flow.md), [Phase 5](../phases/phase-05-dbt-duckdb-modeling.md)
 
@@ -146,7 +146,20 @@ FR-15(SCD2/Temporal Join, P0)는 그대로 유지된다.
 7. 테스트 수정
 8. 문서 갱신
 
-5번이 되돌리기 어려운 지점이다. 기존 Bronze Object가 구 스키마이므로 진행 전에 `schema_version` 상향과 전체 재생성 중 하나를 결정해야 한다.
+5번은 되돌리기 어려운 지점이다. 기존 Bronze Object가 구 스키마이므로 진행 전에 `schema_version` 상향과 전체 재생성 중 하나를 결정해야 한다.
+
+## 구현 결정과 완료 범위
+
+- Source DDL은 기존 `customers.membership_level` 값을 사람 단위 `customer_memberships`로 먼저
+  옮긴 뒤 계정 테이블의 `membership_level`·`updated_at`과 관련 제약·인덱스를 제거하는 멱등
+  호환 마이그레이션으로 구현했다.
+- Bronze의 두 스키마는 호환되지 않으므로 `schema_version` 상향 대신 **기존 Bronze Object와
+  Watermark를 전체 재생성**한다. 새 Source Table을 포함한 7개 Table을 초기 Watermark부터
+  다시 수집해야 dbt가 혼합 스키마를 읽지 않는다.
+- Generator의 `membership-change` Profile을 실제 실행 가능 Profile로 전환했다. bronze 또는
+  silver 사람 한 명을 결정적으로 골라 단일 `customer_memberships` 행만 갱신한다.
+- dbt SCD2 입력은 `customer_memberships` Bronze 관측만 사용하고, 주문 주소는
+  `stg_customers_current`에서 `source_customer_id`로 가져오는 주문 스냅샷으로 분리했다.
 
 ## 리스크
 

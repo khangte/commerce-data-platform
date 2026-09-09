@@ -86,19 +86,33 @@ def test_invalid_item_rolls_back_customer_and_order() -> None:
         apply_order_bundle(settings, bundle)
 
     with settings.source_connection() as connection:
-        assert connection.execute(
-            "SELECT count(*) FROM customers WHERE customer_id = %s", (customer.customer_id,)
-        ).fetchone()[0] == 0
-        assert connection.execute(
-            "SELECT count(*) FROM orders WHERE order_id = %s", (original.order.order_id,)
-        ).fetchone()[0] == 0
+        assert (
+            connection.execute(
+                "SELECT count(*) FROM customers WHERE customer_id = %s", (customer.customer_id,)
+            ).fetchone()[0]
+            == 0
+        )
+        assert (
+            connection.execute(
+                "SELECT count(*) FROM orders WHERE order_id = %s", (original.order.order_id,)
+            ).fetchone()[0]
+            == 0
+        )
 
 
 def _delete_bundle(settings: PostgresSettings, bundle: OrderBundle) -> None:
     """통합 테스트가 생성한 정확한 Source Row만 FK 역순으로 제거한다."""
     with settings.source_connection() as connection:
-        connection.execute("DELETE FROM order_payments WHERE order_id = %s", (bundle.order.order_id,))
+        connection.execute(
+            "DELETE FROM order_payments WHERE order_id = %s", (bundle.order.order_id,)
+        )
         connection.execute("DELETE FROM order_items WHERE order_id = %s", (bundle.order.order_id,))
         connection.execute("DELETE FROM orders WHERE order_id = %s", (bundle.order.order_id,))
-        connection.execute("DELETE FROM customers WHERE customer_id = %s", (bundle.customer.customer_id,))
+        connection.execute(
+            "DELETE FROM customers WHERE customer_id = %s", (bundle.customer.customer_id,)
+        )
+        connection.execute(
+            "DELETE FROM customer_memberships WHERE customer_unique_id = %s",
+            (bundle.customer.customer_unique_id,),
+        )
         connection.commit()

@@ -45,7 +45,10 @@ def test_same_raw_input_and_seeded_at_are_idempotent() -> None:
 
     with settings.source_connection() as connection:
         for table_name, expected_count in current.table_row_counts.items():
-            assert connection.execute(f"SELECT count(*) FROM {table_name}").fetchone()[0] == expected_count
+            assert (
+                connection.execute(f"SELECT count(*) FROM {table_name}").fetchone()[0]
+                == expected_count
+            )
 
 
 @pytest.mark.skipif(

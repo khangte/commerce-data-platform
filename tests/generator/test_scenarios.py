@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from src.generator.config import GENERATOR_VERSION, GeneratorConfig
-from src.generator.customers import CustomerAddress, CustomerRecord, new_customer_record
+from src.generator.customers import MembershipRecord, new_customer_record
 from src.generator.orders import OrderCatalog, ProductReference, SellerReference
 from src.generator.scenarios import (
     delayed_payment_transition,
@@ -85,13 +85,11 @@ def test_delayed_payment_and_late_update_plan_current_mutation_time() -> None:
     assert late_update.mutation_time == order_mutation_time
 
 
-def test_membership_change_scenario_updates_all_records_for_one_person() -> None:
-    """Membership Change Scenario는 동일 인물의 모든 Customer Record를 갱신 후보로 반환한다."""
+def test_membership_change_scenario_updates_one_person_grain_record() -> None:
+    """Membership Change Scenario는 사람 단위 Membership 갱신 후보를 반환한다."""
     old_time = _config().logical_date - timedelta(days=1)
-    record = CustomerRecord(
-        customer_id="customer-1",
+    record = MembershipRecord(
         customer_unique_id="person-1",
-        address=CustomerAddress("sao paulo", "SP"),
         membership_level="bronze",
         created_at=old_time,
         updated_at=old_time,

@@ -39,6 +39,7 @@ DEFAULT_TASK_ARGS = {
 
 SOURCE_TABLES = (
     "customers",
+    "customer_memberships",
     "products",
     "sellers",
     "orders",
@@ -78,7 +79,7 @@ def _reraise_classified(error: Exception) -> None:
 with DAG(
     dag_id="warehouse_pipeline_dag",
     schedule=None,
-    start_date=datetime(2026, 1, 1),
+    start_date=datetime(2026, 1, 1, tzinfo=UTC),
     catchup=False,
     max_active_runs=1,
     default_args=DEFAULT_TASK_ARGS,

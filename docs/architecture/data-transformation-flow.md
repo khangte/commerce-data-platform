@@ -80,7 +80,7 @@ Phase 3 `ingest_table()`이 담당한다. `src/ingestion/tables.py`의 `TableCon
 
 | 컬럼              | 타입                 | 값                             | 용도                                                        |
 | ----------------- | -------------------- | ------------------------------ | ----------------------------------------------------------- |
-| `_batch_id`       | `string`             | `{dag_id}__{YYYYMMDDTHHMMSSZ}` | 같은 Batch의 6개 Table을 묶는다. Current 선택 Tie-breaker다 |
+| `_batch_id`       | `string`             | `{dag_id}__{YYYYMMDDTHHMMSSZ}` | 같은 Batch의 7개 Table을 묶는다. Current 선택 Tie-breaker다 |
 | `_run_id`         | `string`             | Pipeline Run UUID              | 실행 추적용이다                                             |
 | `_ingested_at`    | `timestamp[us, UTC]` | Bronze 기록 시각               | Current 선택 Tie-breaker다                                  |
 | `_source_table`   | `string`             | 원천 Table 이름                | Object 자체로 출처를 식별한다                               |
@@ -267,26 +267,10 @@ GROUP BY customer_id HAVING COUNT(*) > 1
 
 ### 5.4 사람 단위 집계
 
-Business Key 교체의 직접적 결과다. `customer_unique_id` 하나에 여러 `customer_id` Row가 붙으므로, 사람 단위로 접을 때 시각 컬럼이 여러 개가 된다.
-
-| PostgreSQL   | Staging      | 집계 방식  | 근거                           |
-| ------------ | ------------ | ---------- | ------------------------------ |
-| `created_at` | `created_at` | Group 최소 | 이 사람이 처음 등장한 시점이다 |
-| `updated_at` | `updated_at` | Group 최대 | 마지막으로 변경된 시점이다     |
-
-`created_at` 최소값이 SCD2 최초 Version의 `valid_from`이 된다. 이 값이 틀리면 그 이전에 발생한 주문이 유효한 고객 Version을 찾지 못해 Unknown Customer Key가 생기고, AC-12가 실패한다.
-
-여러 `customer_id` 중 대표 Row를 고르는 규칙은 별도다. Bronze Version Current 선택과 혼동하면 안 된다.
-
-| 규칙                   | 목적                                      | 정렬                                                                                 |
-| ---------------------- | ----------------------------------------- | ------------------------------------------------------------------------------------ |
-| Bronze Version Current | 같은 PK의 여러 Batch Version 중 최신 선택 | `updated_at`, `_ingested_at`, `_batch_id`                                            |
-| 대표 Customer Row      | 한 사람의 여러 `customer_id` 중 대표 선택 | `updated_at`, 연결 주문 `order_purchase_timestamp`, `order_id`, `source_customer_id` |
-
-`stg_customers_current`는 대표 행 자체만 반환하지 않는다. 주문 원천 키를 분석 고객 키에 연결할 수
-있도록 현재 `source_customer_id`마다 한 행을 유지하고, 대표 행에서 고른 `membership_level`, `city`,
-`state`와 사람 단위 `created_at` 최소·`updated_at` 최대를 각 매핑 행에 붙인다. 따라서
-`stg_orders`는 모든 주문의 `source_customer_id`를 잃지 않고 분석 `customer_id`로 바꿀 수 있다.
+`customers`는 계정 불변 테이블이므로 `created_at`, `_ingested_at`, `_batch_id`로 같은 계정의
+Current Bronze 행만 고른다. `stg_customers_current`는 모든 `source_customer_id`마다 한 행을
+유지하며 해당 계정의 `city`·`state`를 주문 배송지 스냅샷으로 전달한다. 분석 고객 키는
+`customer_unique_id`이고, 사람 단위 등급 이력은 별도 `customer_memberships` 관측에서 만든다.
 
 <!--  -->### 5.5 나머지 이름 변환
 
@@ -511,10 +495,10 @@ fact_orders:
 
 ## 9. SCD2: Mutable 원천을 이력으로 바꾸는 구간
 
-PostgreSQL `customers`는 `UPDATE`로 덮어쓰므로 과거 `membership_level`이 남지 않는다. Bronze는 Batch마다 새 Object를 쌓으므로 관측 이력이 보존된다. 이 차이를 이용해 `dim_customer`가 Version 이력을 복원한다.
+PostgreSQL `customer_memberships`는 `UPDATE`로 덮어쓰므로 과거 `membership_level`이 남지 않는다. Bronze는 Batch마다 새 Object를 쌓으므로 관측 이력이 보존된다. 이 차이를 이용해 `dim_customer`가 Version 이력을 복원한다.
 
 ```text
-PostgreSQL customers          UPDATE로 현재 값만 존재한다
+PostgreSQL customer_memberships UPDATE로 현재 값만 존재한다
         ↓ Batch마다 수집
 Bronze Object 여러 개          Batch별 관측이 누적된다
         ↓ 관측을 시간 순으로 정렬
@@ -527,11 +511,9 @@ dim_customer                  [valid_from, valid_to) 구간을 가진다
 
 | 속성               | 원천 컬럼                    | 근거                         |
 | ------------------ | ---------------------------- | ---------------------------- |
-| `membership_level` | `customers.membership_level` | 등급 변경 시점을 알아야 한다 |
-| `city`             | `customers.customer_city`    | 이사 시점을 알아야 한다      |
-| `state`            | `customers.customer_state`   | 위와 같다                    |
+| `membership_level` | `customer_memberships.membership_level` | 등급 변경 시점을 알아야 한다 |
 
-이 3개 속성의 Hash가 바뀔 때만 새 Version을 만든다. `updated_at`만 바뀌고 추적 속성이 그대로면 Version을 늘리지 않는다.
+등급 Hash가 바뀔 때만 새 Version을 만든다. `updated_at`만 바뀌고 등급이 그대로면 Version을 늘리지 않는다.
 
 ### 9.2 valid_from 결정 규칙
 

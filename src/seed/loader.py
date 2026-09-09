@@ -18,7 +18,15 @@ from psycopg.types.json import Jsonb
 from src.common.database import PostgresSettings, apply_sql_file
 from src.seed.contracts import CONTRACT_BY_TABLE, combined_checksum, validate_input_directory
 
-LOAD_ORDER = ("customers", "products", "sellers", "orders", "order_items", "order_payments")
+LOAD_ORDER = (
+    "customers",
+    "customer_memberships",
+    "products",
+    "sellers",
+    "orders",
+    "order_items",
+    "order_payments",
+)
 ORDER_TIMESTAMP_COLUMNS = (
     "order_purchase_timestamp",
     "order_approved_at",
@@ -40,6 +48,10 @@ TARGET_COLUMNS = {
         "customer_unique_id",
         "customer_city",
         "customer_state",
+        "created_at",
+    ),
+    "customer_memberships": (
+        "customer_unique_id",
         "membership_level",
         "created_at",
         "updated_at",
@@ -76,7 +88,10 @@ TARGET_COLUMNS = {
         "updated_at",
     ),
 }
-PRIMARY_KEYS = {table_name: CONTRACT_BY_TABLE[table_name].primary_key for table_name in LOAD_ORDER}
+PRIMARY_KEYS = {
+    **{table_name: contract.primary_key for table_name, contract in CONTRACT_BY_TABLE.items()},
+    "customer_memberships": ("customer_unique_id",),
+}
 
 
 @dataclass(frozen=True)
@@ -257,9 +272,17 @@ def build_seed_dataset(input_dir: Path, seeded_at: datetime) -> SeedDataset:
         .map(customer_identity)
         .value_counts()
     )
-    customers["membership_level"] = customers["customer_unique_id"].map(
-        lambda customer_unique_id: _membership_level(int(delivered_counts.get(customer_unique_id, 0)))
+    customer_memberships = (
+        customers.loc[:, ["customer_unique_id", "created_at"]]
+        .groupby("customer_unique_id", as_index=False)["created_at"]
+        .min()
     )
+    customer_memberships["membership_level"] = customer_memberships["customer_unique_id"].map(
+        lambda customer_unique_id: _membership_level(
+            int(delivered_counts.get(customer_unique_id, 0))
+        )
+    )
+    customer_memberships["updated_at"] = seeded_at
 
     for column in (
         "product_weight_g",
@@ -288,15 +311,18 @@ def build_seed_dataset(input_dir: Path, seeded_at: datetime) -> SeedDataset:
     )
     order_status = orders.set_index("order_id")["order_status"]
     order_payments["payment_status"] = order_payments["order_id"].map(
-        lambda order_id: "failed"
-        if order_status[order_id] in {"canceled", "unavailable"}
-        else "completed"
+        lambda order_id: (
+            "failed" if order_status[order_id] in {"canceled", "unavailable"} else "completed"
+        )
     )
     order_payments["created_at"] = order_payments["order_id"].map(order_purchase_timestamp)
     order_payments["updated_at"] = seeded_at
 
     rows = {
         "customers": _table_rows(customers, TARGET_COLUMNS["customers"]),
+        "customer_memberships": _table_rows(
+            customer_memberships, TARGET_COLUMNS["customer_memberships"]
+        ),
         "products": _table_rows(products, TARGET_COLUMNS["products"]),
         "sellers": _table_rows(sellers, TARGET_COLUMNS["sellers"]),
         "orders": _table_rows(orders, TARGET_COLUMNS["orders"]),
@@ -306,7 +332,9 @@ def build_seed_dataset(input_dir: Path, seeded_at: datetime) -> SeedDataset:
     return SeedDataset(rows=rows, maximum_event_time=maximum_event_time, raw_checksum=raw_checksum)
 
 
-def _upsert_stage(connection: psycopg.Connection, table_name: str, rows: list[tuple[Any, ...]]) -> None:
+def _upsert_stage(
+    connection: psycopg.Connection, table_name: str, rows: list[tuple[Any, ...]]
+) -> None:
     columns = TARGET_COLUMNS[table_name]
     stage_name = f"seed_stage_{table_name}"
     column_sql = ", ".join(columns)
@@ -318,9 +346,10 @@ def _upsert_stage(connection: psycopg.Connection, table_name: str, rows: list[tu
     connection.execute(
         f"CREATE TEMPORARY TABLE {stage_name} (LIKE {table_name} INCLUDING DEFAULTS) ON COMMIT DROP"
     )
-    with connection.cursor() as cursor, cursor.copy(
-        f"COPY {stage_name} ({column_sql}) FROM STDIN"
-    ) as copy:
+    with (
+        connection.cursor() as cursor,
+        cursor.copy(f"COPY {stage_name} ({column_sql}) FROM STDIN") as copy,
+    ):
         for row in rows:
             copy.write_row(row)
     if connection.execute(f"SELECT count(*) FROM {stage_name}").fetchone()[0] != len(rows):
@@ -339,7 +368,9 @@ def _table_content_hash(connection: psycopg.Connection, table_name: str) -> str:
         cursor.execute(f"SELECT {', '.join(columns)} FROM {table_name} ORDER BY {order_by}")
         for row in cursor:
             digest.update(
-                json.dumps(row, default=str, ensure_ascii=True, separators=(",", ":")).encode("utf-8")
+                json.dumps(row, default=str, ensure_ascii=True, separators=(",", ":")).encode(
+                    "utf-8"
+                )
             )
             digest.update(b"\n")
     return digest.hexdigest()
@@ -352,18 +383,27 @@ def _ensure_schema(settings: PostgresSettings) -> None:
         apply_sql_file(pipeline_connection, "sql/metadata/001_create_seed_metadata.sql")
 
 
-def _assert_seed_guard(connection: psycopg.Connection, raw_checksum: str, seeded_at: datetime) -> None:
-    generator_table = connection.execute("SELECT to_regclass('public.generator_runs')").fetchone()[0]
-    if generator_table and connection.execute(
-        "SELECT EXISTS (SELECT 1 FROM generator_runs WHERE status = 'SUCCESS')"
-    ).fetchone()[0]:
+def _assert_seed_guard(
+    connection: psycopg.Connection, raw_checksum: str, seeded_at: datetime
+) -> None:
+    generator_table = connection.execute("SELECT to_regclass('public.generator_runs')").fetchone()[
+        0
+    ]
+    if (
+        generator_table
+        and connection.execute(
+            "SELECT EXISTS (SELECT 1 FROM generator_runs WHERE status = 'SUCCESS')"
+        ).fetchone()[0]
+    ):
         raise ValueError("Seed is blocked because a successful generator run already exists")
 
     prior_run = connection.execute(
         "SELECT raw_checksum, seeded_at FROM seed_runs WHERE status = 'SUCCESS' LIMIT 1"
     ).fetchone()
     if prior_run and (prior_run[0] != raw_checksum or prior_run[1] != seeded_at):
-        raise ValueError("Seed is blocked because the baseline input differs from the successful seed")
+        raise ValueError(
+            "Seed is blocked because the baseline input differs from the successful seed"
+        )
 
 
 def _record_started_run(
@@ -426,11 +466,14 @@ def run_seed(input_dir: Path, seeded_at: datetime, settings: PostgresSettings) -
             for table_name in LOAD_ORDER:
                 _upsert_stage(source_connection, table_name, dataset.rows[table_name])
             table_row_counts = {
-                table_name: source_connection.execute(f"SELECT count(*) FROM {table_name}").fetchone()[0]
+                table_name: source_connection.execute(
+                    f"SELECT count(*) FROM {table_name}"
+                ).fetchone()[0]
                 for table_name in LOAD_ORDER
             }
             table_content_hashes = {
-                table_name: _table_content_hash(source_connection, table_name) for table_name in LOAD_ORDER
+                table_name: _table_content_hash(source_connection, table_name)
+                for table_name in LOAD_ORDER
             }
     except Exception as error:
         _record_finished_run(settings, seed_run_id, status="FAILED", error_message=str(error))

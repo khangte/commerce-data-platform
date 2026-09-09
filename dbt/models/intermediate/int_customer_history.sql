@@ -1,34 +1,40 @@
-with observations as (
+with ordered_observations as (
     select
         customer_id,
         membership_level,
-        city,
-        state,
         attribute_hash,
         created_at,
         updated_at,
+        _ingested_at,
+        _batch_id,
+        lag(attribute_hash) over (
+            partition by customer_id
+            order by updated_at, _ingested_at, _batch_id
+        ) as _previous_attribute_hash
+    from {{ ref('stg_customer_observations') }}
+),
+changed_observations as (
+    select
+        *,
         row_number() over (
             partition by customer_id
             order by updated_at, _ingested_at, _batch_id
         ) as _version_rank
-    from {{ ref('stg_customer_observations') }}
+    from ordered_observations
+    where _previous_attribute_hash is null or _previous_attribute_hash != attribute_hash
 ),
 versioned as (
     select
         customer_id,
         membership_level,
-        city,
-        state,
         attribute_hash,
         case when _version_rank = 1 then created_at else updated_at end as valid_from,
         _version_rank
-    from observations
+    from changed_observations
 )
 select
     customer_id,
     membership_level,
-    city,
-    state,
     attribute_hash,
     valid_from,
     lead(valid_from) over (partition by customer_id order by _version_rank) as valid_to,

@@ -12,9 +12,12 @@ import pytest
 from src.common.database import PostgresSettings
 from src.generator.config import GENERATOR_VERSION, GeneratorConfig
 from src.generator.customers import (
+    ensure_membership_records,
     membership_change_records,
     new_customer_record,
+    new_membership_record,
     persist_customer_records,
+    persist_membership_records,
 )
 
 pytestmark = pytest.mark.integration
@@ -43,17 +46,25 @@ def test_customer_record_is_idempotent_and_membership_changes_monotonically() ->
         with settings.source_connection() as connection, connection.transaction():
             assert persist_customer_records(connection, (record,)).inserted == 1
             assert persist_customer_records(connection, (record,)).skipped == 1
+            membership = new_membership_record(record)
+            assert ensure_membership_records(connection, (membership,)).inserted == 1
 
-        changed = membership_change_records(next_config, (record,), delivered_order_count=5)
+        changed = membership_change_records(next_config, (membership,), delivered_order_count=5)
         with settings.source_connection() as connection, connection.transaction():
-            assert persist_customer_records(connection, changed).updated == 1
+            assert persist_membership_records(connection, changed).updated == 1
             actual = connection.execute(
-                "SELECT membership_level, updated_at FROM customers WHERE customer_id = %s",
-                (record.customer_id,),
+                "SELECT membership_level, updated_at FROM customer_memberships WHERE customer_unique_id = %s",
+                (record.customer_unique_id,),
             ).fetchone()
 
         assert actual == ("silver", next_config.logical_date)
     finally:
         with settings.source_connection() as connection:
-            connection.execute("DELETE FROM customers WHERE customer_id = %s", (record.customer_id,))
+            connection.execute(
+                "DELETE FROM customers WHERE customer_id = %s", (record.customer_id,)
+            )
+            connection.execute(
+                "DELETE FROM customer_memberships WHERE customer_unique_id = %s",
+                (record.customer_unique_id,),
+            )
             connection.commit()

@@ -352,7 +352,7 @@ Credential / Secret
   직후 실행됨을 확인했다. 실제 `airflow dags test` 실행 로그에서도 `release_source_snapshot_lease`가
   `sync_bronze_catalog_task`보다 먼저 끝나, Catalog 동기화 구간에는 원천 데이터 동시성 잠금이 이미
   해제돼 있음을 확인했다.
-- Dynamic Task Mapping 입력 순서가 `customers, products, sellers, orders, order_items, order_payments`
+- Dynamic Task Mapping 입력 순서가 `customers, customer_memberships, products, sellers, orders, order_items, order_payments`
   고정임을 `SOURCE_TABLES` 튜플로 확인했다.
 
 ## 범위 밖
@@ -467,7 +467,7 @@ Project/CLI와 Test를 완성한 뒤, Warehouse DAG의 `dbt_build` 호출 경계
 | `.env.example`                                  | 수정 | Airflow UI Port·LocalExecutor 병렬도와 Linux/WSL 파일 권한용 `AIRFLOW_UID` 설정 예시를 추가했다. |
 | `.gitignore`                                    | 수정 | Airflow Log는 무시하되 빈 디렉터리 표시 파일은 추적하도록 변경했다. |
 | `airflow/dags/source_simulation_dag.py`         | 생성 | Airflow Param을 검증해 Phase 2 `run_generator` API를 호출하는 Generator DAG를 추가했다. |
-| `airflow/dags/warehouse_pipeline_dag.py`        | 생성 | `initialize_run`/Lease 획득·해제/6개 Table Dynamic Mapping/Verify/Catalog/Summary Task로 Phase 3 `ingest_table`을 오케스트레이션하는 Warehouse DAG를 추가했다. |
+| `airflow/dags/warehouse_pipeline_dag.py`        | 수정 | `initialize_run`/Lease 획득·해제/7개 Table Dynamic Mapping/Verify/Catalog/Summary Task로 Phase 3 `ingest_table`을 오케스트레이션하며 `customer_memberships` 수집을 추가했다. |
 | `src/ingestion/verification.py`                 | 생성 | Batch의 6개 Table이 모두 COMMITTED이고 Manifest/Object/Hash/Row Count/Watermark가 일치하는지 재확인하는 `verify_bronze_commit()`을 추가했다. |
 | `src/ingestion/manifest.py`                     | 수정 | `orphan.py`가 쓰던 Manifest 파싱·Type 검증 로직을 `parse_bronze_manifest_payload()`로 공개해 `verification.py`와 공유하도록 정리했다. |
 | `src/ingestion/orphan.py`                       | 수정 | 중복이던 Manifest 파싱·Type 검증 Private 함수를 제거하고 `manifest.py`의 공개 함수를 사용하도록 정리했다. |

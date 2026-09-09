@@ -10,7 +10,7 @@ SUPPORTED_GENERATOR_VERSIONS = frozenset({GENERATOR_VERSION})
 SUPPORTED_ANOMALY_PROFILES = frozenset(
     {"default", "late-arrival", "delayed-payment", "membership-change"}
 )
-EXECUTABLE_ANOMALY_PROFILES = frozenset({"default", "late-arrival"})
+EXECUTABLE_ANOMALY_PROFILES = frozenset({"default", "late-arrival", "membership-change"})
 
 
 @dataclass(frozen=True)
@@ -42,7 +42,9 @@ class GeneratorConfig:
             raise ValueError("order_count must be zero or greater")
         if self.anomaly_profile not in SUPPORTED_ANOMALY_PROFILES:
             supported = ", ".join(sorted(SUPPORTED_ANOMALY_PROFILES))
-            raise ValueError(f"Unsupported anomaly_profile: {self.anomaly_profile}. Supported: {supported}")
+            raise ValueError(
+                f"Unsupported anomaly_profile: {self.anomaly_profile}. Supported: {supported}"
+            )
         assert_generator_version_supported(self.generator_version)
 
     @classmethod
@@ -85,7 +87,9 @@ def parse_logical_date(value: str) -> datetime:
     except ValueError as error:
         raise ValueError("--logical-date must be an ISO-8601 timestamp") from error
     if parsed.tzinfo is None or parsed.utcoffset() is None:
-        raise ValueError("--logical-date must include a UTC offset, for example 2026-09-04T00:00:00Z")
+        raise ValueError(
+            "--logical-date must include a UTC offset, for example 2026-09-04T00:00:00Z"
+        )
     return parsed.astimezone(UTC)
 
 
@@ -93,4 +97,6 @@ def assert_generator_version_supported(generator_version: str) -> None:
     """현재 구현이 읽고 실행할 수 있는 Generator 버전인지 확인한다."""
     if generator_version not in SUPPORTED_GENERATOR_VERSIONS:
         supported = ", ".join(sorted(SUPPORTED_GENERATOR_VERSIONS))
-        raise ValueError(f"Unsupported generator_version: {generator_version}. Supported: {supported}")
+        raise ValueError(
+            f"Unsupported generator_version: {generator_version}. Supported: {supported}"
+        )

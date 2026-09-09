@@ -84,9 +84,11 @@ Customer Mapping:
 | `customer_unique_id`    | `customer_id`             |
 | `customer_city`         | `city`                    |
 | `customer_state`        | `state`                   |
-| `membership_level`      | 대문자 `membership_level` |
-| Group 최소 `created_at` | `created_at`              |
-| Group 최대 `updated_at` | `updated_at`              |
+| `customers.created_at`  | `created_at`              |
+
+`customer_memberships`는 별도 `stg_customer_observations`에서 사람 키를 `customer_id`로 바꾸고
+`membership_level`을 대문자로 표준화한다. 이력은 Current 선택을 하지 않고 Bronze 누적 행을
+`customer_id + updated_at + attribute_hash`로 중복 제거한다.
 
 Order Mapping:
 
@@ -147,19 +149,9 @@ failed    → FAILED
 refunded  → REFUNDED
 ```
 
-`stg_customers_current` 대표 Row 선택은 Bronze Version Current 선택과 다른 규칙이다. 한 `customer_unique_id`에 여러 `customer_id`가 붙는 Olist 구조 때문에 필요하다.
-
-```text
-updated_at DESC
-연결 주문 order_purchase_timestamp DESC
-order_id DESC
-source_customer_id DESC
-```
-
-`stg_customers_current`의 출력 Grain은 주문 결합을 위한 `source_customer_id` 1행이다. 위 규칙으로
-사람별 대표 속성(`membership_level`, `city`, `state`)을 먼저 고른 뒤, 같은 사람의 모든 현재
-`source_customer_id` 매핑 행에 그 속성과 Group `created_at` 최소·`updated_at` 최대를 붙인다.
-대표 행만 출력하면 나머지 주문의 원천 고객 키가 사라져 `stg_orders` 결합이 누락되므로 허용하지 않는다.
+`stg_customers_current`의 출력 Grain은 주문 결합을 위한 `source_customer_id` 1행이다. 계정은
+불변이므로 `created_at`, `_ingested_at`, `_batch_id`로 같은 계정의 Current Bronze 행만 고르고,
+해당 계정의 `city`·`state`를 그대로 보존한다. 사람 단위 등급은 이 모델에 복사하지 않는다.
 
 ## Phase 5C. Intermediate
 
@@ -190,8 +182,6 @@ SCD2 추적 속성:
 
 ```text
 membership_level
-city
-state
 ```
 
 SCD2 규칙:
@@ -215,8 +205,6 @@ customer_key
 customer_id
 source_customer_unique_id
 membership_level
-city
-state
 attribute_hash
 valid_from
 valid_to
@@ -352,7 +340,14 @@ AND order.purchase_at < COALESCE(dim_customer.valid_to, TIMESTAMPTZ 'infinity')
 | `dbt/tests/stg_source_mapping.sql`             | Bronze Current 행과 Staging의 Prefix 제거, Timestamp Rename, 상태 표준화, 고객 키·기간 경계를 행 단위로 대조한다.                                                                                |
 | `dbt/README.md`                                | 루트 기준 dbt 실행 명령과 Catalog Macro의 입력 경계를 기록했다.                                                                                                                               |
 | `tests/test_dbt_catalog_macro.py`               | 빈 Catalog 처리, Commit된 명시적 Parquet 목록 생성, 미지원 Schema Version의 dbt 사전 차단을 독립 DuckDB로 검증한다.                                                                            |
-| `docs/phases/phase-05-dbt-duckdb-modeling.md` | 프로젝트 내부 용어를 한국어 중심으로 정리하고, 코드·DB 식별자와 `Logical Hash` 표기는 유지했다. Staging Mapping을 PRD Section 14.1 전체로 확장하고, 8개 주문 표준 상태 Mapping, SCD2 최초 Version `valid_from` 규칙을 보완했다. 다중 상태 집계는 필요할 때만 Macro 또는 Mapping Seed로 재사용하도록 정했다. `stg_customers_current`는 대표 속성을 선택하되 모든 현재 원천 고객 키 매핑을 보존하도록 정했고, Phase 5A·5B 완료 항목과 Staging 구현·테스트를 기록했다. Dimension Grain/Unique Key 표와 `P5-33` dbt 호출 경계 활성화 Task를 추가했다. |
+| `dbt/macros/bronze_source.sql` | 수정 | 7번째 Source인 `customer_memberships`와 분리된 계정/멤버십 Schema를 Bronze Macro에 등록했다. |
+| `dbt/models/staging/stg_customers_current.sql` | 수정 | 불변 계정 주소와 `created_at`만 주문 결합 Grain으로 노출하도록 축소했다. |
+| `dbt/models/staging/stg_customer_observations.sql` | 수정 | 사람 단위 Membership Bronze 관측만으로 SCD2 입력과 단일 속성 Hash를 만들도록 변경했다. |
+| `dbt/models/intermediate/int_customer_history.sql` | 수정 | 주소 추적을 제거하고 Membership Version 구간만 계산하도록 변경했다. |
+| `dbt/models/intermediate/int_orders_enriched.sql` | 수정 | 계정 주소를 `source_customer_id`로 직접 결합해 주문 스냅샷으로 보존하도록 변경했다. |
+| `dbt/models/marts/dimensions/dim_customer.sql` | 수정 | 사람 Membership Version Dimension에서 `city`·`state`를 제거했다. |
+| `dbt/models/staging/schema.yml`, `dbt/tests/stg_source_mapping.sql` | 수정 | 분리된 계정/멤버십 Mapping과 검증 계약을 반영했다. |
+| `docs/phases/phase-05-dbt-duckdb-modeling.md` | 수정 | 계정 주소 스냅샷과 사람 단위 Membership SCD2의 Grain 분리를 기록했다. |
 
 ## Definition of Done
 

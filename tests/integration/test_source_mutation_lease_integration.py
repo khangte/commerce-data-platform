@@ -67,17 +67,23 @@ def test_source_mutation_lease_is_exclusive_and_fences_a_stale_owner() -> None:
             assert warehouse_lease.version > renewed_lease.version
             with pytest.raises(LeaseOwnershipLostError):
                 assert_source_mutation_lease(
-                    settings, renewed_lease, now=warehouse_lease.lease_expires_at - timedelta(seconds=1)
+                    settings,
+                    renewed_lease,
+                    now=warehouse_lease.lease_expires_at - timedelta(seconds=1),
                 )
             with pytest.raises(LeaseOwnershipLostError):
                 release_source_mutation_lease(settings, renewed_lease, now=now + timedelta(hours=1))
         finally:
             release_source_mutation_lease(
-                settings, warehouse_lease, now=warehouse_lease.lease_expires_at - timedelta(seconds=1)
+                settings,
+                warehouse_lease,
+                now=warehouse_lease.lease_expires_at - timedelta(seconds=1),
             )
     except Exception:
         try:
-            release_source_mutation_lease(settings, generator_lease, now=now + timedelta(minutes=10))
+            release_source_mutation_lease(
+                settings, generator_lease, now=now + timedelta(minutes=10)
+            )
         except LeaseOwnershipLostError:
             pass
         raise

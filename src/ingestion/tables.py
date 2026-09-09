@@ -1,4 +1,4 @@
-"""6개 Source Table의 Cursor·PK·Raw-compatible Bronze Schema 계약을 정의한다."""
+"""7개 Source Table의 Cursor·PK·Raw-compatible Bronze Schema 계약을 정의한다."""
 
 from __future__ import annotations
 
@@ -123,17 +123,29 @@ def _technical_fields() -> tuple[pa.Field, ...]:
 CUSTOMERS_TABLE = TableConfig(
     source_table="customers",
     primary_key_columns=("customer_id",),
-    cursor_timestamp_column="updated_at",
+    cursor_timestamp_column="created_at",
     cursor_key_columns=("customer_id",),
     source_columns=(
         _text("customer_id", nullable=False),
         _text("customer_unique_id", nullable=False),
         _text("customer_city"),
         _text("customer_state"),
+        _timestamp("created_at", nullable=False),
+    ),
+)
+
+CUSTOMER_MEMBERSHIPS_TABLE = TableConfig(
+    source_table="customer_memberships",
+    primary_key_columns=("customer_unique_id",),
+    cursor_timestamp_column="updated_at",
+    cursor_key_columns=("customer_unique_id",),
+    source_columns=(
+        _text("customer_unique_id", nullable=False),
         _text("membership_level", nullable=False),
         _timestamp("created_at", nullable=False),
         _timestamp("updated_at", nullable=False),
     ),
+    status_domains={"membership_level": frozenset({"bronze", "silver", "gold"})},
 )
 
 PRODUCTS_TABLE = TableConfig(
@@ -246,6 +258,7 @@ TABLE_CONFIGS: Mapping[str, TableConfig] = MappingProxyType(
         table.source_table: table
         for table in (
             CUSTOMERS_TABLE,
+            CUSTOMER_MEMBERSHIPS_TABLE,
             PRODUCTS_TABLE,
             SELLERS_TABLE,
             ORDERS_TABLE,

@@ -11,7 +11,14 @@ import psycopg
 
 from src.common.database import PostgresSettings
 from src.generator.config import GeneratorConfig
-from src.generator.customers import CustomerMutationResult, CustomerRecord, persist_customer_records
+from src.generator.customers import (
+    CustomerMutationResult,
+    CustomerRecord,
+    MembershipMutationResult,
+    ensure_membership_records,
+    new_membership_record,
+    persist_customer_records,
+)
 from src.generator.ids import deterministic_uuid, logical_hash
 
 PAYMENT_TYPES = ("credit_card", "boleto", "voucher")
@@ -127,6 +134,7 @@ class OrderBundleMutationResult:
     """Order Bundle 저장 결과의 Entity별 Insert·Skip 건수다."""
 
     customer: CustomerMutationResult
+    membership: MembershipMutationResult
     orders_inserted: int
     orders_skipped: int
     items_inserted: int
@@ -139,11 +147,15 @@ def fetch_order_catalog(connection: psycopg.Connection) -> OrderCatalog:
     """기존 Source에서 정렬된 Product·Seller 후보를 읽어 반환한다."""
     products = tuple(
         ProductReference(product_id=row[0])
-        for row in connection.execute("SELECT product_id FROM products ORDER BY product_id COLLATE \"C\"")
+        for row in connection.execute(
+            'SELECT product_id FROM products ORDER BY product_id COLLATE "C"'
+        )
     )
     sellers = tuple(
         SellerReference(seller_id=row[0])
-        for row in connection.execute("SELECT seller_id FROM sellers ORDER BY seller_id COLLATE \"C\"")
+        for row in connection.execute(
+            'SELECT seller_id FROM sellers ORDER BY seller_id COLLATE "C"'
+        )
     )
     return OrderCatalog(products=products, sellers=sellers)
 
@@ -177,7 +189,9 @@ def new_order_bundle(
     payment = PaymentRecord(
         order_id=order_id,
         payment_sequential=1,
-        payment_type=PAYMENT_TYPES[_selector(config, "payment-type", order_ordinal) % len(PAYMENT_TYPES)],
+        payment_type=PAYMENT_TYPES[
+            _selector(config, "payment-type", order_ordinal) % len(PAYMENT_TYPES)
+        ],
         payment_installments=None,
         payment_value=sum((item.price + item.freight_value for item in items), Decimal("0.00")),
         payment_status="pending",
@@ -201,11 +215,15 @@ def persist_order_bundle(
 ) -> OrderBundleMutationResult:
     """외부 Transaction 안에서 Order Bundle을 멱등적으로 저장한다."""
     customer_result = persist_customer_records(connection, (bundle.customer,))
+    membership_result = ensure_membership_records(
+        connection, (new_membership_record(bundle.customer),)
+    )
     orders_inserted, orders_skipped = _persist_order(connection, bundle.order)
     items_inserted, items_skipped = _persist_items(connection, bundle.items)
     payments_inserted, payments_skipped = _persist_payments(connection, bundle.payments)
     return OrderBundleMutationResult(
         customer=customer_result,
+        membership=membership_result,
         orders_inserted=orders_inserted,
         orders_skipped=orders_skipped,
         items_inserted=items_inserted,
@@ -223,14 +241,20 @@ def _new_item_record(
     item_ordinal: int,
 ) -> OrderItemRecord:
     """Product·Seller·금액이 결정된 신규 Order Item을 반환한다."""
-    product = catalog.products[_selector(config, "item-product", order_ordinal, item_ordinal) % len(catalog.products)]
-    seller = catalog.sellers[_selector(config, "item-seller", order_ordinal, item_ordinal) % len(catalog.sellers)]
+    product = catalog.products[
+        _selector(config, "item-product", order_ordinal, item_ordinal) % len(catalog.products)
+    ]
+    seller = catalog.sellers[
+        _selector(config, "item-seller", order_ordinal, item_ordinal) % len(catalog.sellers)
+    ]
     return OrderItemRecord(
         order_id=order_id,
         order_item_id=item_ordinal,
         product_id=product.product_id,
         seller_id=seller.seller_id,
-        price=_amount(config, "item-price", order_ordinal, item_ordinal, minimum_cents=1_000, span=99_001),
+        price=_amount(
+            config, "item-price", order_ordinal, item_ordinal, minimum_cents=1_000, span=99_001
+        ),
         freight_value=_amount(
             config, "item-freight", order_ordinal, item_ordinal, minimum_cents=100, span=9_901
         ),

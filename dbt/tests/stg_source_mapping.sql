@@ -16,15 +16,11 @@ orders_source as (
 ),
 customers_source as (
     select *
-    from {{ current_bronze_records('customers', ['customer_id']) }}
+    from {{ current_bronze_records('customers', ['customer_id'], 'created_at') }}
 ),
-customer_bounds as (
-    select
-        customer_unique_id,
-        min(created_at) as created_at,
-        max(updated_at) as updated_at
-    from customers_source
-    group by customer_unique_id
+memberships_source as (
+    select *
+    from {{ current_bronze_records('customer_memberships', ['customer_unique_id']) }}
 ),
 mapping_failures as (
     select 'products' as source_table, products_source.product_id as business_key
@@ -78,15 +74,27 @@ mapping_failures as (
 
     select 'customers' as source_table, customers_source.customer_id as business_key
     from customers_source
-    inner join customer_bounds
-        on customers_source.customer_unique_id = customer_bounds.customer_unique_id
     left join {{ ref('stg_customers_current') }}
         on customers_source.customer_id = stg_customers_current.source_customer_id
     where
         stg_customers_current.source_customer_id is null
         or stg_customers_current.customer_id is distinct from customers_source.customer_unique_id
-        or stg_customers_current.created_at is distinct from customer_bounds.created_at
-        or stg_customers_current.updated_at is distinct from customer_bounds.updated_at
+        or stg_customers_current.city is distinct from customers_source.customer_city
+        or stg_customers_current.state is distinct from customers_source.customer_state
+        or stg_customers_current.created_at is distinct from customers_source.created_at
+
+    union all
+
+    select 'customer_memberships' as source_table, memberships_source.customer_unique_id as business_key
+    from memberships_source
+    left join {{ ref('stg_customer_observations') }}
+        on memberships_source.customer_unique_id = stg_customer_observations.customer_id
+        and memberships_source.updated_at = stg_customer_observations.updated_at
+    where
+        stg_customer_observations.customer_id is null
+        or stg_customer_observations.membership_level is distinct from
+            {{ standardized_membership_level('memberships_source.membership_level') }}
+        or stg_customer_observations.created_at is distinct from memberships_source.created_at
 
     union all
 

@@ -3,6 +3,8 @@ select
     stg_orders.source_customer_id,
     stg_orders.customer_id,
     dim_customer.customer_key,
+    stg_customers_current.city as customer_city,
+    stg_customers_current.state as customer_state,
     stg_orders.order_status,
     stg_orders.purchase_at,
     stg_orders.approved_at,
@@ -14,6 +16,7 @@ select
     stg_orders._batch_id,
     stg_orders._ingested_at
 from {{ ref('stg_orders') }}
+left join {{ ref('stg_customers_current') }} using (source_customer_id)
 left join {{ ref('dim_customer') }}
     on stg_orders.customer_id = dim_customer.customer_id
     and stg_orders.purchase_at >= dim_customer.valid_from

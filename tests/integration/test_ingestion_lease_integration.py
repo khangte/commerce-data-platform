@@ -74,5 +74,7 @@ def test_warehouse_source_freeze_releases_global_lease_after_all_table_work() ->
     now = datetime(2026, 9, 7, tzinfo=UTC)
     with warehouse_source_freeze(settings, owner_id=uuid.uuid4(), now=now) as lease:
         assert lease.owner_type == "WAREHOUSE"
-    with warehouse_source_freeze(settings, owner_id=uuid.uuid4(), now=now + timedelta(minutes=1)) as lease:
+    with warehouse_source_freeze(
+        settings, owner_id=uuid.uuid4(), now=now + timedelta(minutes=1)
+    ) as lease:
         assert lease.owner_type == "WAREHOUSE"
