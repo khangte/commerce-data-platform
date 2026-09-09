@@ -208,6 +208,9 @@ tempCodeRunnerFile.py
 # Ruff stuff:
 .ruff_cache/
 
+# dbt local user identifier
+dbt/.user.yml
+
 # PyPI configuration file
 .pypirc
 
