@@ -2,7 +2,7 @@
 
 > 상태: Implemented
 > 작성일: 2026-09-09
-> 관련 문서: [PRD v1.5](../../PRD_v1.5.md), [데이터 변환 흐름](data-transformation-flow.md), [Phase 5](../phases/phase-05-dbt-duckdb-modeling.md)
+> 관련 문서: [PRD v1.6](../../PRD_v1.6.md), [데이터 변환 흐름](data-transformation-flow.md), [Phase 5](../phases/phase-05-dbt-duckdb-modeling.md)
 
 ## 배경
 
@@ -128,7 +128,7 @@ FR-15(SCD2/Temporal Join, P0)는 그대로 유지된다.
 
 | 문서                                       | 수정 내용                                                              |
 | ------------------------------------------ | ---------------------------------------------------------------------- |
-| `PRD_v1.5.md` → `v1.6`                     | Section 7.5, 14.1, 15, Source Table 목록(6→7), AC-19                    |
+| `PRD_v1.6.md`                               | Section 7.5, 14.1, 15, Source Table 목록(6→7), AC-19                    |
 | `docs/phases/phase-01-*`                   | DDL 변경, 테이블 7개                                                   |
 | `docs/phases/phase-02-*`                   | Seed·Generator 정책                                                    |
 | `docs/phases/phase-03-*`                   | 수집 계약, Cursor 컬럼                                                 |
@@ -160,6 +160,13 @@ FR-15(SCD2/Temporal Join, P0)는 그대로 유지된다.
   silver 사람 한 명을 결정적으로 골라 단일 `customer_memberships` 행만 갱신한다.
 - dbt SCD2 입력은 `customer_memberships` Bronze 관측만 사용하고, 주문 주소는
   `stg_customers_current`에서 `source_customer_id`로 가져오는 주문 스냅샷으로 분리했다.
+
+### 실행 검증
+
+`2026-09-09`에 구 Source·실행 메타데이터·Bronze·DuckDB Catalog를 재기준화한 뒤 7개 Table을
+다시 수집했다. 이어 실제 `membership-change`를 한 번 실행하고 `customer_memberships`만 증분
+수집했다. dbt build의 48개 모델·테스트가 통과했고, 변경된 사람의 `dim_customer`에는 과거
+`BRONZE` 구간과 `2026-09-04T00:00:00Z`부터의 새 구간이 생성됐으며 구간 겹침은 0건이었다.
 
 ## 리스크
 
