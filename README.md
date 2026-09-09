@@ -2,7 +2,7 @@
 
 Olist 공개 데이터를 Seed로 사용해 신뢰성 있는 로컬 Batch Data Platform을 구축하는 프로젝트입니다.
 
-현재 기준 문서는 [PRD v1.5](PRD_v1.5.md)입니다.
+현재 기준 문서는 [PRD v1.6](PRD_v1.6.md)입니다.
 
 ## Phase 0 시작하기
 

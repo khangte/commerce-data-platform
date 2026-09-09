@@ -3,7 +3,7 @@
 > 상태: Planned  
 > Milestone: 3 — Portfolio Evidence  
 > 선행 Phase: [Phase 8. Benchmark](phase-08-benchmark.md)  
-> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.5](../../PRD_v1.5.md)
+> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.6](../../PRD_v1.6.md)
 
 ## 목표
 

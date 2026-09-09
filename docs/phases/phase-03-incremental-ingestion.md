@@ -3,7 +3,7 @@
 > 상태: 구현 완료 · `orders` 최초 Bronze 적재 완료
 > Milestone: 2 — Data Platform Core  
 > 선행 Phase: [Phase 2. Deterministic Generator](phase-02-deterministic-generator.md)  
-> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.5](../../PRD_v1.5.md)
+> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.6](../../PRD_v1.6.md)
 
 ## 목표
 
@@ -447,6 +447,7 @@ Phase 3에서는 Framework-independent Python Pipeline을 완성하고 Phase 4�
 | `src/ingestion/corruption.py`                                    | 생성      | Extract 후 Validation 전 복제본에 NULL Key, Invalid Status, 음수값, Type, Broken Reference 5종 오류를 결정적으로 주입한다.                                                                                                                                                         |
 | `src/ingestion/manifest.py`                                      | 생성·수정 | Credential·Local 경로·Metadata Commit 상태 없이 Bronze와 Quarantine의 `VERIFIED` Object 증적을 기록하는 정규화 JSON Manifest를 추가했다.                                                                                                                                           |
 | `src/ingestion/service.py`                                       | 생성·수정 | 7개 Table 공통 수집 서비스를 추가해 검증·Quarantine·최종 Bronze 객체·Manifest·Metadata CAS를 연결하고, Heartbeat·Lease 충돌 FAILED 기록·공유 원천 데이터 동시성 잠금을 적용했다. Quarantine는 Bronze보다 먼저 게시하며 `ingest_orders()`도 공유 Lease를 받는 호환 래퍼로 유지했다. |
+| `src/rebaseline.py`                                              | 생성      | 확인형 `--confirm` CLI로 Source·실행 메타데이터·Bronze Prefix·DuckDB Catalog를 재기준화하고, Seed·7개 Table Bronze·Catalog를 순서대로 재생성한다. |
 | `src/ingestion/__main__.py`                                      | 생성      | `--dag-id`, `--logical-date`, `--tables`로 선택 Table을 원천 데이터 동시성 잠금 안에서 수동 적재하고 결과 JSON을 출력하는 CLI를 추가했다.                                                                                                                                          |
 | `scripts/inspect_bronze.py`                                      | 생성      | Source Table·Batch·Logical Date로 SeaweedFS Bronze Manifest, Parquet Schema·행 수·샘플 행을 조회하는 운영 보조 스크립트를 추가했다.                                                                                                                                                |
 | `compose.yaml`                                                   | 수정      | SeaweedFS 4.45 S3 API Service, 영속 Volume과 Master Healthcheck를 추가했다.                                                                                                                                                                                                        |
@@ -486,6 +487,21 @@ Phase 3에서는 Framework-independent Python Pipeline을 완성하고 Phase 4�
 
 - [x] `orders` Vertical Slice가 모든 실패 지점 테스트를 통과했다.
 - [x] 같은 Framework가 7개 Table에 일반화됐다.
+
+### Membership Grain 재기준화 검증
+
+구 스키마 Bronze 혼용을 막기 위해 `2026-09-09`에 아래 명령을 실행했다. 기본 실행은 삭제 범위만
+JSON으로 출력하고, `--confirm`이 있을 때만 Source·Metadata·Object·Catalog를 삭제한다.
+
+```bash
+uv run python -m src.rebaseline --seeded-at 2026-09-03T00:00:00Z
+uv run python -m src.rebaseline --seeded-at 2026-09-03T00:00:00Z --confirm
+```
+
+- Seed 기준 Source는 `customers=99,441`, `customer_memberships=96,096` 행으로 재생성됐다.
+- 7개 Source Table의 Bronze Object와 `control.bronze_files` Catalog 행이 각각 생성됐다.
+- `membership-change`를 1회 실행해 `customer_memberships` 1행을 증분 수집했고, dbt build
+  48개 모델·테스트가 모두 통과했다.
 - [x] Commit되지 않은 Object는 Catalog에서 보이지 않는다.
 - [x] 실패한 Table Watermark가 전진하지 않는다.
 - [x] 동일 Batch 재실행이 중복 Object/Row를 만들지 않는다.
