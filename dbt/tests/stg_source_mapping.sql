@@ -18,9 +18,13 @@ customers_source as (
     select *
     from {{ current_bronze_records('customers', ['customer_id'], 'created_at') }}
 ),
-memberships_source as (
+subscriptions_source as (
     select *
-    from {{ current_bronze_records('customer_memberships', ['customer_unique_id']) }}
+    from {{ current_bronze_records('customer_subscriptions', ['customer_unique_id']) }}
+),
+tiers_source as (
+    select *
+    from {{ current_bronze_records('customer_membership_tiers', ['customer_unique_id']) }}
 ),
 mapping_failures as (
     select 'products' as source_table, products_source.product_id as business_key
@@ -85,16 +89,39 @@ mapping_failures as (
 
     union all
 
-    select 'customer_memberships' as source_table, memberships_source.customer_unique_id as business_key
-    from memberships_source
-    left join {{ ref('stg_customer_observations') }}
-        on memberships_source.customer_unique_id = stg_customer_observations.customer_id
-        and memberships_source.updated_at = stg_customer_observations.updated_at
+    select
+        'customer_subscriptions' as source_table,
+        subscriptions_source.customer_unique_id as business_key
+    from subscriptions_source
+    left join {{ ref('stg_customer_subscription_observations') }} as stg_subscription_obs
+        on subscriptions_source.customer_unique_id = stg_subscription_obs.customer_id
+        and subscriptions_source.updated_at = stg_subscription_obs.updated_at
     where
-        stg_customer_observations.customer_id is null
-        or stg_customer_observations.membership_level is distinct from
-            {{ standardized_membership_level('memberships_source.membership_level') }}
-        or stg_customer_observations.created_at is distinct from memberships_source.created_at
+        stg_subscription_obs.customer_id is null
+        or stg_subscription_obs.subscription_status is distinct from
+            {{ standardized_subscription_status('subscriptions_source.subscription_status') }}
+        or stg_subscription_obs.trial_ends_at is distinct from subscriptions_source.trial_ends_at
+        or stg_subscription_obs.benefit_ends_at is distinct from subscriptions_source.benefit_ends_at
+        or stg_subscription_obs.payment_failed_at
+            is distinct from subscriptions_source.payment_failed_at
+        or stg_subscription_obs.cancel_requested_at
+            is distinct from subscriptions_source.cancel_requested_at
+        or stg_subscription_obs.created_at is distinct from subscriptions_source.created_at
+
+    union all
+
+    select
+        'customer_membership_tiers' as source_table,
+        tiers_source.customer_unique_id as business_key
+    from tiers_source
+    left join {{ ref('stg_customer_tier_observations') }} as stg_tier_obs
+        on tiers_source.customer_unique_id = stg_tier_obs.customer_id
+        and tiers_source.updated_at = stg_tier_obs.updated_at
+    where
+        stg_tier_obs.customer_id is null
+        or stg_tier_obs.membership_tier is distinct from
+            {{ standardized_membership_tier('tiers_source.membership_tier') }}
+        or stg_tier_obs.created_at is distinct from tiers_source.created_at
 
     union all
 

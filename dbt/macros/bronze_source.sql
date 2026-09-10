@@ -1,6 +1,7 @@
 {% macro bronze_source(source_table) -%}
     {%- set supported_tables = [
-        'customers', 'customer_memberships', 'products', 'sellers', 'orders', 'order_items', 'order_payments'
+        'customers', 'customer_subscriptions', 'customer_membership_tiers', 'subscription_payments',
+        'products', 'sellers', 'orders', 'order_items', 'order_payments'
     ] -%}
     {%- if source_table not in supported_tables -%}
         {{ exceptions.raise_compiler_error('SOURCE_CONTRACT_ERROR: unsupported source_table=' ~ source_table) }}
@@ -49,9 +50,22 @@
             ('customer_city', 'varchar'), ('customer_state', 'varchar'),
             ('created_at', 'timestamptz')
         ],
-        'customer_memberships': [
-            ('customer_unique_id', 'varchar'), ('membership_level', 'varchar'), ('created_at', 'timestamptz'),
+        'customer_subscriptions': [
+            ('customer_unique_id', 'varchar'), ('subscription_status', 'varchar'),
+            ('trial_ends_at', 'timestamptz'), ('benefit_ends_at', 'timestamptz'),
+            ('next_billing_at', 'timestamptz'), ('payment_failed_at', 'timestamptz'),
+            ('cancel_requested_at', 'timestamptz'), ('created_at', 'timestamptz'),
             ('updated_at', 'timestamptz')
+        ],
+        'customer_membership_tiers': [
+            ('customer_unique_id', 'varchar'), ('membership_tier', 'varchar'),
+            ('created_at', 'timestamptz'), ('updated_at', 'timestamptz')
+        ],
+        'subscription_payments': [
+            ('customer_unique_id', 'varchar'), ('billing_sequence', 'integer'),
+            ('payment_status', 'varchar'), ('payment_value', 'decimal(14, 2)'),
+            ('billing_period_start', 'timestamptz'), ('billing_period_end', 'timestamptz'),
+            ('created_at', 'timestamptz'), ('updated_at', 'timestamptz')
         ],
         'products': [
             ('product_id', 'varchar'), ('product_category_name', 'varchar'),
@@ -109,7 +123,8 @@
             ) }}
         {%- endif -%}
         {%- for source_table in [
-            'customers', 'customer_memberships', 'products', 'sellers', 'orders', 'order_items', 'order_payments'
+            'customers', 'customer_subscriptions', 'customer_membership_tiers', 'subscription_payments',
+            'products', 'sellers', 'orders', 'order_items', 'order_payments'
         ] -%}
             {%- set relation = bronze_source(source_table) -%}
             {%- do log('Validated Bronze catalog relation for ' ~ source_table ~ ': ' ~ relation, info=True) -%}
