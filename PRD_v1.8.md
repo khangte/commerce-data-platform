@@ -423,7 +423,7 @@ Dimension까지 나누면 SCD2 총 행 수는 두 축 변경 시점의 합집합
 Arrival 부분 결측 규칙을 `fact_orders`와 `fact_subscription_payments` 두 곳에서 각각 정해야
 한다. Source만 나누면 그 결측을 `int_customer_history` 한 곳에서 흡수한다.
 
-상세 비교는 `docs/architecture/membership-table-split-comparison.md`에 있다.
+상세 비교는 `docs/architecture/04-membership-table-split-comparison.md`에 있다.
 
 
 ## 6. PostgreSQL Source 계약

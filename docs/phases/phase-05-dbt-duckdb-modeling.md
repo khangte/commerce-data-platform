@@ -4,7 +4,7 @@
 > Milestone: 2 — Data Platform Core  
 > 선행 Phase: [Phase 4. Airflow Orchestration](phase-04-airflow-orchestration.md)  
 > 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.8](../../PRD_v1.8.md)
-> 참고: [데이터 변환 흐름](../architecture/data-transformation-flow.md) — 계층별 이름·타입·Grain 변환의 근거
+> 참고: [데이터 변환 흐름](../architecture/00-data-transformation-flow.md) — 계층별 이름·타입·Grain 변환의 근거
 
 ## 목표
 
@@ -431,7 +431,7 @@ Watermark는 dbt 실패로 되돌리지 않는다. 컨테이너에서 `dbt` CLI�
 - `int_customer_history`는 두 Staging을 하나의 시간축으로 병합한다. 두 축의 관측 시각이
   서로 다르므로 각 시점에서 다른 축의 그 시점 유효 값을 이어받는다. 두 Source의 증분
   Watermark가 독립적이라 생기는 Late Arrival 부분 결측을 이 단계가 흡수한다. 병합 방식은
-  [비교 문서](../architecture/membership-table-split-comparison.md) 3.5.2절의 두 후보 중
+  [비교 문서](../architecture/04-membership-table-split-comparison.md) 3.5.2절의 두 후보 중
   하나를 SQL 작성 시 정한다.
 - `dim_customer` SCD2 속성 Hash는 `subscription_status`, `membership_tier`,
   `trial_ends_at`, `benefit_ends_at`, `payment_failed_at`, `cancel_requested_at`으로
@@ -442,7 +442,7 @@ Watermark는 dbt 실패로 되돌리지 않는다. 컨테이너에서 `dbt` CLI�
   결제 당시의 구독 상태와 등급을 함께 분석할 수 있게 한다.
 - `dbt/macros/bronze_source.sql`에 세 Source를 등록한다.
 
-세부 순서는 [전환 계획](../architecture/subscription-membership-transition-plan.md) 5절
+세부 순서는 [전환 계획](../architecture/02-subscription-membership-transition-plan.md) 5절
 6단계에 있다.
 
 ## Portfolio Evidence

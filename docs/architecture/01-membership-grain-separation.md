@@ -136,7 +136,7 @@ FR-15(SCD2/Temporal Join, P0)는 그대로 유지된다.
 | `docs/phases/phase-02-*`                   | Seed·Generator 정책                                                    |
 | `docs/phases/phase-03-*`                   | 수집 계약, Cursor 컬럼                                                 |
 | `docs/phases/phase-05-*`                   | 모델 정의, SCD2 규칙, 추적 속성                                        |
-| `docs/architecture/data-transformation-flow.md` | 계층별 표, ERD, 주문 여정 예시                                    |
+| `docs/architecture/00-data-transformation-flow.md` | 계층별 표, ERD, 주문 여정 예시                                    |
 
 ## 실행 순서
 

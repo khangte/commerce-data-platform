@@ -203,11 +203,11 @@ AC-20과 AC-21의 전체 E2E 판정은 Phase 3의 Ingestion과 결합해 완료�
 ### 구독·등급 Generator 재작업
 
 구독 상태 전이와 등급 갱신 로직은 통합 테이블(A안) 기준으로 먼저 작성했다. 이후
-[비교](../architecture/membership-table-split-comparison.md)를 거쳐 B안(Source만 분리)으로
+[비교](../architecture/04-membership-table-split-comparison.md)를 거쳐 B안(Source만 분리)으로
 확정했으므로, 저장 대상을 `customer_subscriptions`와 `customer_loyalty_tiers` 두 테이블로
 나누고 CHECK 제약 위치를 옮긴다. 상태 전이 규칙, 만료 스캔 순서, Seed 기준선 로직은 그대로
 쓴다. `subscription_payments` 자동결제 기록은 이 재작업에서 새로 만든다. 세부 순서는
-[전환 계획](../architecture/subscription-membership-transition-plan.md) 5절에 있다.
+[전환 계획](../architecture/02-subscription-membership-transition-plan.md) 5절에 있다.
 
 ## Definition of Done
 
