@@ -8,9 +8,20 @@ from datetime import UTC, datetime
 GENERATOR_VERSION = "1.0.0"
 SUPPORTED_GENERATOR_VERSIONS = frozenset({GENERATOR_VERSION})
 SUPPORTED_ANOMALY_PROFILES = frozenset(
-    {"default", "late-arrival", "delayed-payment", "membership-change"}
+    {
+        "default",
+        "late-arrival",
+        "delayed-payment",
+        "membership-change",
+        "subscription-trial",
+        "subscription-active",
+        "subscription-payment-failed",
+        "subscription-cancel-requested",
+        "subscription-churned",
+        "subscription-rejoined",
+    }
 )
-EXECUTABLE_ANOMALY_PROFILES = frozenset({"default", "late-arrival", "membership-change"})
+EXECUTABLE_ANOMALY_PROFILES = SUPPORTED_ANOMALY_PROFILES - {"delayed-payment"}
 
 
 @dataclass(frozen=True)

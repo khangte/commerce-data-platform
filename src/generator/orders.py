@@ -12,11 +12,13 @@ import psycopg
 from src.common.database import PostgresSettings
 from src.generator.config import GeneratorConfig
 from src.generator.customers import (
+    AxisMutationResult,
     CustomerMutationResult,
     CustomerRecord,
-    MembershipMutationResult,
-    ensure_membership_records,
-    new_membership_record,
+    ensure_membership_tier_records,
+    ensure_subscription_records,
+    new_membership_tier_record,
+    new_subscription_record,
     persist_customer_records,
 )
 from src.generator.ids import deterministic_uuid, logical_hash
@@ -134,7 +136,8 @@ class OrderBundleMutationResult:
     """Order Bundle 저장 결과의 Entity별 Insert·Skip 건수다."""
 
     customer: CustomerMutationResult
-    membership: MembershipMutationResult
+    subscription: AxisMutationResult
+    membership_tier: AxisMutationResult
     orders_inserted: int
     orders_skipped: int
     items_inserted: int
@@ -215,15 +218,19 @@ def persist_order_bundle(
 ) -> OrderBundleMutationResult:
     """외부 Transaction 안에서 Order Bundle을 멱등적으로 저장한다."""
     customer_result = persist_customer_records(connection, (bundle.customer,))
-    membership_result = ensure_membership_records(
-        connection, (new_membership_record(bundle.customer),)
+    subscription_result = ensure_subscription_records(
+        connection, (new_subscription_record(bundle.customer),)
+    )
+    membership_tier_result = ensure_membership_tier_records(
+        connection, (new_membership_tier_record(bundle.customer),)
     )
     orders_inserted, orders_skipped = _persist_order(connection, bundle.order)
     items_inserted, items_skipped = _persist_items(connection, bundle.items)
     payments_inserted, payments_skipped = _persist_payments(connection, bundle.payments)
     return OrderBundleMutationResult(
         customer=customer_result,
-        membership=membership_result,
+        subscription=subscription_result,
+        membership_tier=membership_tier_result,
         orders_inserted=orders_inserted,
         orders_skipped=orders_skipped,
         items_inserted=items_inserted,

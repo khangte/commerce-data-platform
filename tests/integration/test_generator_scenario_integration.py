@@ -12,8 +12,8 @@ from src.common.database import PostgresSettings
 from src.generator.config import GENERATOR_VERSION, GeneratorConfig
 from src.generator.customers import (
     new_customer_record,
-    new_membership_record,
-    persist_membership_records,
+    new_membership_tier_record,
+    persist_membership_tier_records,
 )
 from src.generator.orders import OrderBundle, apply_order_bundle, fetch_order_catalog
 from src.generator.scenarios import (
@@ -96,16 +96,18 @@ def test_service_level_scenarios_keep_business_and_mutation_times_separate() -> 
             generator_version=config.generator_version,
         )
         changed_customer = membership_change_scenario(
-            membership_config, (new_membership_record(bundle.customer),), delivered_order_count=5
+            membership_config,
+            (new_membership_tier_record(bundle.customer),),
+            delivered_order_count=5,
         )
         with settings.source_connection() as connection, connection.transaction():
-            assert persist_membership_records(connection, changed_customer).updated == 1
-            source_customer = connection.execute(
-                "SELECT membership_level, updated_at FROM customer_memberships WHERE customer_unique_id = %s",
+            assert persist_membership_tier_records(connection, changed_customer).updated == 1
+            source_tier = connection.execute(
+                "SELECT membership_tier, updated_at FROM customer_membership_tiers WHERE customer_unique_id = %s",
                 (bundle.customer.customer_unique_id,),
             ).fetchone()
 
-        assert source_customer == ("silver", membership_config.logical_date)
+        assert source_tier == ("SILVER", membership_config.logical_date)
         with settings.source_connection() as connection:
             approved_order = fetch_order_state(connection, bundle.order.order_id)
             completed_payment = fetch_payment_state(connection, bundle.order.order_id, 1)
@@ -129,7 +131,15 @@ def _delete_bundle(settings: PostgresSettings, bundle: OrderBundle) -> None:
             "DELETE FROM customers WHERE customer_id = %s", (bundle.customer.customer_id,)
         )
         connection.execute(
-            "DELETE FROM customer_memberships WHERE customer_unique_id = %s",
+            "DELETE FROM subscription_payments WHERE customer_unique_id = %s",
+            (bundle.customer.customer_unique_id,),
+        )
+        connection.execute(
+            "DELETE FROM customer_subscriptions WHERE customer_unique_id = %s",
+            (bundle.customer.customer_unique_id,),
+        )
+        connection.execute(
+            "DELETE FROM customer_membership_tiers WHERE customer_unique_id = %s",
             (bundle.customer.customer_unique_id,),
         )
         connection.commit()

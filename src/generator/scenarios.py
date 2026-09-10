@@ -6,7 +6,13 @@ from dataclasses import replace
 from datetime import datetime, timedelta
 
 from src.generator.config import GeneratorConfig
-from src.generator.customers import CustomerRecord, MembershipRecord, membership_change_records
+from src.generator.customers import (
+    CustomerRecord,
+    MembershipTierRecord,
+    SubscriptionRecord,
+    membership_tier_change_records,
+    subscription_transition_records,
+)
 from src.generator.orders import OrderBundle, OrderCatalog, new_order_bundle
 from src.generator.transitions import (
     OrderState,
@@ -64,11 +70,18 @@ def late_order_update_transition(
 
 def membership_change_scenario(
     config: GeneratorConfig,
-    records: tuple[MembershipRecord, ...],
+    records: tuple[MembershipTierRecord, ...],
     delivered_order_count: int,
-) -> tuple[MembershipRecord, ...]:
-    """한 사람 Membership을 결정적 변경 후보로 만든다."""
-    return membership_change_records(config, records, delivered_order_count)
+) -> tuple[MembershipTierRecord, ...]:
+    """한 사람의 거래 실적 등급을 결정적 변경 후보로 만든다."""
+    return membership_tier_change_records(config, records, delivered_order_count)
+
+
+def subscription_transition_scenario(
+    config: GeneratorConfig, records: tuple[SubscriptionRecord, ...], next_status: str
+) -> tuple[SubscriptionRecord, ...]:
+    """한 사람의 구독 상태 전이를 결정적 변경 후보로 만든다."""
+    return subscription_transition_records(config, records, next_status)
 
 
 def _assert_past_business_event_time(

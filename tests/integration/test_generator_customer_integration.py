@@ -12,12 +12,14 @@ import pytest
 from src.common.database import PostgresSettings
 from src.generator.config import GENERATOR_VERSION, GeneratorConfig
 from src.generator.customers import (
-    ensure_membership_records,
-    membership_change_records,
+    ensure_membership_tier_records,
+    ensure_subscription_records,
+    membership_tier_change_records,
     new_customer_record,
-    new_membership_record,
+    new_membership_tier_record,
+    new_subscription_record,
     persist_customer_records,
-    persist_membership_records,
+    persist_membership_tier_records,
 )
 
 pytestmark = pytest.mark.integration
@@ -46,25 +48,36 @@ def test_customer_record_is_idempotent_and_membership_changes_monotonically() ->
         with settings.source_connection() as connection, connection.transaction():
             assert persist_customer_records(connection, (record,)).inserted == 1
             assert persist_customer_records(connection, (record,)).skipped == 1
-            membership = new_membership_record(record)
-            assert ensure_membership_records(connection, (membership,)).inserted == 1
+            subscription = new_subscription_record(record)
+            tier = new_membership_tier_record(record)
+            assert ensure_subscription_records(connection, (subscription,)).inserted == 1
+            assert ensure_membership_tier_records(connection, (tier,)).inserted == 1
 
-        changed = membership_change_records(next_config, (membership,), delivered_order_count=5)
+        changed = membership_tier_change_records(next_config, (tier,), delivered_order_count=5)
         with settings.source_connection() as connection, connection.transaction():
-            assert persist_membership_records(connection, changed).updated == 1
-            actual = connection.execute(
-                "SELECT membership_level, updated_at FROM customer_memberships WHERE customer_unique_id = %s",
+            assert persist_membership_tier_records(connection, changed).updated == 1
+            subscription_row = connection.execute(
+                "SELECT subscription_status FROM customer_subscriptions WHERE customer_unique_id = %s",
+                (record.customer_unique_id,),
+            ).fetchone()
+            tier_row = connection.execute(
+                "SELECT membership_tier, updated_at FROM customer_membership_tiers WHERE customer_unique_id = %s",
                 (record.customer_unique_id,),
             ).fetchone()
 
-        assert actual == ("silver", next_config.logical_date)
+        assert subscription_row == ("NON_MEMBER",)
+        assert tier_row == ("SILVER", next_config.logical_date)
     finally:
         with settings.source_connection() as connection:
             connection.execute(
                 "DELETE FROM customers WHERE customer_id = %s", (record.customer_id,)
             )
             connection.execute(
-                "DELETE FROM customer_memberships WHERE customer_unique_id = %s",
+                "DELETE FROM customer_subscriptions WHERE customer_unique_id = %s",
+                (record.customer_unique_id,),
+            )
+            connection.execute(
+                "DELETE FROM customer_membership_tiers WHERE customer_unique_id = %s",
                 (record.customer_unique_id,),
             )
             connection.commit()
