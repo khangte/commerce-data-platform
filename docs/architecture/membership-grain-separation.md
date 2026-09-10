@@ -4,6 +4,9 @@
 > 작성일: 2026-09-09
 > 관련 문서: [PRD v1.7](../../PRD_v1.7.md), [데이터 변환 흐름](data-transformation-flow.md), [Phase 5](../phases/phase-05-dbt-duckdb-modeling.md)
 
+> 후속 계획: [구독 상태와 멤버십 등급 전환 계획](subscription-membership-transition-plan.md)은
+> 현재 구현된 주문 실적 등급 모델에 구독 생명주기를 추가하기 위한 아직 미구현인 전환 계획이다.
+
 ## 배경
 
 Phase 5 SCD2 구현 중 `int_customer_history` Contract 검사가 122건 실패했다. PRD 규칙 "동일 고객·동일 `updated_at`의 서로 다른 Hash는 Contract Error"에 위반된 건수다.
