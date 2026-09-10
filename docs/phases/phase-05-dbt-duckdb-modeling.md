@@ -274,11 +274,39 @@ AND order.purchase_at < COALESCE(dim_customer.valid_to, TIMESTAMPTZ 'infinity')
 
 ## Phase 5G. Incremental과 Late Arrival
 
-- [ ] `P5-29` 변경 Key 기반 Transactional `DELETE + INSERT` 또는 검증된 `MERGE`
-- [ ] `P5-30` 영향 Key/Business Date 재계산
-- [ ] `P5-31` Incremental과 Full Refresh Logical Hash 비교
-- [ ] `P5-32` Bronze Replay와 Re-extract 입력 경계 제공
-- [ ] `P5-33` Phase 4 Warehouse DAG의 `P4-11` dbt Build 호출 경계 활성화
+- [x] `P5-29` 변경 Key 기반 Transactional `DELETE + INSERT` 또는 검증된 `MERGE`
+- [x] `P5-30` 영향 Key/Business Date 재계산
+- [x] `P5-31` Incremental과 Full Refresh Logical Hash 비교
+- [x] `P5-32` Bronze Replay와 Re-extract 입력 경계 제공
+- [x] `P5-33` Phase 4 Warehouse DAG의 `P4-11` dbt Build 호출 경계 활성화
+
+`P5-29`: 세 Fact 모두 `incremental_strategy='delete+insert'`를 명시한다. dbt-duckdb의
+`delete+insert`는 `unique_key`로 대상 행을 지운 뒤 삽입하며, DuckDB Model 실행 전체가 하나의
+Transaction 안에서 처리된다.
+
+`P5-30`: Fact는 `is_incremental()` 분기 없이 매 실행마다 Staging/Intermediate 체인 전체를
+`delete+insert`로 재적용한다. `current_bronze_records()`가 이미 Table마다 Current Bronze
+Version만 골라내므로, Fact를 매번 전체 재계산해도 결과는 항상 최신 Committed 상태와 같다.
+영향받은 `order_id`/`business_date_key`는 `int_affected_business_dates`가 계산해
+`on-run-end` Hook으로 `control.affected_keys`에 감사 기록만 남긴다. Fact 재계산 필터로는
+쓰지 않는다.
+
+`P5-31`: `dbt build`(Incremental)와 `dbt build --full-refresh`(Full Refresh)를 연속 실행한 뒤
+`fact_orders`의 `(order_id, gross_order_value, payment_total)` 조합을 정렬해 만든 MD5 Logical
+Hash를 비교해 완전히 일치함을 확인했다.
+
+`P5-32`: `bronze_source()` Macro가 `control.bronze_files`(Catalog)에 있는 Object Key만
+`read_parquet()`으로 읽는다. Replay/Re-extract가 새 Bronze Object를 Commit하고
+`sync_bronze_catalog()`로 Catalog를 갱신하면, dbt는 별도 입력 없이 다음 `dbt build`에서 그
+Object를 자동으로 포함한다. Catalog가 Bronze Replay/Re-extract와 dbt 사이의 유일한 입력
+경계다.
+
+`P5-33`: `warehouse_pipeline_dag`에 `dbt_build` Task를 추가했다. `sync_bronze_catalog_task`
+성공 뒤(`trigger_rule="all_success"`)에만 `dbt build`를 실행하고, `publish_run_summary`는
+`trigger_rule="all_done"`이라 dbt 실패와 무관하게 Summary를 남긴다. 이미 Commit된 Bronze와
+Watermark는 dbt 실패로 되돌리지 않는다. 컨테이너에서 `dbt` CLI와 `dbt/` Project를 쓸 수
+있도록 `compose.yaml`의 `airflow-common`에 `./dbt` Volume과 `DBT_PROJECT_DIR`,
+`DBT_PROFILES_DIR`, `WAREHOUSE_PATH` 환경 변수를 추가했다.
 
 ## 범위 밖
 

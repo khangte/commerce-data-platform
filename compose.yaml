@@ -28,6 +28,9 @@ x-airflow-common: &airflow-common
     INGESTION_PAGE_SIZE: ${INGESTION_PAGE_SIZE:-50000}
     WAREHOUSE_DAG_SCHEDULE: ${WAREHOUSE_DAG_SCHEDULE:-}
     PYTHONPATH: /opt/airflow/project
+    WAREHOUSE_PATH: /opt/airflow/project/data/warehouse/warehouse.duckdb
+    DBT_PROJECT_DIR: /opt/airflow/project/dbt
+    DBT_PROFILES_DIR: /opt/airflow/project/dbt
   user: "${AIRFLOW_UID:-50000}:0"
   working_dir: /opt/airflow/project
   volumes:
@@ -35,6 +38,7 @@ x-airflow-common: &airflow-common
     - ./airflow/logs:/opt/airflow/logs
     - ./src:/opt/airflow/project/src:ro
     - ./sql:/opt/airflow/project/sql:ro
+    - ./dbt:/opt/airflow/project/dbt
     - ./data/warehouse:/opt/airflow/project/data/warehouse
   profiles:
     - airflow

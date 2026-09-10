@@ -1,6 +1,7 @@
 {{
     config(
-        unique_key='order_id'
+        unique_key='order_id',
+        incremental_strategy='delete+insert'
     )
 }}
 

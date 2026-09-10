@@ -1,6 +1,7 @@
 {{
     config(
-        unique_key=['order_id', 'payment_sequence']
+        unique_key=['order_id', 'payment_sequence'],
+        incremental_strategy='delete+insert'
     )
 }}
 

@@ -189,7 +189,7 @@ Generator DAG는 `seed`, `logical_date`, 생성 건수와 Scenario Profile을 Ai
 - [x] `P4-08` 6개 Table `extract_validate_load` Dynamic Task Mapping
 - [x] `P4-09` `verify_bronze_commit`에서 Metadata 기반 Commit 검증
 - [x] `P4-10` `sync_bronze_catalog` 호출
-- [ ] `P4-11` Phase 5 이후 활성화할 dbt Build 호출 경계 구성
+- [x] `P4-11` Phase 5 이후 활성화할 dbt Build 호출 경계 구성
 - [x] `P4-12` `publish_run_summary`와 최종 상태 기록
 - [x] `P4-13` 성공/실패에 관계없이 원천 데이터 동시성 잠금을 해제하는 Cleanup Task
 
@@ -226,7 +226,7 @@ verify_bronze_commit + release_source_snapshot_lease
     ↓ (둘 다 성공한 경우)
 sync_bronze_catalog
     ↓
-dbt_build (Phase 5 구현 뒤 활성화)
+dbt_build (Phase 5 dbt Project 완성 뒤 활성화됨)
     ↓
 publish_run_summary
 ```
@@ -426,7 +426,7 @@ AC-01과 AC-16의 Fact/dbt 부분은 Phase 5~6에서 완성한다.
 
 ## Definition of Done
 
-- [ ] 모든 `P4-*` Task가 완료됐다. (`P4-11` dbt Build 호출 경계는 Phase 5 이후로 의도적으로 보류)
+- [x] 모든 `P4-*` Task가 완료됐다. (`P4-11` dbt Build 호출 경계는 Phase 5 dbt Project 완성 뒤 활성화)
 - [x] 두 DAG가 Import Error 없이 Parse된다.
 - [x] Warehouse E2E가 Phase 3 API를 통해 실행된다.
 - [x] Retryable Error만 재시도한다.
