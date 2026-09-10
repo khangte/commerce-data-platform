@@ -27,6 +27,7 @@ pythonpath = ["."]
 addopts = "--import-mode=importlib"
 markers = [
     "integration: requires the Phase 1 PostgreSQL container and raw Olist dataset",
+    "airflow: requires the airflow Compose profile (builds and runs the Airflow image)",
 ]
 
 [tool.ruff]

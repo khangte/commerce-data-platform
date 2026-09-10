@@ -105,8 +105,8 @@ Context Manager를 Task 경계 전체에 걸쳐 사용할 수 없다. 아래 계
 
 - [x] `P4-01` Airflow 3.3.1 Compose Service와 LocalExecutor 구성
 - [x] `P4-02` Airflow Metadata DB 초기화와 Health Check 구성
-- [ ] `P4-03` Secret을 코드에 넣지 않는 환경 변수 설정
-- [ ] `P4-04` DAG Import/Parse Smoke Test 구성
+- [x] `P4-03` Secret을 코드에 넣지 않는 환경 변수 설정
+- [x] `P4-04` DAG Import/Parse Smoke Test 구성
 
 Runtime 계약:
 
@@ -152,6 +152,26 @@ Health Check를 추가했다.
   `postgres` Health Check 이후 시작해 Exit Code 0으로 종료하고, 그 뒤 `airflow-api-server`/
   `airflow-scheduler`/`airflow-dag-processor`가 시작해 전부 `healthy` 상태에 도달함을 확인했다.
 - Airflow Service 로그에서 Migration/Startup Error가 없음을 확인했다.
+
+`P4-03`은 별도 코드 없이 이미 충족된 계약이다. `compose.yaml`의 `airflow-common`은 모든 Credential(`POSTGRES_PASSWORD`,
+`SOURCE_DB_PASSWORD`, `PIPELINE_DB_PASSWORD`, `SEAWEEDFS_SECRET_KEY` 등)을 `${VAR}` 형태로만 참조하고
+값을 코드·Compose·DAG에 하드코딩하지 않는다. `.env.example`은 실제 Secret 대신 `change_me` Placeholder만
+담고, `tests/test_bootstrap.py::test_environment_template_has_required_keys_without_real_secrets`가
+이를 회귀 검증한다.
+
+`P4-04`는 `tests/test_airflow_dags.py`로 신설했다. `RUN_AIRFLOW_SMOKE_TEST=1`일 때만 실행되는
+`airflow` Marker Opt-in Test로, `docker compose --profile airflow build`/`up -d` 뒤 Container 안에서
+`airflow dags list-import-errors`와 `airflow dags list`를 실행해 Import Error 0건과 두 DAG ID 노출을
+확인하고 `finally`에서 `down`으로 정리한다. Image Build를 포함해 기본 `uv run pytest tests/`에서는
+무거워 매번 돌리지 않도록 `RUN_SEAWEEDFS_INTEGRATION`과 같은 기존 Opt-in 관례를 따랐다.
+
+검증:
+
+- `RUN_AIRFLOW_SMOKE_TEST=1 uv run pytest tests/test_airflow_dags.py -v` 1 passed. Import Error 0건,
+  `source_simulation_dag`/`warehouse_pipeline_dag` 둘 다 `airflow dags list`에 노출됨을 확인했다.
+- 기본 `uv run pytest tests/`(환경 변수 미설정)에서는 신설 Test가 skip되어 실행 시간에 영향이 없음을
+  확인했다(86 passed, 41 skipped).
+- Test 종료 후 `docker compose --profile airflow ps`로 Container가 남지 않음을 확인했다.
 
 `P4-05`에서는 `source_simulation_dag`를 추가했다. `seed`/`logical_date`/`orders`/`anomaly_profile`/
 `source_snapshot_id`를 Airflow Param JSON Schema로 검증한 뒤 `GeneratorConfig.from_values`와
@@ -475,3 +495,6 @@ Project/CLI와 Test를 완성한 뒤, Warehouse DAG의 `dbt_build` 호출 경계
 | `airflow/dags/warehouse_pipeline_dag.py`        | 수정 | `default_args`로 재시도·Backoff·Timeout을 설정하고, 각 Task를 `classify_error()` 기반으로 Retryable은 재시도, Non-retryable은 `AirflowFailException`으로 즉시 실패하도록 감쌌다. |
 | `airflow/dags/source_simulation_dag.py`         | 수정 | 동일한 `default_args`와 `classify_error()` 기반 즉시 실패 처리를 Generator Task에 적용했다. |
 | `docs/phases/phase-04-airflow-orchestration.md` | 수정 | P4-01/P4-02/P4-05~P4-10/P4-12~P4-17 완료 상태와 Airflow Runtime 구성 범위, Fresh Boot·DAG 실행·Error Taxonomy 검증 결과를 기록했다. |
+| `tests/test_airflow_dags.py`                    | 생성 | `RUN_AIRFLOW_SMOKE_TEST=1` Opt-in으로 Compose `airflow` Profile을 빌드·기동해 두 DAG의 Import Error 0건을 검증하는 P4-04 Smoke Test를 추가했다. |
+| `pyproject.toml`                                | 수정 | `airflow` Pytest Marker를 등록했다. |
+| `.env.example`                                  | 수정 | `RUN_AIRFLOW_SMOKE_TEST`/`RUN_SEAWEEDFS_INTEGRATION` Test Opt-in 환경 변수 안내 주석을 추가했다. |
