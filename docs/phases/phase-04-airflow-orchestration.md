@@ -467,7 +467,7 @@ Dynamic Task Mapping 입력이 7개 Table 기준이다. PRD v1.8의 구독·등�
 - Generator DAG가 새 구독 Profile과 만료 스캔을 호출하도록 Task 인자를 넓힌다.
 - DAG Parse Smoke Test를 9개 Table 기준으로 다시 통과시킨다.
 
-세부 순서는 [전환 계획](../architecture/subscription-membership-transition-plan.md) 5절에
+세부 순서는 [전환 계획](../architecture/02-subscription-membership-transition-plan.md) 5절에
 있다.
 
 ## Portfolio Evidence

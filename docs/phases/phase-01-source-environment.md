@@ -176,9 +176,9 @@ Source Schema Allowlist
 | `pyproject.toml`                                 | 수정      | pytest 경로와 PostgreSQL 통합 테스트 Marker를 추가했다.                    |
 | `README.md`                                      | 수정      | PostgreSQL 기동, Seed 실행, 통합 테스트 명령을 추가했다.                   |
 | `docs/phases/phase-01-source-environment.md`     | 수정      | 완료 상태, 체크리스트, 검증 증적, 내부 용어의 한국어 표기를 반영했다.      |
-| `docs/architecture/subscription-membership-transition-plan.md` | 생성·수정 | 구독 상태와 거래 실적 등급 분리, 전환 순서를 기록했다. |
-| `docs/architecture/membership-table-split-comparison.md` | 생성 | 통합·Source분리·완전분리 세 안을 비교하고 B안(Source만 분리)으로 확정했다. |
-| `docs/architecture/subscription-lifecycle-requirements.md` | 생성 | 구독 주기 1개월, 자동결제, 유예 7일, 만료 스캔 요구사항을 확정했다. |
+| `docs/architecture/02-subscription-membership-transition-plan.md` | 생성·수정 | 구독 상태와 거래 실적 등급 분리, 전환 순서를 기록했다. |
+| `docs/architecture/04-membership-table-split-comparison.md` | 생성 | 통합·Source분리·완전분리 세 안을 비교하고 B안(Source만 분리)으로 확정했다. |
+| `docs/architecture/03-subscription-lifecycle-requirements.md` | 생성 | 구독 주기 1개월, 자동결제, 유예 7일, 만료 스캔 요구사항을 확정했다. |
 
 Membership Grain 분리 후 `customers`는 계정 불변값과 `created_at`만 보관한다. 사람 단위
 구독 생명주기는 `customer_subscriptions`, 거래 실적 등급은 `customer_loyalty_tiers`가 각각
@@ -189,12 +189,12 @@ Membership Grain 분리 후 `customers`는 계정 불변값과 `created_at`만 �
 ### 구독 상태·등급 전환 진행
 
 - [x] 세 대안(통합·Source분리·완전분리)을 비교하고 B안(Source만 분리)으로 확정했다.
-  근거는 [비교 문서](../architecture/membership-table-split-comparison.md)에 있다.
+  근거는 [비교 문서](../architecture/04-membership-table-split-comparison.md)에 있다.
 - [x] 구독 생명주기 요구사항(주기 1개월, 자동결제, 유예 7일, 만료 스캔)을 확정했다.
 - [x] 재기준화 후 새 Seed로 기준선을 만드는 전환 방식을 확정했다. 기존 등급 이관 Migration은
   만들지 않는다.
 - [ ] Source DDL, Seed, Generator를 B안 두 테이블 구조로 구현한다. 통합 테이블(A안)로
-  먼저 작성한 코드를 [전환 계획](../architecture/subscription-membership-transition-plan.md)
+  먼저 작성한 코드를 [전환 계획](../architecture/02-subscription-membership-transition-plan.md)
   5절 순서에 따라 재작업한다.
 - [ ] 증분 수집 Schema, dbt SCD2 Hash, BI 측정값은 후속 Phase에서 갱신한다.
 

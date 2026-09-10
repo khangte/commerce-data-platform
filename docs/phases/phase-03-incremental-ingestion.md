@@ -526,7 +526,7 @@ Phase의 Ingestion 계층을 재작업한다.
   테이블을 추가한다.
 - 재기준화를 다시 실행해 9개 Source Table Bronze와 Catalog를 재생성한다.
 
-세부 순서는 [전환 계획](../architecture/subscription-membership-transition-plan.md) 5절
+세부 순서는 [전환 계획](../architecture/02-subscription-membership-transition-plan.md) 5절
 5단계에 있다.
 
 ## Portfolio Evidence
