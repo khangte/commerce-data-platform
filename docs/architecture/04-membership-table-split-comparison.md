@@ -36,7 +36,7 @@ subscription_payments   사람당 N행    결제 이력
 
 ```text
 customer_subscriptions   사람당 1행
-customer_loyalty_tiers   사람당 1행
+customer_membership_tiers   사람당 1행
 ```
 
 결제 테이블을 만들었다고 해서 등급 분리가 따라오지 않는다. 결제를 나눠도 등급은 여전히
@@ -84,12 +84,12 @@ Source는 축별로 나누고 dbt에서 다시 합쳐 Dimension은 하나로 만
 
 ```text
 Source     customer_subscriptions        -- 구독 상태 + 시각 5개
-           customer_loyalty_tiers        -- membership_tier
+           customer_membership_tiers        -- membership_tier
            subscription_payments
            (합계 9개)
 
 Warehouse  stg_customer_subscriptions
-           stg_customer_loyalty_tiers
+           stg_customer_membership_tiers
            int_customer_history          -- 두 Staging을 여기서 합침
            dim_customer                  -- 여전히 하나
 Fact       fact_orders.customer_key                 -- Temporal Join 1회
@@ -102,7 +102,7 @@ Source와 Dimension을 모두 나눈다.
 
 ```text
 Source     customer_subscriptions
-           customer_loyalty_tiers
+           customer_membership_tiers
            subscription_payments
            (합계 9개)
 
@@ -198,7 +198,7 @@ Bronze `customer_memberships` 관측 하나에서 두 축을 모두 표준화한
 
 CHECK는 이 테이블의 `updated_at` 기준. 축별 컬럼 불필요.
 
-**Source: `customer_loyalty_tiers`** (사람당 1행)
+**Source: `customer_membership_tiers`** (사람당 1행)
 
 | 컬럼                 | 타입        | 비고                       |
 | -------------------- | ----------- | -------------------------- |
@@ -210,7 +210,7 @@ CHECK는 이 테이블의 `updated_at` 기준. 축별 컬럼 불필요.
 **Staging: 2개**
 
 - `stg_customer_subscriptions`: 구독 축 표준화, `subscription_attribute_hash` 계산
-- `stg_customer_loyalty_tiers`: 등급 축 표준화, `tier_attribute_hash` 계산
+- `stg_customer_membership_tiers`: 등급 축 표준화, `tier_attribute_hash` 계산
 
 **Intermediate: `int_customer_history`** (1개, 병합 지점)
 
@@ -247,7 +247,7 @@ CHECK는 이 테이블의 `updated_at` 기준. 축별 컬럼 불필요.
 
 ### 3.5.3 C안: 완전 분리
 
-**Source: `customer_subscriptions`, `customer_loyalty_tiers`**
+**Source: `customer_subscriptions`, `customer_membership_tiers`**
 
 B안과 동일.
 
@@ -471,7 +471,7 @@ Phase 5G에서 Late Arrival 경계를 이미 구현했다. 이 항목이 C안의
 ### 6.1 부분 결측이 생기는 이유
 
 Source를 나누면 두 테이블의 증분 수집 Watermark가 독립적이다. 한 배치에서
-`customer_subscriptions`는 새 데이터를 가져왔는데 `customer_loyalty_tiers`는 아직 안
+`customer_subscriptions`는 새 데이터를 가져왔는데 `customer_membership_tiers`는 아직 안
 가져온 상태가 정상적으로 존재한다.
 
 ### 6.2 안별 처리 지점
@@ -549,7 +549,7 @@ full outer join ... using (customer_unique_id)
 ## 9. 결정란
 
 - [ ] A안 통합 — `customer_memberships` 한 테이블에 축별 `updated_at`을 둔다
-- [x] **B안 Source만 분리** — `customer_subscriptions` + `customer_loyalty_tiers`, `dim_customer` 하나
+- [x] **B안 Source만 분리** — `customer_subscriptions` + `customer_membership_tiers`, `dim_customer` 하나
 - [ ] C안 완전 분리 — Source와 Dimension을 모두 나눈다
 
 ### 9.1 B안 선택 근거

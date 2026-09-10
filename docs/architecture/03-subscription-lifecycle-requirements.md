@@ -63,12 +63,12 @@ customer_subscriptions                   -- 사람(customer_unique_id)당 1행
 이 테이블의 `updated_at`이 곧 구독 축 변경 시각이므로 4.2절 시각 계약을 그대로 CHECK
 제약으로 쓴다. 등급 변경이 이 값을 밀지 않는다.
 
-### 3.2 customer_loyalty_tiers
+### 3.2 customer_membership_tiers
 
 거래 실적 등급의 현재 값만 보관한다.
 
 ```text
-customer_loyalty_tiers                   -- 사람(customer_unique_id)당 1행
+customer_membership_tiers                   -- 사람(customer_unique_id)당 1행
 ├── customer_unique_id       PK
 ├── membership_tier          NOT NULL DEFAULT 'BRONZE'
 ├── created_at               NOT NULL
@@ -102,7 +102,7 @@ subscription_payments
 `pending`이 없고, 환불은 이번 범위 밖이다.
 
 Source Table은 7개에서 9개가 된다. `customer_memberships` 하나가
-`customer_subscriptions`와 `customer_loyalty_tiers` 둘로 나뉘고 `subscription_payments`가
+`customer_subscriptions`와 `customer_membership_tiers` 둘로 나뉘고 `subscription_payments`가
 새로 생긴다.
 
 ## 4. 상태 전이 규칙
@@ -207,7 +207,7 @@ customer_subscriptions   next_billing_at = billing_period_end
                          subscription_status는 ACTIVE 유지 (변경 없음)
 ```
 
-`customer_loyalty_tiers`는 건드리지 않는다. 결제와 등급은 변경 원인이 다르다.
+`customer_membership_tiers`는 건드리지 않는다. 결제와 등급은 변경 원인이 다르다.
 
 `subscription_status`가 안 바뀌므로 SCD2 속성 Hash도 안 바뀐다. `dim_customer`에 Version이
 생기지 않는다. 이것이 결제를 Fact로 분리한 이유다.
@@ -221,7 +221,7 @@ B안이므로 Source는 둘이지만 Dimension은 하나다. 병합은 `int_cust
 ```text
 stg_customer_subscriptions ─┐
                             ├─→ int_customer_history ─→ dim_customer
-stg_customer_loyalty_tiers ─┘
+stg_customer_membership_tiers ─┘
 ```
 
 두 축의 관측 시각이 서로 다르므로 각 시점에서 다른 축의 그 시점 유효 값을 이어받는다.
@@ -297,7 +297,7 @@ B안은 Temporal Join 1회를 유지하면서 CHECK 제약 오염을 구조적�
 | 절  | 추가·수정 내용                                                                  |
 | --- | ------------------------------------------------------------------------------- |
 | 2.1 | 전이 그래프에 `ACTIVE → ACTIVE`, `CANCEL_REQUESTED → ACTIVE` 추가               |
-| 3   | `customer_memberships`를 `customer_subscriptions` + `customer_loyalty_tiers`로 분리 |
+| 3   | `customer_memberships`를 `customer_subscriptions` + `customer_membership_tiers`로 분리 |
 | 3   | `subscription_payments` Source Table 신설                                       |
 | 4   | `int_customer_history` 병합 단계, `fact_subscription_payments` 추가             |
 | 5   | 구현 순서에 테이블 분리, 결제 테이블, Generator 만료 스캔 반영                  |

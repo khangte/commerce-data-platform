@@ -14,7 +14,7 @@ Olist Raw 데이터를 원본 Naming과 값을 최대한 유지하는 PostgreSQL
 - PostgreSQL과 이후 Bronze는 선택한 Olist Column Name을 유지한다.
 - 분석용 Rename과 상태 표준화는 Source가 아니라 dbt Staging에서 수행한다.
 - Source 확장은 `created_at`, `updated_at`과 Synthetic 시나리오 필드로 제한한다.
-- 사람 단위 구독 생명주기는 `customer_subscriptions`, 거래 실적 등급은 `customer_loyalty_tiers`
+- 사람 단위 구독 생명주기는 `customer_subscriptions`, 거래 실적 등급은 `customer_membership_tiers`
   가 보관한다. 두 축은 변경 원인이 독립적이라 별도 Table로 나눈다. Olist Seed의 구독
   기준선은 `NON_MEMBER`다.
 - 구독 자동결제 이력은 `subscription_payments`가 사람당 N행으로 보관한다. Seed 대상이
@@ -164,11 +164,11 @@ Source Schema Allowlist
 | `.env.example`                                   | 수정      | PostgreSQL 포트, Database, 역할별 계정 환경 변수 계약을 추가했다.          |
 | `compose.yaml`                                   | 수정      | PostgreSQL 18.6 서비스, 영속 Volume, 초기화 SQL, Health Check를 추가했다.  |
 | `sql/bootstrap/01-create-databases-and-roles.sh` | 생성      | Source·Metadata·Airflow Database와 역할을 멱등적으로 생성하도록 추가했다.  |
-| `sql/source/001_create_source_tables.sql`        | 수정      | 불변 계정 `customers`, 사람 단위 `customer_subscriptions`·`customer_loyalty_tiers`, 구독 결제 `subscription_payments`를 포함한 9개 테이블, 구독 상태·거래 실적 등급·상태별 시각 제약과 Cursor Index를 반영했다. |
+| `sql/source/001_create_source_tables.sql`        | 수정      | 불변 계정 `customers`, 사람 단위 `customer_subscriptions`·`customer_membership_tiers`, 구독 결제 `subscription_payments`를 포함한 9개 테이블, 구독 상태·거래 실적 등급·상태별 시각 제약과 Cursor Index를 반영했다. |
 | `sql/metadata/001_create_seed_metadata.sql`      | 생성      | Seed 실행 이력과 Count/Hash/상태를 기록하는 `seed_runs` 테이블을 추가했다. |
 | `src/common/database.py`                         | 생성      | `.env` 기반 PostgreSQL 연결과 SQL 적용 공통 기능을 추가했다.               |
 | `src/seed/contracts.py`                          | 생성      | CSV 파일·헤더·기본 키 계약 검증과 Raw Checksum 계산을 추가했다.            |
-| `src/seed/loader.py`                             | 수정      | CSV 변환, 검증, 임시 Staging, Transactional UPSERT에 `customer_subscriptions` 구독 기준선과 `customer_loyalty_tiers` 거래 실적 등급 Seed를 추가했다. |
+| `src/seed/loader.py`                             | 수정      | CSV 변환, 검증, 임시 Staging, Transactional UPSERT에 `customer_subscriptions` 구독 기준선과 `customer_membership_tiers` 거래 실적 등급 Seed를 추가했다. |
 | `src/seed/__main__.py`                           | 생성      | `python -m src.seed` CLI와 `seeded_at` 입력 처리를 추가했다.               |
 | `src/__init__.py`, `src/seed/__init__.py`        | 생성·수정 | Seed 모듈을 Python Package로 구성했다.                                     |
 | `tests/seed/test_contracts.py`                   | 수정      | CSV 계약과 Timestamp/Checksum, 거래 실적 등급 경계·구독 기준선 Column 단위 테스트를 추가했다. |
@@ -181,10 +181,10 @@ Source Schema Allowlist
 | `docs/architecture/03-subscription-lifecycle-requirements.md` | 생성 | 구독 주기 1개월, 자동결제, 유예 7일, 만료 스캔 요구사항을 확정했다. |
 
 Membership Grain 분리 후 `customers`는 계정 불변값과 `created_at`만 보관한다. 사람 단위
-구독 생명주기는 `customer_subscriptions`, 거래 실적 등급은 `customer_loyalty_tiers`가 각각
+구독 생명주기는 `customer_subscriptions`, 거래 실적 등급은 `customer_membership_tiers`가 각각
 `created_at`·`updated_at`과 함께 보관한다. Seed는 모든 사람을 `customer_subscriptions`에
 `NON_MEMBER`로 만들고, 완료 주문 수를 `customer_unique_id`별로 집계해
-`customer_loyalty_tiers`에 `BRONZE`·`SILVER`·`GOLD` 등급을 한 행씩 기록한다.
+`customer_membership_tiers`에 `BRONZE`·`SILVER`·`GOLD` 등급을 한 행씩 기록한다.
 
 ### 구독 상태·등급 전환 진행
 
