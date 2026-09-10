@@ -3,7 +3,7 @@
 > 상태: Planned  
 > Milestone: 2 — Data Platform Core  
 > 선행 Phase: [Phase 4. Airflow Orchestration](phase-04-airflow-orchestration.md)  
-> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.6](../../PRD_v1.6.md)
+> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.7](../../PRD_v1.7.md)
 > 참고: [데이터 변환 흐름](../architecture/data-transformation-flow.md) — 계층별 이름·타입·Grain 변환의 근거
 
 ## 목표
@@ -219,6 +219,7 @@ is_current
 - [ ] `P5-22` 결제 Sequence Grain의 `fact_payments`
 - [ ] `P5-23` 주문 Grain의 `fact_orders`
 - [ ] `P5-24` 모든 Fact의 `unique_key`와 Incremental 교체 구현
+- [ ] `P5-34` `fact_orders`에 Delivery Measure 4개와 `NULL` 처리 규칙 구현
 
 | Model              | Grain             | Unique Key                     |
 | ------------------ | ----------------- | ------------------------------ |
@@ -245,6 +246,19 @@ order_count       = 1
 ```
 
 Item/Payment Raw Grain을 직접 다대다 Join한 뒤 합산하지 않는다. 기본 Sales/GMV는 `order_status='DELIVERED'`의 `gross_order_value`이며, `payment_total`을 Revenue와 동일시하지 않는다.
+
+`fact_orders` Delivery Measure:
+
+```text
+carrier_handoff_days = carrier_at   - purchase_at            (일)
+delivery_days        = delivered_at - purchase_at            (일)
+delivery_delay_days  = delivered_at - estimated_delivery_at  (일)
+is_late              = delivered_at > estimated_delivery_at
+```
+
+배송 Timestamp는 주문 1건당 각 1개이므로 Delivery Grain은 주문 Grain과 같다. 1:1 `fact_delivery`를 따로 만들지 않는다.
+
+Delivery Measure 4개는 Non-additive다. `SUM()` 대상이 아니라 평균·분위수·비율로만 집계한다. 원천 Timestamp가 `NULL`인 주문은 해당 Measure도 `NULL`로 두며 `0`으로 채우지 않는다. 정시 배송률과 평균 리드타임의 분모는 `delivered_at IS NOT NULL`인 주문이다.
 
 ## Phase 5F. SCD2와 Temporal Join
 

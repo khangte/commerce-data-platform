@@ -2,7 +2,7 @@
 
 > 상태: Implemented
 > 작성일: 2026-09-09
-> 관련 문서: [PRD v1.6](../../PRD_v1.6.md), [데이터 변환 흐름](data-transformation-flow.md), [Phase 5](../phases/phase-05-dbt-duckdb-modeling.md)
+> 관련 문서: [PRD v1.7](../../PRD_v1.7.md), [데이터 변환 흐름](data-transformation-flow.md), [Phase 5](../phases/phase-05-dbt-duckdb-modeling.md)
 
 ## 배경
 
@@ -128,7 +128,7 @@ FR-15(SCD2/Temporal Join, P0)는 그대로 유지된다.
 
 | 문서                                       | 수정 내용                                                              |
 | ------------------------------------------ | ---------------------------------------------------------------------- |
-| `PRD_v1.6.md`                               | Section 7.5, 14.1, 15, Source Table 목록(6→7), AC-19                    |
+| `PRD_v1.7.md`                               | Section 7.5, 14.1, 15, Source Table 목록(6→7), AC-19                    |
 | `docs/phases/phase-01-*`                   | DDL 변경, 테이블 7개                                                   |
 | `docs/phases/phase-02-*`                   | Seed·Generator 정책                                                    |
 | `docs/phases/phase-03-*`                   | 수집 계약, Cursor 컬럼                                                 |

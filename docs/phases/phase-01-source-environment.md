@@ -3,7 +3,7 @@
 > 상태: Done  
 > Milestone: 1 — Source Foundation  
 > 선행 Phase: [Phase 0. Bootstrap](phase-00-bootstrap.md)  
-> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.6](../../PRD_v1.6.md)
+> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.7](../../PRD_v1.7.md)
 
 ## 목표
 
@@ -56,6 +56,8 @@ sellers
 ```
 
 V1 미사용 컬럼은 Raw CSV에만 보존하며 Source Schema에는 포함하지 않는다.
+
+KaggleHub는 Dataset 전체를 내려받으므로 `geolocation`, `reviews`, `product_category_name_translation` CSV도 `data/raw/olist/`에 존재한다. 세 파일은 V1 제외이며 Seed 대상이 아니다. `P1-08`은 필수 6개만 검증하고 나머지 파일의 존재를 실패로 처리하지 않는다. 제외 근거는 PRD Section 5.1에 있다.
 
 ### 3. Source DDL
 

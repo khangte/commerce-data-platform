@@ -1,6 +1,6 @@
 # ROADMAP: Commerce Analytics Data Platform
 
-> 기준 PRD: PRD v1.6
+> 기준 PRD: PRD v1.7
 > 목적: Phase 0부터 Phase 9까지의 실제 개발 순서와 검증 기준 정의  
 > 원칙: 전체 아키텍처와 핵심 계약은 PRD를 기준으로 유지하고, 구현은 Phase 단위로 완료·검증한 뒤 다음 단계로 진행한다.
 
@@ -8,7 +8,7 @@
 
 ## Phase 실행 문서
 
-ROADMAP은 전체 순서와 범위를 관리하고, 아래 문서는 Phase별 Task, 산출물, 검증 Evidence, Definition of Done을 관리한다. 공통 Architecture와 데이터 계약의 Source of Truth는 [PRD v1.6](../../PRD_v1.6.md)다.
+ROADMAP은 전체 순서와 범위를 관리하고, 아래 문서는 Phase별 Task, 산출물, 검증 Evidence, Definition of Done을 관리한다. 공통 Architecture와 데이터 계약의 Source of Truth는 [PRD v1.7](../../PRD_v1.7.md)다.
 
 | Phase | 실행 문서                                                      | 주요 Gate                        |
 | ----- | -------------------------------------------------------------- | -------------------------------- |
@@ -111,7 +111,7 @@ Phase 7~9
 프로젝트 전체 코드를 한 번에 생성한 뒤 수정하는 방식은 사용하지 않는다.
 
 ```text
-PRD v1.6
+PRD v1.7
 전체 Architecture / Contract 확정
         ↓
 Phase 0 구현
@@ -1286,7 +1286,7 @@ P3-08 Watermark CAS 구현
 # 실제 시작 순서
 
 ```text
-1. PRD v1.6 Baseline Commit
+1. PRD v1.7 Baseline Commit
 2. AGENTS.md 확정
 3. Phase 0 구현
 4. Phase 0 DoD 검증

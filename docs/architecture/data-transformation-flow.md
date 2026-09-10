@@ -1,7 +1,7 @@
 # 데이터 변환 흐름: Source → Data Lake → Data Warehouse
 
 > 상태: Reference
-> 기준 문서: [PRD v1.6](../../PRD_v1.6.md), [Phase 3](../phases/phase-03-incremental-ingestion.md), [Phase 4](../phases/phase-04-airflow-orchestration.md), [Phase 5](../phases/phase-05-dbt-duckdb-modeling.md)
+> 기준 문서: [PRD v1.7](../../PRD_v1.7.md), [Phase 3](../phases/phase-03-incremental-ingestion.md), [Phase 4](../phases/phase-04-airflow-orchestration.md), [Phase 5](../phases/phase-05-dbt-duckdb-modeling.md)
 
 이 문서는 하나의 주문 레코드가 PostgreSQL 원천에서 DuckDB Mart에 도달할 때까지 이름, 타입, 값, Grain이 어느 지점에서 왜 바뀌는지를 정리한다. 각 변환의 근거와, 그 변환을 다른 지점에서 했을 때 무엇이 깨지는지를 함께 기록한다.
 
@@ -398,7 +398,7 @@ int_payment_summary       → 주문 Grain 집계 ┘
 
 ### 8.1 Warehouse Mart ERD
 
-아래 ERD는 Intermediate Model이 아닌, 분석가와 BI가 조회하는 Warehouse Mart의 관계를 나타낸다. `fact_orders`가 주문 중심 Fact이고, 주문 Line과 결제 Sequence Fact는 `order_id`로 주문에 연결된다. 고객은 주문 시점의 SCD2 Version인 `customer_key`로 연결한다. `city`/`state`는 [Membership Grain 분리](membership-grain-separation.md) 이후 고객 속성이 아니라 주문 시점 배송지 스냅샷이므로 `dim_customer`가 아닌 `fact_orders`에 `customer_city`/`customer_state`로 존재한다(`int_orders_enriched`에서 Join).
+아래 ERD는 Intermediate Model이 아닌, 분석가와 BI가 조회하는 Warehouse Mart의 관계를 나타낸다. `fact_orders`가 주문 중심 Fact이고, 주문 Line과 결제 Sequence Fact는 `order_id`로 주문에 연결된다. 고객은 주문 시점의 SCD2 Version인 `customer_key`로 연결한다. `city`/`state`는 [Membership Grain 분리](membership-grain-separation.md) 이후 고객 속성이 아니라 주문 시점 배송지 스냅샷이므로 `dim_customer`가 아닌 `fact_orders`에 `customer_city`/`customer_state`로 존재한다(`int_orders_enriched`에서 Join). 배송 Measure도 `fact_orders`에 있다. 배송 Timestamp가 주문 1건당 각 1개이므로 Delivery Grain은 주문 Grain과 같고, 1:1 `fact_delivery`를 따로 두지 않는다.
 
 ```mermaid
 erDiagram
@@ -443,6 +443,10 @@ erDiagram
         decimal gross_order_value
         decimal payment_total
         integer order_count
+        integer carrier_handoff_days
+        integer delivery_days
+        integer delivery_delay_days
+        boolean is_late
     }
 
     FACT_ORDER_ITEMS {
@@ -473,7 +477,63 @@ erDiagram
 
 `fact_order_items`와 `fact_payments`는 서로 직접 Join하지 않는다. 두 Fact의 Grain이 다르므로, 주문 단위 합계는 각각을 `order_id` Grain으로 집계한 뒤 `fact_orders`에 반영한다.
 
-### 8.2 Measure 계약
+### 8.2 Fact 컬럼 사전
+
+각 Fact의 컬럼이 어떤 값을 담는지, 그 값이 어디에서 오는지를 정리한다. 출처 표기는 다음과 같다.
+
+| 표기          | 의미                                                                |
+| ------------- | ------------------------------------------------------------------- |
+| Degenerate    | Dimension을 만들지 않고 Fact에 직접 두는 식별자·서술 값이다        |
+| FK            | Dimension을 가리키는 외래 키다                                     |
+| Measure       | 집계 대상 수치다                                                    |
+| Snapshot      | 이벤트 발생 시점의 값을 Fact에 고정한다. 이후 원천이 바뀌어도 변하지 않는다 |
+
+#### `fact_orders`
+
+한 행은 하나의 주문이다.
+
+| 컬럼                   | 타입        | 역할       | 담는 값과 출처                                                                                                       |
+| ---------------------- | ----------- | ---------- | -------------------------------------------------------------------------------------------------------------------- |
+| `order_id`             | `string`    | PK         | 주문 식별자다. 원천 `orders.order_id`를 그대로 쓴다                                                                  |
+| `customer_key`         | `string`    | FK         | 구매 시점에 유효했던 `dim_customer` Version이다. `purchase_at` 기준 Temporal Join으로 얻는다. 현재 Version이 아니다  |
+| `purchase_date_key`    | `integer`   | FK         | `purchase_at`의 UTC 날짜를 가리키는 `dim_date` 키다. 수집일이 아니라 구매일이다                                      |
+| `order_status`         | `string`    | Degenerate | Staging에서 대문자로 표준화한 8개 운영 상태 중 하나다. 기본 GMV는 `'DELIVERED'`로 거른다                             |
+| `customer_city`        | `string`    | Snapshot   | 주문 시점 배송지 도시다. `stg_customers_current`를 `int_orders_enriched`에서 Join해 얻는다. 고객 속성이 아니다       |
+| `customer_state`       | `string`    | Snapshot   | 주문 시점 배송지 주다. 출처는 `customer_city`와 같다                                                                 |
+| `gross_order_value`    | `decimal`   | Measure    | 주문 상품 금액과 운임의 합이다. 고객이 지불하기로 한 주문 금액이다                                                   |
+| `payment_total`        | `decimal`   | Measure    | 해당 주문에 기록된 모든 결제 Sequence 금액의 합이다. 할부·환불·실패 때문에 `gross_order_value`와 다를 수 있다        |
+| `order_count`          | `integer`   | Measure    | 항상 `1`이다. 주문 건수를 `COUNT(*)` 없이 `SUM()`으로 세게 해 다른 Measure와 집계 방식을 통일한다                    |
+| `carrier_handoff_days` | `integer`   | Measure    | 구매부터 배송사 인계까지 걸린 일수다. `carrier_at`이 `NULL`이면 `NULL`이다                                           |
+| `delivery_days`        | `integer`   | Measure    | 구매부터 고객 수령까지 걸린 일수다. 실제 리드타임이다. 미배송 주문은 `NULL`이다                                      |
+| `delivery_delay_days`  | `integer`   | Measure    | 약속 도착일 대비 실제 도착일의 차이다. 조기 배송이면 음수다                                                          |
+| `is_late`              | `boolean`   | Measure    | 약속일보다 늦게 도착했는지 여부다. 미배송 주문은 `NULL`이며 지연으로 세지 않는다                                     |
+
+#### `fact_order_items`
+
+한 행은 하나의 주문에 포함된 하나의 주문 상품이다.
+
+| 컬럼               | 타입      | 역할       | 담는 값과 출처                                                                              |
+| ------------------ | --------- | ---------- | ------------------------------------------------------------------------------------------- |
+| `order_id`         | `string`  | PK, FK     | 이 주문 상품이 속한 주문이다. `fact_orders`로 연결된다                                      |
+| `order_item_id`    | `integer` | PK         | 주문 안에서의 Line 순번이다. 주문마다 1부터 시작하므로 단독으로는 고유하지 않다              |
+| `product_id`       | `string`  | FK         | 판매된 상품이다. `dim_product`로 연결된다                                                   |
+| `seller_id`        | `string`  | FK         | 이 Line을 판매한 판매자다. 주문 1건에 여러 판매자가 섞일 수 있으므로 주문이 아닌 Line 속성이다 |
+| `item_price`       | `decimal` | Measure    | 이 Line의 상품 금액이다. 운임을 포함하지 않는다                                             |
+| `freight_value`    | `decimal` | Measure    | 이 Line에 배분된 운임이다                                                                   |
+| `line_gross_value` | `decimal` | Measure    | `item_price + freight_value`다. 이 Line이 주문 금액에 기여하는 총액이다                     |
+
+#### `fact_payments`
+
+한 행은 하나의 주문에 대한 하나의 결제 시도다.
+
+| 컬럼               | 타입      | 역할       | 담는 값과 출처                                                                                           |
+| ------------------ | --------- | ---------- | -------------------------------------------------------------------------------------------------------- |
+| `order_id`         | `string`  | PK, FK     | 이 결제가 속한 주문이다                                                                                  |
+| `payment_sequence` | `integer` | PK         | 주문 안에서의 결제 순번이다. 원천 `payment_sequential`을 Staging에서 이름만 바꾼 값이다                  |
+| `payment_status`   | `string`  | Degenerate | 대문자로 표준화한 결제 상태다. 환불·실패 분석의 유일한 근거다                                            |
+| `payment_value`    | `decimal` | Measure    | 이 결제 Sequence의 금액이다. 주문 단위 합계는 `fact_orders.payment_total`이며 여기서 중복 계산하지 않는다 |
+
+### 8.3 Measure 계산 계약
 
 ```text
 fact_order_items:
@@ -487,9 +547,17 @@ fact_orders:
   gross_order_value = item_subtotal + freight_total
   payment_total     = SUM(payment.payment_value)
   order_count       = 1
+
+fact_orders (Delivery):
+  carrier_handoff_days = carrier_at   - purchase_at            (일)
+  delivery_days        = delivered_at - purchase_at            (일)
+  delivery_delay_days  = delivered_at - estimated_delivery_at  (일)
+  is_late              = delivered_at > estimated_delivery_at
 ```
 
 `gross_order_value`와 `payment_total`은 의미가 다르므로 같은 것으로 취급하지 않는다. 주문 금액과 실제 결제 금액은 할부, 환불, 실패로 인해 달라진다. 기본 Sales와 GMV는 `order_status = 'DELIVERED'`인 `gross_order_value`다.
+
+Delivery Measure 4개는 Non-additive다. `SUM()` 대상이 아니라 평균·분위수·비율로만 집계한다. 원천 Timestamp가 `NULL`인 주문은 해당 Measure도 `NULL`이므로, 정시 배송률과 평균 리드타임의 분모는 `delivered_at IS NOT NULL`인 주문이다. 미배송 주문을 `0`으로 채우면 리드타임이 짧아지고 지연율이 낮아지는 방향으로 조용히 왜곡된다.
 
 ---
 
@@ -571,4 +639,4 @@ AND order.purchase_at < COALESCE(dim_customer.valid_to, TIMESTAMPTZ 'infinity')
 - [Phase 3. Incremental Ingestion](../phases/phase-03-incremental-ingestion.md) — Source에서 Bronze까지의 Commit Protocol
 - [Phase 4. Airflow Orchestration](../phases/phase-04-airflow-orchestration.md) — 각 구간의 실행 경계와 Lease
 - [Phase 5. dbt + DuckDB Modeling](../phases/phase-05-dbt-duckdb-modeling.md) — Staging 이후의 Model 구현
-- [PRD v1.6](../../PRD_v1.6.md) — Section 7.1 상태 Mapping, Section 14 dbt Model, Section 15 SCD2
+- [PRD v1.7](../../PRD_v1.7.md) — Section 7.1 상태 Mapping, Section 14 dbt Model, Section 15 SCD2
