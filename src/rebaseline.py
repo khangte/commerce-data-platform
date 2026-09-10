@@ -29,7 +29,9 @@ SOURCE_TABLES = (
     "order_payments",
     "order_items",
     "orders",
-    "customer_memberships",
+    "subscription_payments",
+    "customer_subscriptions",
+    "customer_membership_tiers",
     "customers",
     "products",
     "sellers",
@@ -127,7 +129,7 @@ def run_rebaseline(
     postgres: PostgresSettings,
     storage: SeaweedFSSettings,
 ) -> RebaselineResult:
-    """기존 상태를 지운 뒤 Seed·7개 Bronze Table·DuckDB Catalog를 순서대로 다시 만든다."""
+    """기존 상태를 지운 뒤 Seed·9개 Bronze Table·DuckDB Catalog를 순서대로 다시 만든다."""
     inventory = inspect_rebaseline(postgres, storage, catalog_path)
     lease = acquire_source_mutation_lease(
         postgres, owner_type=WAREHOUSE_OWNER_TYPE, owner_id=uuid.uuid4()
@@ -203,7 +205,7 @@ def _ingest_baseline(
     logical_date: datetime,
     lease: SourceMutationLease,
 ) -> dict[str, int]:
-    """초기 Watermark에서 7개 Table을 수집하고 Source별 Bronze Row Count를 반환한다."""
+    """초기 Watermark에서 9개 Table을 수집하고 Source별 Bronze Row Count를 반환한다."""
     row_counts: dict[str, int] = {}
     for source_table in TABLE_CONFIGS:
         assert_source_mutation_lease(postgres, lease)

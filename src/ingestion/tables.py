@@ -1,4 +1,4 @@
-"""7개 Source Table의 Cursor·PK·Raw-compatible Bronze Schema 계약을 정의한다."""
+"""9개 Source Table의 Cursor·PK·Raw-compatible Bronze Schema 계약을 정의한다."""
 
 from __future__ import annotations
 
@@ -134,18 +134,68 @@ CUSTOMERS_TABLE = TableConfig(
     ),
 )
 
-CUSTOMER_MEMBERSHIPS_TABLE = TableConfig(
-    source_table="customer_memberships",
+CUSTOMER_SUBSCRIPTIONS_TABLE = TableConfig(
+    source_table="customer_subscriptions",
     primary_key_columns=("customer_unique_id",),
     cursor_timestamp_column="updated_at",
     cursor_key_columns=("customer_unique_id",),
     source_columns=(
         _text("customer_unique_id", nullable=False),
-        _text("membership_level", nullable=False),
+        _text("subscription_status", nullable=False),
+        _timestamp("trial_ends_at"),
+        _timestamp("benefit_ends_at"),
+        _timestamp("next_billing_at"),
+        _timestamp("payment_failed_at"),
+        _timestamp("cancel_requested_at"),
         _timestamp("created_at", nullable=False),
         _timestamp("updated_at", nullable=False),
     ),
-    status_domains={"membership_level": frozenset({"bronze", "silver", "gold"})},
+    status_domains={
+        "subscription_status": frozenset(
+            {
+                "NON_MEMBER",
+                "TRIAL",
+                "ACTIVE",
+                "PAYMENT_FAILED",
+                "CANCEL_REQUESTED",
+                "CHURNED",
+            }
+        )
+    },
+)
+
+CUSTOMER_MEMBERSHIP_TIERS_TABLE = TableConfig(
+    source_table="customer_membership_tiers",
+    primary_key_columns=("customer_unique_id",),
+    cursor_timestamp_column="updated_at",
+    cursor_key_columns=("customer_unique_id",),
+    source_columns=(
+        _text("customer_unique_id", nullable=False),
+        _text("membership_tier", nullable=False),
+        _timestamp("created_at", nullable=False),
+        _timestamp("updated_at", nullable=False),
+    ),
+    status_domains={"membership_tier": frozenset({"BRONZE", "SILVER", "GOLD"})},
+)
+
+SUBSCRIPTION_PAYMENTS_TABLE = TableConfig(
+    source_table="subscription_payments",
+    primary_key_columns=("customer_unique_id", "billing_sequence"),
+    cursor_timestamp_column="updated_at",
+    cursor_key_columns=("customer_unique_id", "billing_sequence"),
+    source_columns=(
+        _text("customer_unique_id", nullable=False),
+        _integer("billing_sequence", nullable=False),
+        _text("payment_status", nullable=False),
+        _decimal("payment_value", nullable=False),
+        _timestamp("billing_period_start", nullable=False),
+        _timestamp("billing_period_end", nullable=False),
+        _timestamp("created_at", nullable=False),
+        _timestamp("updated_at", nullable=False),
+    ),
+    status_domains={"payment_status": frozenset({"completed", "failed"})},
+    numeric_minimums={"billing_sequence": 1, "payment_value": Decimal(0)},
+    append_only=True,
 )
 
 PRODUCTS_TABLE = TableConfig(
@@ -258,7 +308,9 @@ TABLE_CONFIGS: Mapping[str, TableConfig] = MappingProxyType(
         table.source_table: table
         for table in (
             CUSTOMERS_TABLE,
-            CUSTOMER_MEMBERSHIPS_TABLE,
+            CUSTOMER_SUBSCRIPTIONS_TABLE,
+            CUSTOMER_MEMBERSHIP_TIERS_TABLE,
+            SUBSCRIPTION_PAYMENTS_TABLE,
             PRODUCTS_TABLE,
             SELLERS_TABLE,
             ORDERS_TABLE,

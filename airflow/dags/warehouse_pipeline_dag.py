@@ -41,7 +41,9 @@ DEFAULT_TASK_ARGS = {
 
 SOURCE_TABLES = (
     "customers",
-    "customer_memberships",
+    "customer_subscriptions",
+    "customer_membership_tiers",
+    "subscription_payments",
     "products",
     "sellers",
     "orders",
