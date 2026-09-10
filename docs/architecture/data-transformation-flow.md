@@ -477,6 +477,13 @@ erDiagram
 
 `fact_order_items`와 `fact_payments`는 서로 직접 Join하지 않는다. 두 Fact의 Grain이 다르므로, 주문 단위 합계는 각각을 `order_id` Grain으로 집계한 뒤 `fact_orders`에 반영한다.
 
+`dim_customer.customer_key`는 `customer_id`(자연키)를 그대로 PK로 쓰지 않고 별도 Surrogate Key로
+만든다. SCD2 구조상 같은 `customer_id`가 `membership_level` Version마다 여러 행으로 존재해
+자연키가 이 Table 안에서 유일하지 않기 때문이다. `customer_key = md5(customer_id || valid_from
+|| attribute_hash)`로 만들어(`dim_customer.sql`) 같은 고객의 같은 속성 상태는 재계산해도 항상
+같은 Key 값이 나오게 한다(재현성, `uuid()` 같은 비결정적 값은 쓰지 않는다). 이 Key가
+`fact_orders.customer_key`의 FK 대상이며, 구매 시점에 유효했던 정확한 Version 하나를 가리킨다.
+
 ### 8.2 Fact 컬럼 사전
 
 각 Fact의 컬럼이 어떤 값을 담는지, 그 값이 어디에서 오는지를 정리한다. 출처 표기는 다음과 같다.
