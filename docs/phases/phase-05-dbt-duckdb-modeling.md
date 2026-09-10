@@ -215,11 +215,11 @@ is_current
 
 권장 구현 순서:
 
-- [ ] `P5-21` 주문 Line Grain의 `fact_order_items`
-- [ ] `P5-22` 결제 Sequence Grain의 `fact_payments`
-- [ ] `P5-23` 주문 Grain의 `fact_orders`
-- [ ] `P5-24` 모든 Fact의 `unique_key`와 Incremental 교체 구현
-- [ ] `P5-34` `fact_orders`에 Delivery Measure 4개와 `NULL` 처리 규칙 구현
+- [x] `P5-21` 주문 Line Grain의 `fact_order_items`
+- [x] `P5-22` 결제 Sequence Grain의 `fact_payments`
+- [x] `P5-23` 주문 Grain의 `fact_orders`
+- [x] `P5-24` 모든 Fact의 `unique_key`와 Incremental 교체 구현
+- [x] `P5-34` `fact_orders`에 Delivery Measure 4개와 `NULL` 처리 규칙 구현
 
 | Model              | Grain             | Unique Key                     |
 | ------------------ | ----------------- | ------------------------------ |
@@ -262,10 +262,10 @@ Delivery Measure 4개는 Non-additive다. `SUM()` 대상이 아니라 평균·�
 
 ## Phase 5F. SCD2와 Temporal Join
 
-- [ ] `P5-25` Customer Observation에서 Version 구간 생성
-- [ ] `P5-26` 구간 중첩/공백/Current Version 검증
-- [ ] `P5-27` 주문 `purchase_at` 기준 Temporal Join
-- [ ] `P5-28` 정상 E2E Unknown Customer Key 0 검증
+- [x] `P5-25` Customer Observation에서 Version 구간 생성
+- [x] `P5-26` 구간 중첩/공백/Current Version 검증
+- [x] `P5-27` 주문 `purchase_at` 기준 Temporal Join
+- [x] `P5-28` 정상 E2E Unknown Customer Key 0 검증
 
 ```sql
 order.purchase_at >= dim_customer.valid_from
