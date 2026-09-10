@@ -1,4 +1,4 @@
-"""결정적인 계정 Customer와 사람 단위 Membership 변경 계획을 만든다."""
+"""결정적인 계정 Customer와 사람 단위 구독 상태·거래 실적 등급 변경 계획을 만든다."""
 
 from __future__ import annotations
 
@@ -11,7 +11,12 @@ import psycopg
 from src.generator.config import GeneratorConfig
 from src.generator.ids import deterministic_uuid, logical_hash
 
-MEMBERSHIP_LEVELS = frozenset({"bronze", "silver", "gold"})
+MEMBERSHIP_TIERS = frozenset({"BRONZE", "SILVER", "GOLD"})
+SUBSCRIPTION_STATUSES = frozenset(
+    {"NON_MEMBER", "TRIAL", "ACTIVE", "PAYMENT_FAILED", "CANCEL_REQUESTED", "CHURNED"}
+)
+SUBSCRIPTION_PERIOD = timedelta(days=30)
+PAYMENT_FAILURE_GRACE_PERIOD = timedelta(days=7)
 ADDRESS_CATALOG = (
     ("sao paulo", "SP"),
     ("rio de janeiro", "RJ"),
@@ -54,20 +59,67 @@ class CustomerRecord:
 
 
 @dataclass(frozen=True)
-class MembershipRecord:
-    """한 사람의 가변 Membership Source Record 계획이다."""
+class SubscriptionRecord:
+    """한 사람의 가변 구독 상태 Source Record 계획이다. customer_subscriptions 축이다."""
 
     customer_unique_id: str
-    membership_level: str
+    subscription_status: str
+    trial_ends_at: datetime | None
+    benefit_ends_at: datetime | None
+    next_billing_at: datetime | None
+    payment_failed_at: datetime | None
+    cancel_requested_at: datetime | None
     created_at: datetime
     updated_at: datetime
 
     def __post_init__(self) -> None:
-        """사람 키·등급·UTC 변경 시각의 Source 계약을 확인한다."""
+        """사람 키·구독 상태·시각의 Source 계약을 확인한다."""
         if not self.customer_unique_id or len(self.customer_unique_id) > 64:
             raise ValueError("customer_unique_id must contain 1 to 64 characters")
-        if self.membership_level not in MEMBERSHIP_LEVELS:
-            raise ValueError(f"Unsupported membership_level: {self.membership_level}")
+        if self.subscription_status not in SUBSCRIPTION_STATUSES:
+            raise ValueError(f"Unsupported subscription_status: {self.subscription_status}")
+        _assert_utc_timestamp(self.created_at, "created_at")
+        _assert_utc_timestamp(self.updated_at, "updated_at")
+        for name, value in _subscription_timestamps(self):
+            if value is not None:
+                _assert_utc_timestamp(value, name)
+        if self.updated_at < self.created_at:
+            raise ValueError("updated_at must be greater than or equal to created_at")
+        if self.subscription_status == "TRIAL" and self.trial_ends_at is None:
+            raise ValueError("TRIAL requires trial_ends_at")
+        if self.subscription_status == "PAYMENT_FAILED" and (
+            self.payment_failed_at is None or self.benefit_ends_at is None
+        ):
+            raise ValueError("PAYMENT_FAILED requires payment_failed_at and benefit_ends_at")
+        if self.subscription_status == "CANCEL_REQUESTED" and (
+            self.cancel_requested_at is None
+            or self.benefit_ends_at is None
+            or self.benefit_ends_at <= self.updated_at
+        ):
+            raise ValueError(
+                "CANCEL_REQUESTED requires cancel_requested_at and a future benefit_ends_at"
+            )
+        if self.subscription_status == "CHURNED" and (
+            self.benefit_ends_at is None or self.benefit_ends_at > self.updated_at
+        ):
+            raise ValueError("CHURNED requires benefit_ends_at at or before updated_at")
+
+
+@dataclass(frozen=True)
+class MembershipTierRecord:
+    """한 사람의 거래 실적 등급 Source Record 계획이다. customer_membership_tiers 축이다."""
+
+    customer_unique_id: str
+    membership_tier: str
+    created_at: datetime
+    updated_at: datetime
+
+    def __post_init__(self) -> None:
+        """사람 키·등급·시각의 Source 계약을 확인한다."""
+        if not self.customer_unique_id or len(self.customer_unique_id) > 64:
+            raise ValueError("customer_unique_id must contain 1 to 64 characters")
+        if self.membership_tier not in MEMBERSHIP_TIERS:
+            raise ValueError(f"Unsupported membership_tier: {self.membership_tier}")
         _assert_utc_timestamp(self.created_at, "created_at")
         _assert_utc_timestamp(self.updated_at, "updated_at")
         if self.updated_at < self.created_at:
@@ -84,8 +136,8 @@ class CustomerMutationResult:
 
 
 @dataclass(frozen=True)
-class MembershipMutationResult:
-    """사람 단위 Membership 저장 결과의 Insert·Update·Skip 건수다."""
+class AxisMutationResult:
+    """구독 또는 등급 축 Source Record 저장 결과의 Insert·Update·Skip 건수다."""
 
     inserted: int
     updated: int
@@ -138,48 +190,80 @@ def address_change_customer_record(
     )
 
 
-def new_membership_record(customer: CustomerRecord) -> MembershipRecord:
-    """새 계정의 사람 키로 최초 bronze Membership Record를 만든다."""
-    return MembershipRecord(
+def new_subscription_record(customer: CustomerRecord) -> SubscriptionRecord:
+    """새 계정의 사람 키로 최초 비구독 Record를 만든다."""
+    return SubscriptionRecord(
         customer_unique_id=customer.customer_unique_id,
-        membership_level="bronze",
+        subscription_status="NON_MEMBER",
+        trial_ends_at=None,
+        benefit_ends_at=None,
+        next_billing_at=None,
+        payment_failed_at=None,
+        cancel_requested_at=None,
         created_at=customer.created_at,
         updated_at=customer.created_at,
     )
 
 
-def membership_level(delivered_order_count: int) -> str:
-    """Seed와 같은 완료 주문 기준으로 사람 단위 Membership을 계산한다."""
+def new_membership_tier_record(customer: CustomerRecord) -> MembershipTierRecord:
+    """새 계정의 사람 키로 최초 BRONZE 등급 Record를 만든다."""
+    return MembershipTierRecord(
+        customer_unique_id=customer.customer_unique_id,
+        membership_tier="BRONZE",
+        created_at=customer.created_at,
+        updated_at=customer.created_at,
+    )
+
+
+def membership_tier(delivered_order_count: int) -> str:
+    """Seed와 같은 완료 주문 기준으로 사람 단위 거래 실적 등급을 계산한다."""
     if delivered_order_count < 0:
         raise ValueError("delivered_order_count must be zero or greater")
     if delivered_order_count >= 15:
-        return "gold"
+        return "GOLD"
     if delivered_order_count >= 5:
-        return "silver"
-    return "bronze"
+        return "SILVER"
+    return "BRONZE"
 
 
-def membership_change_records(
+def membership_tier_change_records(
     config: GeneratorConfig,
-    records: Iterable[MembershipRecord],
+    records: Iterable[MembershipTierRecord],
     delivered_order_count: int,
-) -> tuple[MembershipRecord, ...]:
-    """한 사람의 Membership 하나를 단조 증가한 변경 시각으로 갱신한다."""
+) -> tuple[MembershipTierRecord, ...]:
+    """한 사람의 거래 실적 등급만 단조 증가한 변경 시각으로 갱신한다."""
     record_list = tuple(records)
     if not record_list:
-        raise ValueError("Membership changes require at least one membership record")
+        raise ValueError("Membership tier changes require at least one tier record")
     unique_ids = {record.customer_unique_id for record in record_list}
     if len(unique_ids) != 1:
-        raise ValueError("Membership changes must contain exactly one customer_unique_id")
+        raise ValueError("Membership tier changes must contain exactly one customer_unique_id")
     if len(record_list) != 1:
-        raise ValueError("Membership changes require exactly one person-grain record")
+        raise ValueError("Membership tier changes require exactly one person-grain record")
     record = record_list[0]
-    target_level = membership_level(delivered_order_count)
-    if record.membership_level == target_level:
+    target_tier = membership_tier(delivered_order_count)
+    if record.membership_tier == target_tier:
         return (record,)
     if config.logical_date <= record.updated_at:
         raise ValueError("logical_date must be greater than updated_at for a membership change")
-    return (replace(record, membership_level=target_level, updated_at=config.logical_date),)
+    return (replace(record, membership_tier=target_tier, updated_at=config.logical_date),)
+
+
+def subscription_transition_records(
+    config: GeneratorConfig, records: Iterable[SubscriptionRecord], next_status: str
+) -> tuple[SubscriptionRecord, ...]:
+    """한 사람의 허용된 구독 상태 전이를 현재 논리 시각으로 계획한다."""
+    record_list = tuple(records)
+    if len(record_list) != 1:
+        raise ValueError("Subscription transitions require exactly one person-grain record")
+    record = record_list[0]
+    if config.logical_date <= record.updated_at:
+        raise ValueError("logical_date must be greater than updated_at for a subscription transition")
+    if next_status not in _allowed_subscription_targets(record.subscription_status):
+        raise ValueError(
+            f"Unsupported subscription transition: {record.subscription_status} -> {next_status}"
+        )
+    return (_transition_subscription_record(record, next_status, config.logical_date),)
 
 
 def fetch_customer_records(connection: psycopg.Connection) -> tuple[CustomerRecord, ...]:
@@ -196,19 +280,36 @@ def fetch_customer_records(connection: psycopg.Connection) -> tuple[CustomerReco
     )
 
 
-def fetch_membership_record(
+def fetch_subscription_record(
     connection: psycopg.Connection, customer_unique_id: str
-) -> MembershipRecord | None:
-    """변경할 사람의 현재 Membership Record를 읽는다."""
+) -> SubscriptionRecord | None:
+    """변경할 사람의 현재 구독 상태 Record를 읽는다."""
     row = connection.execute(
         """
-        SELECT customer_unique_id, membership_level, created_at, updated_at
-        FROM customer_memberships
+        SELECT customer_unique_id, subscription_status,
+               trial_ends_at, benefit_ends_at, next_billing_at,
+               payment_failed_at, cancel_requested_at, created_at, updated_at
+        FROM customer_subscriptions
         WHERE customer_unique_id = %s
         """,
         (customer_unique_id,),
     ).fetchone()
-    return None if row is None else MembershipRecord(*row)
+    return None if row is None else SubscriptionRecord(*row)
+
+
+def fetch_membership_tier_record(
+    connection: psycopg.Connection, customer_unique_id: str
+) -> MembershipTierRecord | None:
+    """변경할 사람의 현재 거래 실적 등급 Record를 읽는다."""
+    row = connection.execute(
+        """
+        SELECT customer_unique_id, membership_tier, created_at, updated_at
+        FROM customer_membership_tiers
+        WHERE customer_unique_id = %s
+        """,
+        (customer_unique_id,),
+    ).fetchone()
+    return None if row is None else MembershipTierRecord(*row)
 
 
 def persist_customer_records(
@@ -237,69 +338,144 @@ def persist_customer_records(
     return CustomerMutationResult(inserted=inserted, updated=0, skipped=skipped)
 
 
-def ensure_membership_records(
-    connection: psycopg.Connection, records: Iterable[MembershipRecord]
-) -> MembershipMutationResult:
-    """새 사람의 최초 Membership만 저장하고 기존 사람의 등급은 보존한다."""
+def ensure_subscription_records(
+    connection: psycopg.Connection, records: Iterable[SubscriptionRecord]
+) -> AxisMutationResult:
+    """새 사람의 최초 구독 Record만 저장하고 기존 상태는 보존한다."""
     inserted = 0
     skipped = 0
     for record in records:
-        existing = _find_membership_record(connection, record.customer_unique_id)
+        existing = _find_subscription_record(connection, record.customer_unique_id)
         if existing is None:
             connection.execute(
                 """
-                INSERT INTO customer_memberships (
-                    customer_unique_id, membership_level, created_at, updated_at
+                INSERT INTO customer_subscriptions (
+                    customer_unique_id, subscription_status,
+                    trial_ends_at, benefit_ends_at, next_billing_at,
+                    payment_failed_at, cancel_requested_at, created_at, updated_at
                 )
-                VALUES (%s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
-                _membership_parameters(record),
+                _subscription_parameters(record),
             )
             inserted += 1
         else:
             skipped += 1
-    return MembershipMutationResult(inserted=inserted, updated=0, skipped=skipped)
+    return AxisMutationResult(inserted=inserted, updated=0, skipped=skipped)
 
 
-def persist_membership_records(
-    connection: psycopg.Connection, records: Iterable[MembershipRecord]
-) -> MembershipMutationResult:
-    """사람 단위 Membership을 멱등 저장하고 단조 증가하지 않는 변경을 거부한다."""
+def ensure_membership_tier_records(
+    connection: psycopg.Connection, records: Iterable[MembershipTierRecord]
+) -> AxisMutationResult:
+    """새 사람의 최초 등급 Record만 저장하고 기존 등급은 보존한다."""
+    inserted = 0
+    skipped = 0
+    for record in records:
+        existing = _find_membership_tier_record(connection, record.customer_unique_id)
+        if existing is None:
+            connection.execute(
+                """
+                INSERT INTO customer_membership_tiers (
+                    customer_unique_id, membership_tier, created_at, updated_at
+                )
+                VALUES (%s, %s, %s, %s)
+                """,
+                _membership_tier_parameters(record),
+            )
+            inserted += 1
+        else:
+            skipped += 1
+    return AxisMutationResult(inserted=inserted, updated=0, skipped=skipped)
+
+
+def persist_subscription_records(
+    connection: psycopg.Connection, records: Iterable[SubscriptionRecord]
+) -> AxisMutationResult:
+    """사람 단위 구독 상태 Record를 멱등 저장하고 역행 변경을 거부한다."""
     inserted = 0
     updated = 0
     skipped = 0
     for record in records:
-        existing = _find_membership_record(connection, record.customer_unique_id)
+        existing = _find_subscription_record(connection, record.customer_unique_id)
         if existing is None:
             connection.execute(
                 """
-                INSERT INTO customer_memberships (
-                    customer_unique_id, membership_level, created_at, updated_at
+                INSERT INTO customer_subscriptions (
+                    customer_unique_id, subscription_status,
+                    trial_ends_at, benefit_ends_at, next_billing_at,
+                    payment_failed_at, cancel_requested_at, created_at, updated_at
                 )
-                VALUES (%s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
-                _membership_parameters(record),
+                _subscription_parameters(record),
             )
             inserted += 1
         elif existing == record:
             skipped += 1
         else:
             if record.created_at != existing.created_at:
-                raise ValueError("Membership created_at cannot change")
+                raise ValueError("Subscription created_at cannot change")
             if record.updated_at <= existing.updated_at:
                 raise ValueError(
-                    "Membership changes require an updated_at greater than the current value"
+                    "Subscription changes require an updated_at greater than the current value"
                 )
             connection.execute(
                 """
-                UPDATE customer_memberships
-                SET membership_level = %s, updated_at = %s
+                UPDATE customer_subscriptions
+                SET subscription_status = %s,
+                    trial_ends_at = %s,
+                    benefit_ends_at = %s,
+                    next_billing_at = %s,
+                    payment_failed_at = %s,
+                    cancel_requested_at = %s,
+                    updated_at = %s
                 WHERE customer_unique_id = %s
                 """,
-                (record.membership_level, record.updated_at, record.customer_unique_id),
+                _subscription_update_parameters(record),
             )
             updated += 1
-    return MembershipMutationResult(inserted=inserted, updated=updated, skipped=skipped)
+    return AxisMutationResult(inserted=inserted, updated=updated, skipped=skipped)
+
+
+def persist_membership_tier_records(
+    connection: psycopg.Connection, records: Iterable[MembershipTierRecord]
+) -> AxisMutationResult:
+    """사람 단위 등급 Record를 멱등 저장하고 역행 변경을 거부한다."""
+    inserted = 0
+    updated = 0
+    skipped = 0
+    for record in records:
+        existing = _find_membership_tier_record(connection, record.customer_unique_id)
+        if existing is None:
+            connection.execute(
+                """
+                INSERT INTO customer_membership_tiers (
+                    customer_unique_id, membership_tier, created_at, updated_at
+                )
+                VALUES (%s, %s, %s, %s)
+                """,
+                _membership_tier_parameters(record),
+            )
+            inserted += 1
+        elif existing == record:
+            skipped += 1
+        else:
+            if record.created_at != existing.created_at:
+                raise ValueError("Membership tier created_at cannot change")
+            if record.updated_at <= existing.updated_at:
+                raise ValueError(
+                    "Membership tier changes require an updated_at greater than the current value"
+                )
+            connection.execute(
+                """
+                UPDATE customer_membership_tiers
+                SET membership_tier = %s, updated_at = %s
+                WHERE customer_unique_id = %s
+                """,
+                (record.membership_tier, record.updated_at, record.customer_unique_id),
+            )
+            updated += 1
+    return AxisMutationResult(inserted=inserted, updated=updated, skipped=skipped)
 
 
 def _new_order_customer_record(
@@ -337,18 +513,34 @@ def _find_customer_record(
     )
 
 
-def _find_membership_record(
+def _find_subscription_record(
     connection: psycopg.Connection, customer_unique_id: str
-) -> MembershipRecord | None:
-    """저장 전 동일 사람 Membership을 Lock으로 보호해 읽는다."""
+) -> SubscriptionRecord | None:
+    """저장 전 동일 사람 구독 상태를 Lock으로 보호해 읽는다."""
     row = connection.execute(
         """
-        SELECT customer_unique_id, membership_level, created_at, updated_at
-        FROM customer_memberships WHERE customer_unique_id = %s FOR UPDATE
+        SELECT customer_unique_id, subscription_status,
+               trial_ends_at, benefit_ends_at, next_billing_at,
+               payment_failed_at, cancel_requested_at, created_at, updated_at
+        FROM customer_subscriptions WHERE customer_unique_id = %s FOR UPDATE
         """,
         (customer_unique_id,),
     ).fetchone()
-    return None if row is None else MembershipRecord(*row)
+    return None if row is None else SubscriptionRecord(*row)
+
+
+def _find_membership_tier_record(
+    connection: psycopg.Connection, customer_unique_id: str
+) -> MembershipTierRecord | None:
+    """저장 전 동일 사람 등급을 Lock으로 보호해 읽는다."""
+    row = connection.execute(
+        """
+        SELECT customer_unique_id, membership_tier, created_at, updated_at
+        FROM customer_membership_tiers WHERE customer_unique_id = %s FOR UPDATE
+        """,
+        (customer_unique_id,),
+    ).fetchone()
+    return None if row is None else MembershipTierRecord(*row)
 
 
 def _customer_parameters(record: CustomerRecord) -> tuple[object, ...]:
@@ -362,9 +554,130 @@ def _customer_parameters(record: CustomerRecord) -> tuple[object, ...]:
     )
 
 
-def _membership_parameters(record: MembershipRecord) -> tuple[object, ...]:
-    """INSERT에 사용할 사람 Membership Source Column 순서를 반환한다."""
-    return record.customer_unique_id, record.membership_level, record.created_at, record.updated_at
+def _subscription_parameters(record: SubscriptionRecord) -> tuple[object, ...]:
+    """INSERT에 사용할 사람 구독 상태 Source Column 순서를 반환한다."""
+    return (
+        record.customer_unique_id,
+        record.subscription_status,
+        record.trial_ends_at,
+        record.benefit_ends_at,
+        record.next_billing_at,
+        record.payment_failed_at,
+        record.cancel_requested_at,
+        record.created_at,
+        record.updated_at,
+    )
+
+
+def _subscription_update_parameters(record: SubscriptionRecord) -> tuple[object, ...]:
+    """UPDATE에 사용할 사람 구독 상태 Source Column 순서를 반환한다."""
+    return (
+        record.subscription_status,
+        record.trial_ends_at,
+        record.benefit_ends_at,
+        record.next_billing_at,
+        record.payment_failed_at,
+        record.cancel_requested_at,
+        record.updated_at,
+        record.customer_unique_id,
+    )
+
+
+def _membership_tier_parameters(record: MembershipTierRecord) -> tuple[object, ...]:
+    """INSERT에 사용할 사람 등급 Source Column 순서를 반환한다."""
+    return (
+        record.customer_unique_id,
+        record.membership_tier,
+        record.created_at,
+        record.updated_at,
+    )
+
+
+def _subscription_timestamps(
+    record: SubscriptionRecord,
+) -> tuple[tuple[str, datetime | None], ...]:
+    """구독 상태 Record의 선택 시각 Column 이름과 값을 반환한다."""
+    return (
+        ("trial_ends_at", record.trial_ends_at),
+        ("benefit_ends_at", record.benefit_ends_at),
+        ("next_billing_at", record.next_billing_at),
+        ("payment_failed_at", record.payment_failed_at),
+        ("cancel_requested_at", record.cancel_requested_at),
+    )
+
+
+def _allowed_subscription_targets(status: str) -> frozenset[str]:
+    """현재 구독 상태에서 허용되는 다음 상태 집합을 반환한다."""
+    return {
+        "NON_MEMBER": frozenset({"TRIAL", "ACTIVE"}),
+        "TRIAL": frozenset({"ACTIVE", "PAYMENT_FAILED", "CANCEL_REQUESTED"}),
+        "ACTIVE": frozenset({"ACTIVE", "PAYMENT_FAILED", "CANCEL_REQUESTED"}),
+        "PAYMENT_FAILED": frozenset({"ACTIVE", "CANCEL_REQUESTED", "CHURNED"}),
+        "CANCEL_REQUESTED": frozenset({"ACTIVE", "CHURNED"}),
+        "CHURNED": frozenset({"TRIAL", "ACTIVE"}),
+    }[status]
+
+
+def _transition_subscription_record(
+    record: SubscriptionRecord, next_status: str, mutation_time: datetime
+) -> SubscriptionRecord:
+    """상태별 시각 정책을 적용해 다음 구독 상태 Record를 만든다."""
+    if next_status == "TRIAL":
+        return replace(
+            record,
+            subscription_status="TRIAL",
+            trial_ends_at=mutation_time + SUBSCRIPTION_PERIOD,
+            benefit_ends_at=mutation_time + SUBSCRIPTION_PERIOD,
+            next_billing_at=mutation_time + SUBSCRIPTION_PERIOD,
+            payment_failed_at=None,
+            cancel_requested_at=None,
+            updated_at=mutation_time,
+        )
+    if next_status == "ACTIVE":
+        return replace(
+            record,
+            subscription_status="ACTIVE",
+            trial_ends_at=(
+                record.trial_ends_at if record.subscription_status == "TRIAL" else None
+            ),
+            benefit_ends_at=mutation_time + SUBSCRIPTION_PERIOD,
+            next_billing_at=mutation_time + SUBSCRIPTION_PERIOD,
+            payment_failed_at=None,
+            cancel_requested_at=None,
+            updated_at=mutation_time,
+        )
+    if next_status == "PAYMENT_FAILED":
+        return replace(
+            record,
+            subscription_status="PAYMENT_FAILED",
+            benefit_ends_at=mutation_time + PAYMENT_FAILURE_GRACE_PERIOD,
+            next_billing_at=None,
+            payment_failed_at=mutation_time,
+            cancel_requested_at=None,
+            updated_at=mutation_time,
+        )
+    if next_status == "CANCEL_REQUESTED":
+        benefit_ends_at = record.benefit_ends_at or mutation_time + SUBSCRIPTION_PERIOD
+        if benefit_ends_at <= mutation_time:
+            benefit_ends_at = mutation_time + SUBSCRIPTION_PERIOD
+        return replace(
+            record,
+            subscription_status="CANCEL_REQUESTED",
+            benefit_ends_at=benefit_ends_at,
+            next_billing_at=None,
+            cancel_requested_at=mutation_time,
+            updated_at=mutation_time,
+        )
+    if next_status == "CHURNED":
+        if record.benefit_ends_at is None or mutation_time < record.benefit_ends_at:
+            raise ValueError("CHURNED requires logical_date at or after benefit_ends_at")
+        return replace(
+            record,
+            subscription_status="CHURNED",
+            next_billing_at=None,
+            updated_at=mutation_time,
+        )
+    raise ValueError(f"Unsupported subscription target: {next_status}")
 
 
 def _latest_record_by_unique_id(records: Iterable[CustomerRecord]) -> dict[str, CustomerRecord]:

@@ -7,13 +7,18 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from src.generator.config import GENERATOR_VERSION, GeneratorConfig
-from src.generator.customers import MembershipRecord, new_customer_record
+from src.generator.customers import (
+    MembershipTierRecord,
+    SubscriptionRecord,
+    new_customer_record,
+)
 from src.generator.orders import OrderCatalog, ProductReference, SellerReference
 from src.generator.scenarios import (
     delayed_payment_transition,
     late_order_bundle,
     late_order_update_transition,
     membership_change_scenario,
+    subscription_transition_scenario,
 )
 from src.generator.transitions import OrderState, PaymentState
 
@@ -88,17 +93,38 @@ def test_delayed_payment_and_late_update_plan_current_mutation_time() -> None:
 def test_membership_change_scenario_updates_one_person_grain_record() -> None:
     """Membership Change Scenario는 사람 단위 Membership 갱신 후보를 반환한다."""
     old_time = _config().logical_date - timedelta(days=1)
-    record = MembershipRecord(
+    record = MembershipTierRecord(
         customer_unique_id="person-1",
-        membership_level="bronze",
+        membership_tier="BRONZE",
         created_at=old_time,
         updated_at=old_time,
     )
 
     changed = membership_change_scenario(_config(), (record,), delivered_order_count=5)
 
-    assert changed[0].membership_level == "silver"
+    assert changed[0].membership_tier == "SILVER"
     assert changed[0].updated_at == _config().logical_date
+
+
+def test_subscription_transition_scenario_returns_a_person_grain_state_change() -> None:
+    """구독 상태 Scenario는 사람 단위 TRIAL 변경 후보를 반환한다."""
+    old_time = _config().logical_date - timedelta(days=1)
+    record = SubscriptionRecord(
+        customer_unique_id="person-1",
+        subscription_status="NON_MEMBER",
+        trial_ends_at=None,
+        benefit_ends_at=None,
+        next_billing_at=None,
+        payment_failed_at=None,
+        cancel_requested_at=None,
+        created_at=old_time,
+        updated_at=old_time,
+    )
+
+    changed = subscription_transition_scenario(_config(), (record,), "TRIAL")
+
+    assert changed[0].subscription_status == "TRIAL"
+    assert changed[0].trial_ends_at == _config().logical_date + timedelta(days=30)
 
 
 @pytest.mark.parametrize(

@@ -9,10 +9,13 @@ from datetime import timedelta
 from src.common.database import PostgresSettings
 from src.generator.config import EXECUTABLE_ANOMALY_PROFILES, GeneratorConfig
 from src.generator.customers import (
-    MembershipRecord,
-    membership_change_records,
+    MembershipTierRecord,
+    SubscriptionRecord,
+    membership_tier_change_records,
     new_customer_record,
-    persist_membership_records,
+    persist_membership_tier_records,
+    persist_subscription_records,
+    subscription_transition_records,
 )
 from src.generator.ids import logical_hash
 from src.generator.lease import (
@@ -30,6 +33,11 @@ from src.generator.metadata import (
 )
 from src.generator.orders import fetch_order_catalog, new_order_bundle, persist_order_bundle
 from src.generator.scenarios import late_order_bundle
+from src.generator.subscription_payments import (
+    next_billing_sequence,
+    persist_subscription_payments,
+    plan_subscription_payment,
+)
 
 
 @dataclass(frozen=True)
@@ -113,12 +121,21 @@ def run_generator(config: GeneratorConfig, settings: PostgresSettings) -> Genera
                         ],
                     }
                 )
+            _run_subscription_expiry_scan(connection, config, result_counts, logical_rows)
             if config.anomaly_profile == "membership-change":
-                membership_result, membership_row = _apply_membership_change(connection, config)
-                result_counts["memberships_inserted"] += membership_result.inserted
-                result_counts["memberships_updated"] += membership_result.updated
-                result_counts["memberships_skipped"] += membership_result.skipped
-                logical_rows.append(membership_row)
+                tier_result, tier_row = _apply_membership_tier_change(connection, config)
+                result_counts["membership_tiers_inserted"] += tier_result.inserted
+                result_counts["membership_tiers_updated"] += tier_result.updated
+                result_counts["membership_tiers_skipped"] += tier_result.skipped
+                logical_rows.append(tier_row)
+            elif config.anomaly_profile.startswith("subscription-"):
+                subscription_result, subscription_row = _apply_subscription_transition(
+                    connection, config
+                )
+                result_counts["subscriptions_inserted"] += subscription_result.inserted
+                result_counts["subscriptions_updated"] += subscription_result.updated
+                result_counts["subscriptions_skipped"] += subscription_result.skipped
+                logical_rows.append(subscription_row)
 
         logical_content_hash = logical_hash(
             {
@@ -204,9 +221,13 @@ def _empty_result_counts() -> dict[str, int]:
         "customers_inserted": 0,
         "customers_updated": 0,
         "customers_skipped": 0,
-        "memberships_inserted": 0,
-        "memberships_updated": 0,
-        "memberships_skipped": 0,
+        "subscriptions_inserted": 0,
+        "subscriptions_updated": 0,
+        "subscriptions_skipped": 0,
+        "membership_tiers_inserted": 0,
+        "membership_tiers_updated": 0,
+        "membership_tiers_skipped": 0,
+        "subscription_payments_inserted": 0,
         "orders_inserted": 0,
         "orders_skipped": 0,
         "order_items_inserted": 0,
@@ -221,9 +242,12 @@ def _add_mutation_counts(result_counts: dict[str, int], mutation_result) -> None
     result_counts["customers_inserted"] += mutation_result.customer.inserted
     result_counts["customers_updated"] += mutation_result.customer.updated
     result_counts["customers_skipped"] += mutation_result.customer.skipped
-    result_counts["memberships_inserted"] += mutation_result.membership.inserted
-    result_counts["memberships_updated"] += mutation_result.membership.updated
-    result_counts["memberships_skipped"] += mutation_result.membership.skipped
+    result_counts["subscriptions_inserted"] += mutation_result.subscription.inserted
+    result_counts["subscriptions_updated"] += mutation_result.subscription.updated
+    result_counts["subscriptions_skipped"] += mutation_result.subscription.skipped
+    result_counts["membership_tiers_inserted"] += mutation_result.membership_tier.inserted
+    result_counts["membership_tiers_updated"] += mutation_result.membership_tier.updated
+    result_counts["membership_tiers_skipped"] += mutation_result.membership_tier.skipped
     result_counts["orders_inserted"] += mutation_result.orders_inserted
     result_counts["orders_skipped"] += mutation_result.orders_skipped
     result_counts["order_items_inserted"] += mutation_result.items_inserted
@@ -232,19 +256,160 @@ def _add_mutation_counts(result_counts: dict[str, int], mutation_result) -> None
     result_counts["payments_skipped"] += mutation_result.payments_skipped
 
 
-def _apply_membership_change(connection, config: GeneratorConfig):
-    """현재 bronze·silver 사람 하나를 결정적으로 선택해 Membership 변경을 저장한다."""
+def _fetch_subscriptions_ordered(connection) -> tuple[SubscriptionRecord, ...]:
+    """구독 상태 Record 전체를 사람 키 순서로 읽는다."""
     rows = connection.execute(
         """
-        SELECT customer_unique_id, membership_level, created_at, updated_at
-        FROM customer_memberships
-        WHERE membership_level IN ('bronze', 'silver')
+        SELECT customer_unique_id, subscription_status,
+               trial_ends_at, benefit_ends_at, next_billing_at,
+               payment_failed_at, cancel_requested_at, created_at, updated_at
+        FROM customer_subscriptions
         ORDER BY customer_unique_id COLLATE "C"
         """
     ).fetchall()
+    return tuple(SubscriptionRecord(*row) for row in rows)
+
+
+def _run_subscription_expiry_scan(
+    connection, config: GeneratorConfig, result_counts: dict[str, int], logical_rows: list
+) -> None:
+    """logical_date 기준 시각 스캔으로 만료 종료·체험 종료·정기 결제·재결제를 처리한다.
+
+    요구사항 5.1절 순서를 그대로 따른다. 무작위가 아니라 결정적 스캔이므로 같은 logical_date로
+    재실행하면 같은 결과가 나온다.
+    """
+    now = config.logical_date
+    for record in _fetch_subscriptions_ordered(connection):
+        if record.updated_at >= now:
+            continue
+        status = record.subscription_status
+        # 1. 만료 종료
+        if (
+            status in {"CANCEL_REQUESTED", "PAYMENT_FAILED"}
+            and record.benefit_ends_at is not None
+            and record.benefit_ends_at <= now
+        ):
+            _persist_scan_transition(connection, config, record, "CHURNED", result_counts)
+            logical_rows.append(_subscription_scan_row(record.customer_unique_id, "CHURNED"))
+            continue
+        # 2. 체험 종료
+        if (
+            status == "TRIAL"
+            and record.trial_ends_at is not None
+            and record.trial_ends_at <= now
+        ):
+            _bill_and_transition(connection, config, record, result_counts, logical_rows)
+            continue
+        # 3. 정기 결제
+        if (
+            status == "ACTIVE"
+            and record.next_billing_at is not None
+            and record.next_billing_at <= now
+        ):
+            _bill_and_transition(connection, config, record, result_counts, logical_rows)
+            continue
+        # 4. 재결제
+        if (
+            status == "PAYMENT_FAILED"
+            and record.benefit_ends_at is not None
+            and record.benefit_ends_at > now
+        ):
+            _bill_and_transition(connection, config, record, result_counts, logical_rows)
+
+
+def _bill_and_transition(
+    connection,
+    config: GeneratorConfig,
+    record: SubscriptionRecord,
+    result_counts: dict[str, int],
+    logical_rows: list,
+) -> None:
+    """결제를 시도해 subscription_payments 행을 남기고 성공·실패에 따라 상태를 바꾼다."""
+    billing_sequence = next_billing_sequence(connection, record.customer_unique_id)
+    period_start = record.next_billing_at or record.trial_ends_at or config.logical_date
+    payment = plan_subscription_payment(
+        config, record.customer_unique_id, billing_sequence, period_start
+    )
+    result_counts["subscription_payments_inserted"] += persist_subscription_payments(
+        connection, (payment,)
+    )
+    logical_rows.append(
+        {
+            "customer_unique_id": record.customer_unique_id,
+            "billing_sequence": billing_sequence,
+            "payment_status": payment.payment_status,
+        }
+    )
+    if payment.payment_status == "completed":
+        if record.subscription_status == "ACTIVE":
+            _advance_active_billing(connection, config, record, payment, result_counts)
+        else:
+            _persist_scan_transition(connection, config, record, "ACTIVE", result_counts)
+            logical_rows.append(_subscription_scan_row(record.customer_unique_id, "ACTIVE"))
+    elif record.subscription_status != "PAYMENT_FAILED":
+        _persist_scan_transition(connection, config, record, "PAYMENT_FAILED", result_counts)
+        logical_rows.append(
+            _subscription_scan_row(record.customer_unique_id, "PAYMENT_FAILED")
+        )
+
+
+def _advance_active_billing(
+    connection, config: GeneratorConfig, record: SubscriptionRecord, payment, result_counts
+) -> None:
+    """ACTIVE 유지 결제 성공 시 상태 변화 없이 next_billing_at만 1개월 뒤로 민다."""
+    advanced = SubscriptionRecord(
+        customer_unique_id=record.customer_unique_id,
+        subscription_status="ACTIVE",
+        trial_ends_at=None,
+        benefit_ends_at=payment.billing_period_end,
+        next_billing_at=payment.billing_period_end,
+        payment_failed_at=None,
+        cancel_requested_at=None,
+        created_at=record.created_at,
+        updated_at=config.logical_date,
+    )
+    outcome = persist_subscription_records(connection, (advanced,))
+    result_counts["subscriptions_updated"] += outcome.updated
+    result_counts["subscriptions_skipped"] += outcome.skipped
+
+
+def _persist_scan_transition(
+    connection,
+    config: GeneratorConfig,
+    record: SubscriptionRecord,
+    next_status: str,
+    result_counts: dict[str, int],
+) -> None:
+    """스캔이 만든 구독 상태 전이를 저장하고 Count에 누적한다."""
+    changed = subscription_transition_records(config, (record,), next_status)
+    outcome = persist_subscription_records(connection, changed)
+    result_counts["subscriptions_updated"] += outcome.updated
+    result_counts["subscriptions_skipped"] += outcome.skipped
+
+
+def _subscription_scan_row(customer_unique_id: str, next_status: str) -> dict[str, str]:
+    """만료 스캔이 만든 구독 전이의 결정성 Hash 입력 Row를 반환한다."""
+    return {
+        "customer_unique_id": customer_unique_id,
+        "scan_subscription_status": next_status,
+    }
+
+
+def _apply_membership_tier_change(connection, config: GeneratorConfig):
+    """현재 BRONZE·SILVER 사람 하나를 결정적으로 선택해 등급 변경을 저장한다."""
+    rows = connection.execute(
+        """
+        SELECT customer_unique_id, membership_tier, created_at, updated_at
+        FROM customer_membership_tiers
+        WHERE membership_tier IN ('BRONZE', 'SILVER')
+          AND updated_at < %s
+        ORDER BY customer_unique_id COLLATE "C"
+        """,
+        (config.logical_date,),
+    ).fetchall()
     if not rows:
-        raise ValueError("membership-change requires at least one bronze or silver membership")
-    candidates = tuple(MembershipRecord(*row) for row in rows)
+        raise ValueError("membership-change requires at least one BRONZE or SILVER tier record")
+    candidates = tuple(MembershipTierRecord(*row) for row in rows)
     selector = int(
         logical_hash(
             {
@@ -255,11 +420,72 @@ def _apply_membership_change(connection, config: GeneratorConfig):
         16,
     ) % len(candidates)
     current = candidates[selector]
-    delivered_order_count = 5 if current.membership_level == "bronze" else 15
-    changed = membership_change_records(config, (current,), delivered_order_count)
-    result = persist_membership_records(connection, changed)
+    delivered_order_count = 5 if current.membership_tier == "BRONZE" else 15
+    changed = membership_tier_change_records(config, (current,), delivered_order_count)
+    result = persist_membership_tier_records(connection, changed)
     return result, {
         "customer_unique_id": current.customer_unique_id,
-        "membership_level": changed[0].membership_level,
-        "membership_updated_at": changed[0].updated_at.isoformat(),
+        "membership_tier": changed[0].membership_tier,
+        "membership_tier_updated_at": changed[0].updated_at.isoformat(),
     }
+
+
+def _apply_subscription_transition(connection, config: GeneratorConfig):
+    """Profile에 맞는 현재 상태 사람 하나를 골라 구독 상태 전이를 저장한다."""
+    next_status, source_statuses = _subscription_profile_contract(config.anomaly_profile)
+    rows = connection.execute(
+        """
+        SELECT customer_unique_id, subscription_status,
+               trial_ends_at, benefit_ends_at, next_billing_at,
+               payment_failed_at, cancel_requested_at, created_at, updated_at
+        FROM customer_subscriptions
+        WHERE subscription_status = ANY(%s)
+          AND updated_at < %s
+        ORDER BY customer_unique_id COLLATE "C"
+        """,
+        (list(source_statuses), config.logical_date),
+    ).fetchall()
+    candidates = tuple(SubscriptionRecord(*row) for row in rows)
+    candidates = tuple(
+        record
+        for record in candidates
+        if next_status != "CHURNED"
+        or (record.benefit_ends_at is not None and config.logical_date >= record.benefit_ends_at)
+    )
+    if not candidates:
+        raise ValueError(f"{config.anomaly_profile} requires an eligible subscription record")
+    selector = int(
+        logical_hash(
+            {
+                "generator_inputs": config.deterministic_inputs(),
+                "entity": "subscription-transition-selection",
+            }
+        ),
+        16,
+    ) % len(candidates)
+    current = candidates[selector]
+    changed = subscription_transition_records(config, (current,), next_status)
+    result = persist_subscription_records(connection, changed)
+    return result, {
+        "customer_unique_id": current.customer_unique_id,
+        "subscription_status": changed[0].subscription_status,
+        "subscription_updated_at": changed[0].updated_at.isoformat(),
+    }
+
+
+def _subscription_profile_contract(profile: str) -> tuple[str, frozenset[str]]:
+    """실행 Profile의 목표 상태와 허용 시작 상태를 반환한다."""
+    contracts = {
+        "subscription-trial": ("TRIAL", frozenset({"NON_MEMBER", "CHURNED"})),
+        "subscription-active": ("ACTIVE", frozenset({"NON_MEMBER", "TRIAL", "PAYMENT_FAILED"})),
+        "subscription-payment-failed": ("PAYMENT_FAILED", frozenset({"TRIAL", "ACTIVE"})),
+        "subscription-cancel-requested": (
+            "CANCEL_REQUESTED",
+            frozenset({"TRIAL", "ACTIVE", "PAYMENT_FAILED"}),
+        ),
+        "subscription-churned": ("CHURNED", frozenset({"PAYMENT_FAILED", "CANCEL_REQUESTED"})),
+        "subscription-rejoined": ("ACTIVE", frozenset({"CHURNED"})),
+    }
+    return contracts[profile]
+
+

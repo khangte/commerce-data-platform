@@ -19,7 +19,15 @@ pytestmark = pytest.mark.integration
     reason="Set RUN_POSTGRES_INTEGRATION=1 after starting the Phase 1 PostgreSQL container.",
 )
 @pytest.mark.parametrize(
-    "source_table", ("customers", "customer_memberships", "products", "sellers")
+    "source_table",
+    (
+        "customers",
+        "customer_subscriptions",
+        "customer_membership_tiers",
+        "subscription_payments",
+        "products",
+        "sellers",
+    ),
 )
 def test_source_tables_use_the_configured_fixed_range_and_complete_primary_key(
     source_table: str,

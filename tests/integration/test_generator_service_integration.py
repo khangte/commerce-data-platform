@@ -125,7 +125,17 @@ def _delete_bundles(settings: PostgresSettings, bundles) -> None:
                 "DELETE FROM customers WHERE customer_id = %s", (bundle.customer.customer_id,)
             )
             connection.execute(
-                "DELETE FROM customer_memberships WHERE customer_unique_id = %s",
+                "DELETE FROM subscription_payments WHERE customer_unique_id = %s",
+                (bundle.customer.customer_unique_id,),
+            )
+
+            connection.execute(
+                "DELETE FROM customer_subscriptions WHERE customer_unique_id = %s",
+                (bundle.customer.customer_unique_id,),
+            )
+
+            connection.execute(
+                "DELETE FROM customer_membership_tiers WHERE customer_unique_id = %s",
                 (bundle.customer.customer_unique_id,),
             )
         connection.commit()
