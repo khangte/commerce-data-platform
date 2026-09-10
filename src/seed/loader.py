@@ -20,7 +20,8 @@ from src.seed.contracts import CONTRACT_BY_TABLE, combined_checksum, validate_in
 
 LOAD_ORDER = (
     "customers",
-    "customer_memberships",
+    "customer_subscriptions",
+    "customer_membership_tiers",
     "products",
     "sellers",
     "orders",
@@ -50,9 +51,20 @@ TARGET_COLUMNS = {
         "customer_state",
         "created_at",
     ),
-    "customer_memberships": (
+    "customer_subscriptions": (
         "customer_unique_id",
-        "membership_level",
+        "subscription_status",
+        "trial_ends_at",
+        "benefit_ends_at",
+        "next_billing_at",
+        "payment_failed_at",
+        "cancel_requested_at",
+        "created_at",
+        "updated_at",
+    ),
+    "customer_membership_tiers": (
+        "customer_unique_id",
+        "membership_tier",
         "created_at",
         "updated_at",
     ),
@@ -90,7 +102,8 @@ TARGET_COLUMNS = {
 }
 PRIMARY_KEYS = {
     **{table_name: contract.primary_key for table_name, contract in CONTRACT_BY_TABLE.items()},
-    "customer_memberships": ("customer_unique_id",),
+    "customer_subscriptions": ("customer_unique_id",),
+    "customer_membership_tiers": ("customer_unique_id",),
 }
 
 
@@ -189,12 +202,13 @@ def _assert_references(
         raise ValueError(f"{name} contains a reference absent from its parent table")
 
 
-def _membership_level(delivered_orders: int) -> str:
+def _membership_tier(delivered_orders: int) -> str:
+    """완료 주문 수를 거래 실적 멤버십 등급으로 계산한다."""
     if delivered_orders >= 15:
-        return "gold"
+        return "GOLD"
     if delivered_orders >= 5:
-        return "silver"
-    return "bronze"
+        return "SILVER"
+    return "BRONZE"
 
 
 def _table_rows(frame: pd.DataFrame, columns: tuple[str, ...]) -> list[tuple[Any, ...]]:
@@ -272,17 +286,32 @@ def build_seed_dataset(input_dir: Path, seeded_at: datetime) -> SeedDataset:
         .map(customer_identity)
         .value_counts()
     )
-    customer_memberships = (
+    customer_axis_base = (
         customers.loc[:, ["customer_unique_id", "created_at"]]
         .groupby("customer_unique_id", as_index=False)["created_at"]
         .min()
     )
-    customer_memberships["membership_level"] = customer_memberships["customer_unique_id"].map(
-        lambda customer_unique_id: _membership_level(
+    customer_subscriptions = customer_axis_base.copy()
+    customer_subscriptions["subscription_status"] = "NON_MEMBER"
+    for column in (
+        "trial_ends_at",
+        "benefit_ends_at",
+        "next_billing_at",
+        "payment_failed_at",
+        "cancel_requested_at",
+    ):
+        customer_subscriptions[column] = None
+    customer_subscriptions["updated_at"] = seeded_at
+
+    customer_membership_tiers = customer_axis_base.copy()
+    customer_membership_tiers["membership_tier"] = customer_membership_tiers[
+        "customer_unique_id"
+    ].map(
+        lambda customer_unique_id: _membership_tier(
             int(delivered_counts.get(customer_unique_id, 0))
         )
     )
-    customer_memberships["updated_at"] = seeded_at
+    customer_membership_tiers["updated_at"] = seeded_at
 
     for column in (
         "product_weight_g",
@@ -320,8 +349,11 @@ def build_seed_dataset(input_dir: Path, seeded_at: datetime) -> SeedDataset:
 
     rows = {
         "customers": _table_rows(customers, TARGET_COLUMNS["customers"]),
-        "customer_memberships": _table_rows(
-            customer_memberships, TARGET_COLUMNS["customer_memberships"]
+        "customer_subscriptions": _table_rows(
+            customer_subscriptions, TARGET_COLUMNS["customer_subscriptions"]
+        ),
+        "customer_membership_tiers": _table_rows(
+            customer_membership_tiers, TARGET_COLUMNS["customer_membership_tiers"]
         ),
         "products": _table_rows(products, TARGET_COLUMNS["products"]),
         "sellers": _table_rows(sellers, TARGET_COLUMNS["sellers"]),
