@@ -462,7 +462,7 @@ Dynamic Task Mapping 입력이 7개 Table 기준이다. PRD v1.8의 구독·등�
 갱신한다.
 
 - `airflow/dags/warehouse_pipeline_dag.py`의 Dynamic Mapping 입력 순서를
-  `customers, customer_subscriptions, customer_loyalty_tiers, subscription_payments,
+  `customers, customer_subscriptions, customer_membership_tiers, subscription_payments,
   products, sellers, orders, order_items, order_payments` 9개로 바꾼다.
 - Generator DAG가 새 구독 Profile과 만료 스캔을 호출하도록 Task 인자를 넓힌다.
 - DAG Parse Smoke Test를 9개 Table 기준으로 다시 통과시킨다.

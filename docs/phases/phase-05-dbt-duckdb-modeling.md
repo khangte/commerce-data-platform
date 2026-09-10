@@ -68,7 +68,7 @@ dbt source macro
 5. `stg_orders`
 6. `stg_customers_current`
 7. `stg_customer_subscriptions`
-8. `stg_customer_loyalty_tiers`
+8. `stg_customer_membership_tiers`
 9. `stg_subscription_payments`
 
 - [x] `P5-05` Product/Seller Naming과 Type 표준화
@@ -88,7 +88,7 @@ Customer Mapping:
 | `customer_state`        | `state`                   |
 | `customers.created_at`  | `created_at`              |
 
-구독 축은 `stg_customer_subscriptions`, 등급 축은 `stg_customer_loyalty_tiers`에서 각각 사람
+구독 축은 `stg_customer_subscriptions`, 등급 축은 `stg_customer_membership_tiers`에서 각각 사람
 키를 `customer_id`로 바꾸고 값을 대문자로 표준화한다. 두 Staging 모두 Current 선택을 하지
 않고 Bronze 누적 행을 `customer_id + updated_at + attribute_hash`로 중복 제거한다.
 `int_customer_history`가 두 축을 하나의 시간축으로 병합한다.
@@ -426,7 +426,7 @@ Watermark는 dbt 실패로 되돌리지 않는다. 컨테이너에서 `dbt` CLI�
 이 Phase는 미완료 상태다. PRD v1.8의 구독·등급 분리를 처음부터 반영해 구현한다.
 
 - `stg_customer_observations` 하나 대신 `stg_customer_subscriptions`와
-  `stg_customer_loyalty_tiers` 둘을 만든다. 각 축의 Bronze 관측을 따로 표준화하고 축별
+  `stg_customer_membership_tiers` 둘을 만든다. 각 축의 Bronze 관측을 따로 표준화하고 축별
   `attribute_hash`를 만든다.
 - `int_customer_history`는 두 Staging을 하나의 시간축으로 병합한다. 두 축의 관측 시각이
   서로 다르므로 각 시점에서 다른 축의 그 시점 유효 값을 이어받는다. 두 Source의 증분

@@ -107,7 +107,7 @@ Payment: pending → completed → refunded
 CLI가 직접 실행하는 Profile은 `default`, `late-arrival`, `membership-change`,
 `subscription-trial`, `subscription-active`, `subscription-payment-failed`,
 `subscription-cancel-requested`, `subscription-churned`, `subscription-rejoined`다.
-`membership-change`는 `BRONZE` 또는 `SILVER` 사람 한 명의 `customer_loyalty_tiers` 행만
+`membership-change`는 `BRONZE` 또는 `SILVER` 사람 한 명의 `customer_membership_tiers` 행만
 갱신한다. 구독 Profile은 상태별로 허용된 현재 상태의 사람 한 명을 결정적으로 골라
 `customer_subscriptions` 행을 갱신한다. `subscription-active`의 정기 결제와 `subscription-trial`
 종료 시점의 결제는 `subscription_payments`에 행을 추가한다. `PAYMENT_FAILED`는 7일 유예
@@ -178,9 +178,9 @@ AC-20과 AC-21의 전체 E2E 판정은 Phase 3의 Ingestion과 결합해 완료�
 | `src/generator/config.py`                                     | 생성·수정 | 결정성 실행 Config, UTC `logical_date`, 지원 Version·Profile 검증과 CLI 실행 Profile 범위를 추가했다.                 |
 | `src/generator/ids.py`                                        | 생성      | UUIDv5 Business ID와 안정적인 Logical Hash 유틸리티를 추가했다.                                                       |
 | `src/generator/metadata.py`                                   | 생성      | `generator_runs` Schema 준비와 RUNNING/완료 실행 이력 기록 기능을 추가했다.                                           |
-| `src/generator/customers.py`                                  | 수정      | 불변 Customer 계정, 사람 단위 구독 Record와 등급 Record를 각각 `customer_subscriptions`·`customer_loyalty_tiers`로 분리하고, 구독 상태 전이·등급의 단조 변경 저장과 시각 기반 만료 스캔을 추가했다. |
+| `src/generator/customers.py`                                  | 수정      | 불변 Customer 계정, 사람 단위 구독 Record와 등급 Record를 각각 `customer_subscriptions`·`customer_membership_tiers`로 분리하고, 구독 상태 전이·등급의 단조 변경 저장과 시각 기반 만료 스캔을 추가했다. |
 | `src/generator/subscription_payments.py`                      | 생성      | 구독 자동결제 1건을 `subscription_payments`에 결정적으로 기록하고 `next_billing_at`을 1개월 뒤로 민다.                 |
-| `src/generator/orders.py`                                     | 수정      | Order·Item·Payment Bundle 저장 시 새 사람의 `customer_subscriptions` `NON_MEMBER` 행과 `customer_loyalty_tiers` `BRONZE` 행을 함께 보장하도록 변경했다.                               |
+| `src/generator/orders.py`                                     | 수정      | Order·Item·Payment Bundle 저장 시 새 사람의 `customer_subscriptions` `NON_MEMBER` 행과 `customer_membership_tiers` `BRONZE` 행을 함께 보장하도록 변경했다.                               |
 | `src/generator/transitions.py`                                | 생성      | Order·Payment 허용 상태 전이, 기대 Version, 원천 변경 시각 검증을 추가했다.                                           |
 | `src/generator/scenarios.py`                                  | 생성      | Late Order·Delayed Payment·Late Update·Membership Change Scenario를 추가했다.                                         |
 | `src/generator/lease.py`                                      | 생성      | Generator·Warehouse 원천 데이터 동시성 잠금의 획득·갱신·Fencing·해제를 추가했다.                                      |
@@ -204,7 +204,7 @@ AC-20과 AC-21의 전체 E2E 판정은 Phase 3의 Ingestion과 결합해 완료�
 
 구독 상태 전이와 등급 갱신 로직은 통합 테이블(A안) 기준으로 먼저 작성했다. 이후
 [비교](../architecture/04-membership-table-split-comparison.md)를 거쳐 B안(Source만 분리)으로
-확정했으므로, 저장 대상을 `customer_subscriptions`와 `customer_loyalty_tiers` 두 테이블로
+확정했으므로, 저장 대상을 `customer_subscriptions`와 `customer_membership_tiers` 두 테이블로
 나누고 CHECK 제약 위치를 옮긴다. 상태 전이 규칙, 만료 스캔 순서, Seed 기준선 로직은 그대로
 쓴다. `subscription_payments` 자동결제 기록은 이 재작업에서 새로 만든다. 세부 순서는
 [전환 계획](../architecture/02-subscription-membership-transition-plan.md) 5절에 있다.

@@ -6,45 +6,71 @@ CREATE TABLE IF NOT EXISTS customers (
     created_at TIMESTAMPTZ NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS customer_memberships (
+CREATE TABLE IF NOT EXISTS customer_subscriptions (
     customer_unique_id VARCHAR(64) COLLATE "C" PRIMARY KEY,
-    membership_level VARCHAR(16) NOT NULL,
+    subscription_status VARCHAR(32) NOT NULL DEFAULT 'NON_MEMBER',
+    trial_ends_at TIMESTAMPTZ,
+    benefit_ends_at TIMESTAMPTZ,
+    next_billing_at TIMESTAMPTZ,
+    payment_failed_at TIMESTAMPTZ,
+    cancel_requested_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL,
-    CONSTRAINT customer_memberships_level_check
-        CHECK (membership_level IN ('bronze', 'silver', 'gold')),
-    CONSTRAINT customer_memberships_updated_at_check CHECK (updated_at >= created_at)
+    CONSTRAINT customer_subscriptions_status_check CHECK (
+        subscription_status IN (
+            'NON_MEMBER', 'TRIAL', 'ACTIVE', 'PAYMENT_FAILED', 'CANCEL_REQUESTED', 'CHURNED'
+        )
+    ),
+    CONSTRAINT customer_subscriptions_trial_check
+        CHECK (subscription_status <> 'TRIAL' OR trial_ends_at IS NOT NULL),
+    CONSTRAINT customer_subscriptions_payment_failed_check CHECK (
+        subscription_status <> 'PAYMENT_FAILED'
+        OR (payment_failed_at IS NOT NULL AND benefit_ends_at IS NOT NULL)
+    ),
+    CONSTRAINT customer_subscriptions_cancel_requested_check CHECK (
+        subscription_status <> 'CANCEL_REQUESTED'
+        OR (
+            cancel_requested_at IS NOT NULL
+            AND benefit_ends_at IS NOT NULL
+            AND benefit_ends_at > updated_at
+        )
+    ),
+    CONSTRAINT customer_subscriptions_churned_check CHECK (
+        subscription_status <> 'CHURNED'
+        OR (benefit_ends_at IS NOT NULL AND benefit_ends_at <= updated_at)
+    ),
+    CONSTRAINT customer_subscriptions_updated_at_check CHECK (updated_at >= created_at)
 );
 
--- 이전 계정 단위 멤버십 스키마를 안전하게 사람 단위 테이블로 올린다.
-DO $$
-BEGIN
-    IF EXISTS (
-        SELECT 1
-        FROM information_schema.columns
-        WHERE table_schema = 'public' AND table_name = 'customers' AND column_name = 'membership_level'
-    ) THEN
-        INSERT INTO customer_memberships (
-            customer_unique_id, membership_level, created_at, updated_at
-        )
-        SELECT
-            customer_unique_id,
-            (array_agg(membership_level ORDER BY updated_at DESC, customer_id DESC))[1],
-            min(created_at),
-            max(updated_at)
-        FROM customers
-        GROUP BY customer_unique_id
-        ON CONFLICT (customer_unique_id) DO UPDATE
-        SET membership_level = EXCLUDED.membership_level,
-            created_at = LEAST(customer_memberships.created_at, EXCLUDED.created_at),
-            updated_at = GREATEST(customer_memberships.updated_at, EXCLUDED.updated_at);
+CREATE TABLE IF NOT EXISTS customer_membership_tiers (
+    customer_unique_id VARCHAR(64) COLLATE "C" PRIMARY KEY,
+    membership_tier VARCHAR(16) NOT NULL DEFAULT 'BRONZE',
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT customer_membership_tiers_tier_check
+        CHECK (membership_tier IN ('BRONZE', 'SILVER', 'GOLD')),
+    CONSTRAINT customer_membership_tiers_updated_at_check CHECK (updated_at >= created_at)
+);
 
-        ALTER TABLE customers DROP CONSTRAINT IF EXISTS customers_membership_level_check;
-        ALTER TABLE customers DROP CONSTRAINT IF EXISTS customers_updated_at_check;
-        ALTER TABLE customers DROP COLUMN membership_level;
-        ALTER TABLE customers DROP COLUMN updated_at;
-    END IF;
-END $$;
+CREATE TABLE IF NOT EXISTS subscription_payments (
+    customer_unique_id VARCHAR(64) COLLATE "C" NOT NULL
+        REFERENCES customer_subscriptions (customer_unique_id),
+    billing_sequence INTEGER NOT NULL,
+    payment_status VARCHAR(16) NOT NULL,
+    payment_value NUMERIC(14, 2) NOT NULL,
+    billing_period_start TIMESTAMPTZ NOT NULL,
+    billing_period_end TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (customer_unique_id, billing_sequence),
+    CONSTRAINT subscription_payments_sequence_check CHECK (billing_sequence > 0),
+    CONSTRAINT subscription_payments_status_check
+        CHECK (payment_status IN ('completed', 'failed')),
+    CONSTRAINT subscription_payments_value_check CHECK (payment_value >= 0),
+    CONSTRAINT subscription_payments_period_check
+        CHECK (billing_period_end > billing_period_start),
+    CONSTRAINT subscription_payments_updated_at_check CHECK (updated_at >= created_at)
+);
 
 CREATE TABLE IF NOT EXISTS products (
     product_id VARCHAR(64) COLLATE "C" PRIMARY KEY,
@@ -127,8 +153,12 @@ CREATE TABLE IF NOT EXISTS order_payments (
 DROP INDEX IF EXISTS customers_updated_at_customer_id_idx;
 CREATE INDEX IF NOT EXISTS customers_created_at_customer_id_idx
     ON customers (created_at, customer_id COLLATE "C");
-CREATE INDEX IF NOT EXISTS customer_memberships_updated_at_customer_unique_id_idx
-    ON customer_memberships (updated_at, customer_unique_id COLLATE "C");
+CREATE INDEX IF NOT EXISTS customer_subscriptions_updated_at_customer_unique_id_idx
+    ON customer_subscriptions (updated_at, customer_unique_id COLLATE "C");
+CREATE INDEX IF NOT EXISTS customer_membership_tiers_updated_at_customer_unique_id_idx
+    ON customer_membership_tiers (updated_at, customer_unique_id COLLATE "C");
+CREATE INDEX IF NOT EXISTS subscription_payments_updated_at_customer_unique_id_billing_sequence_idx
+    ON subscription_payments (updated_at, customer_unique_id COLLATE "C", billing_sequence);
 CREATE INDEX IF NOT EXISTS products_updated_at_product_id_idx
     ON products (updated_at, product_id COLLATE "C");
 CREATE INDEX IF NOT EXISTS sellers_updated_at_seller_id_idx

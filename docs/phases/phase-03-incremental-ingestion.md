@@ -515,7 +515,7 @@ uv run python -m src.rebaseline --seeded-at 2026-09-03T00:00:00Z --confirm
 Phase의 Ingestion 계층을 재작업한다.
 
 - 7개 Table 프레임워크를 9개로 확장한다. `customer_memberships`가
-  `customer_subscriptions`와 `customer_loyalty_tiers`로 나뉘고 `subscription_payments`가
+  `customer_subscriptions`와 `customer_membership_tiers`로 나뉘고 `subscription_payments`가
   새로 생긴다.
 - `src/ingestion/tables.py`의 Cursor·PK·Arrow Schema에 세 테이블을 추가한다.
   `subscription_payments`의 PK는 `(customer_unique_id, billing_sequence)`, Cursor는

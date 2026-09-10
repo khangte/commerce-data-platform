@@ -29,7 +29,7 @@
 
 [테이블 분리 비교](membership-table-split-comparison.md)에서 **B안(Source만 분리)**으로
 확정했다. 두 속성은 별도 Source Table로 나누고 Warehouse에서 하나의 `dim_customer`로
-합친다. 기존 `customer_memberships`는 `customer_subscriptions`와 `customer_loyalty_tiers`
+합친다. 기존 `customer_memberships`는 `customer_subscriptions`와 `customer_membership_tiers`
 둘로 대체된다.
 
 분리 근거는 CHECK 제약 오염이다. 한 테이블에 두 축을 두면 등급 변경이 `updated_at`을
@@ -107,7 +107,7 @@ customer_subscriptions  -- 사람(customer_unique_id)당 현재 구독 상태 1�
 ├── created_at               NOT NULL
 └── updated_at               NOT NULL    -- 증분 Cursor, 구독 축 변경 시각
 
-customer_loyalty_tiers  -- 사람(customer_unique_id)당 현재 등급 1행
+customer_membership_tiers  -- 사람(customer_unique_id)당 현재 등급 1행
 ├── customer_unique_id       PK
 ├── membership_tier          NOT NULL DEFAULT 'BRONZE'
 ├── created_at               NOT NULL
@@ -132,7 +132,7 @@ SCD2 이력으로 복원한다.
 ## 4. Warehouse 모델과 분석 계약
 
 Staging은 Source마다 하나씩 둔다. `stg_customer_subscriptions`와
-`stg_customer_loyalty_tiers`가 각 축을 표준화한다. 두 축은 `int_customer_history`에서
+`stg_customer_membership_tiers`가 각 축을 표준화한다. 두 축은 `int_customer_history`에서
 하나의 시간축으로 병합되며, 어느 한 축만 새 관측이 있으면 다른 축은 직전 값을 이어받는다.
 이 단계가 두 Source의 독립적인 Watermark로 생기는 Late Arrival 부분 결측을 흡수한다.
 
@@ -173,7 +173,7 @@ cancel_requested_at
 | 순서 | 대상             | 변경 내용                                                                                                                                                    | 상태   |
 | ---- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------ |
 | 1    | PRD·Phase 문서   | 용어, 상태 전이, Source Schema, 인수 조건과 BI 요구사항을 동기화한다. PRD v1.8에 반영했다.                                                                   | 완료   |
-| 2    | Source DDL       | `customer_memberships`를 `customer_subscriptions`와 `customer_loyalty_tiers`로 나누고 `subscription_payments`를 신설한다. v1.6 등급 이관 DO 블록을 삭제한다. | 재작업 |
+| 2    | Source DDL       | `customer_memberships`를 `customer_subscriptions`와 `customer_membership_tiers`로 나누고 `subscription_payments`를 신설한다. v1.6 등급 이관 DO 블록을 삭제한다. | 재작업 |
 | 3    | Seed             | 기존 등급 계산을 대문자 `membership_tier`에 적용하고 모든 Seed 고객을 `NON_MEMBER`로 초기화한다. 두 테이블에 나눠 적재한다.                                  | 재작업 |
 | 4    | Generator        | 구독 상태 전이와 실적 등급 갱신을 분리하고, 시각 기반 만료 스캔과 자동결제를 만든다. 전이·시각 단조 증가·재가입 판별 테스트를 추가한다.                      | 재작업 |
 | 5    | Ingestion·Bronze | Arrow Schema, 상태 도메인 검증, Schema Version, Catalog 검증을 새 컬럼에 맞춘다.                                                                             | 미진행 |

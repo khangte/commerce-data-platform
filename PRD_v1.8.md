@@ -20,7 +20,7 @@ v1.8은 v1.7의 모든 계약을 유지하면서 사람 단위 멤버십을 구�
 - 주문 횟수 기반 단일 `membership_level`을 `subscription_status`(구독 생명주기)와
   `membership_tier`(거래 실적 등급)로 분리한다. 두 속성은 변경 원인이 독립적이다.
 - 두 축을 별도 Source Table로 나눈다. `customer_memberships`는 `customer_subscriptions`와
-  `customer_loyalty_tiers`로 대체된다. Warehouse는 두 Staging을 `int_customer_history`에서
+  `customer_membership_tiers`로 대체된다. Warehouse는 두 Staging을 `int_customer_history`에서
   병합해 단일 `dim_customer`를 유지한다. 분리 근거와 대안 비교는 5.5에 기록한다.
 - 구독 주기를 1개월로 고정하고 자동결제를 도입한다. 결제 1건은 상태가 아니라 사건이므로
   `subscription_payments` Source Table과 `fact_subscription_payments`로 관리한다.
@@ -294,7 +294,7 @@ Mutable Row 변경 규칙:
 | `olist_sellers_dataset.csv`        | `sellers`               |
 
 Seed는 위 6개 CSV만 PostgreSQL Source Table로 적재한다. `customers`에서 분리한
-`customer_subscriptions`와 `customer_loyalty_tiers`, 그리고 구독 자동결제 이력을 담는
+`customer_subscriptions`와 `customer_membership_tiers`, 그리고 구독 자동결제 이력을 담는
 `subscription_payments`를 더해 Source Table은 9개다. `subscription_payments`는 Seed 대상이
 아니며 Generator가 채운다.
 
@@ -323,7 +323,7 @@ Seed Loader는 분석용 표준화를 수행하지 않는다.
 | -------------- | ---------------------------------------------- | ------------------------------- |
 | customers      | `created_at`                                   | 불변 주문 계정 증분 수집       |
 | customer_subscriptions | `subscription_status`, 구독 시각 5개, `created_at`, `updated_at` | 사람 단위 구독 생명주기와 증분 수집 |
-| customer_loyalty_tiers | `membership_tier`, `created_at`, `updated_at` | 사람 단위 거래 실적 등급과 증분 수집 |
+| customer_membership_tiers | `membership_tier`, `created_at`, `updated_at` | 사람 단위 거래 실적 등급과 증분 수집 |
 | subscription_payments | `payment_status`, `payment_value`, 청구 기간, `created_at`, `updated_at` | 구독 자동결제 이력과 증분 수집 |
 | products       | `created_at`, `updated_at`                     | 증분 수집                       |
 | sellers        | `created_at`, `updated_at`                     | 증분 수집                       |
@@ -350,7 +350,7 @@ Seed Loader는 분석용 표준화를 수행하지 않는다.
 | ---------------- | ---------------------------------------------------------------------------------------- |
 | customers        | 연결 주문의 최초 `order_purchase_timestamp` → `created_at`                                |
 | customer_subscriptions | 사람별 최소 계정 `created_at` → `created_at`, `NON_MEMBER`·구독 시각 `NULL`, `--seeded-at` → `updated_at` |
-| customer_loyalty_tiers | 사람별 최소 계정 `created_at` → `created_at`, `--seeded-at` → `updated_at` |
+| customer_membership_tiers | 사람별 최소 계정 `created_at` → `created_at`, `--seeded-at` → `updated_at` |
 | subscription_payments | Seed 없음. Generator가 자동결제 시점에만 생성 |
 | orders           | `order_purchase_timestamp` → `created_at`, `--seeded-at` → `updated_at`                  |
 | order_items      | 연결 주문의 `order_purchase_timestamp` → `created_at`                                    |
@@ -359,7 +359,7 @@ Seed Loader는 분석용 표준화를 수행하지 않는다.
 
 Seed는 Olist 원본에 구독 이력이 없으므로 모든 사람을 `customer_subscriptions`에
 `subscription_status='NON_MEMBER'`와 구독 관련 시각 `NULL`로 기록한다. `membership_tier`는
-`customer_unique_id`별 `order_status='delivered'` 주문 수로 계산해 `customer_loyalty_tiers`에
+`customer_unique_id`별 `order_status='delivered'` 주문 수로 계산해 `customer_membership_tiers`에
 정확히 한 행으로 기록한다. `subscription_payments`는 Seed 대상이 아니며 Generator의
 자동결제 시점에만 행이 생긴다.
 
@@ -466,7 +466,7 @@ PAYMENT_FAILED    payment_failed_at NOT NULL, benefit_ends_at = payment_failed_a
 TRIAL             trial_ends_at NOT NULL
 ```
 
-#### customer_loyalty_tiers
+#### customer_membership_tiers
 
 | Column               | Type        | Constraint                                            |
 | -------------------- | ----------- | ----------------------------------------------------- |
@@ -581,7 +581,7 @@ refunded
 ```text
 customers       (created_at, customer_id)
 customer_subscriptions (updated_at, customer_unique_id)
-customer_loyalty_tiers (updated_at, customer_unique_id)
+customer_membership_tiers (updated_at, customer_unique_id)
 subscription_payments  (updated_at, customer_unique_id, billing_sequence)
 products        (updated_at, product_id)
 sellers         (updated_at, seller_id)
@@ -728,7 +728,7 @@ Source는 현재 상태만 보관하므로 성공 수집 사이의 중간 변경
 | -------------- | -------------------------------------------- |
 | customers      | `(created_at, customer_id)`                  |
 | customer_subscriptions | `(updated_at, customer_unique_id)`     |
-| customer_loyalty_tiers | `(updated_at, customer_unique_id)`     |
+| customer_membership_tiers | `(updated_at, customer_unique_id)`     |
 | subscription_payments  | `(updated_at, customer_unique_id, billing_sequence)` |
 | products       | `(updated_at, product_id)`                   |
 | sellers        | `(updated_at, seller_id)`                    |
@@ -1285,7 +1285,7 @@ marts
 ```text
 stg_customers_current
 stg_customer_subscriptions
-stg_customer_loyalty_tiers
+stg_customer_membership_tiers
 stg_subscription_payments
 stg_products
 stg_sellers
@@ -1307,13 +1307,13 @@ Customer Mapping:
 | `customer_subscriptions` 구독 시각 | `stg_customer_subscriptions`의 같은 이름 시각 |
 | `customer_subscriptions.created_at` | `stg_customer_subscriptions.created_at` |
 | `customer_subscriptions.updated_at` | `stg_customer_subscriptions.updated_at` |
-| `customer_loyalty_tiers.membership_tier` | `stg_customer_loyalty_tiers.membership_tier` |
-| `customer_loyalty_tiers.updated_at` | `stg_customer_loyalty_tiers.updated_at` |
+| `customer_membership_tiers.membership_tier` | `stg_customer_membership_tiers.membership_tier` |
+| `customer_membership_tiers.updated_at` | `stg_customer_membership_tiers.updated_at` |
 | `subscription_payments.payment_value` | `stg_subscription_payments.payment_value` |
 
 `stg_customers_current`는 불변 계정의 `source_customer_id` 1행과 해당 주문 주소 스냅샷을
 보존한다. 사람 단위 구독 관측과 등급 관측은 각각 `customer_subscriptions`와
-`customer_loyalty_tiers` Bronze 누적 행에서 별도로 만든다. 두 축은
+`customer_membership_tiers` Bronze 누적 행에서 별도로 만든다. 두 축은
 `int_customer_history`에서 하나의 시간축으로 병합해 단일 `dim_customer`를 만든다.
 
 Order Mapping:
@@ -1375,7 +1375,7 @@ int_customer_history
 int_affected_business_dates
 ```
 
-`int_customer_history`는 `stg_customer_subscriptions`와 `stg_customer_loyalty_tiers`를
+`int_customer_history`는 `stg_customer_subscriptions`와 `stg_customer_membership_tiers`를
 하나의 시간축으로 병합한다. 두 축의 관측 시각이 서로 다르므로 각 시점에서 다른 축의 그
 시점 유효 값을 이어받는다. 두 Source의 증분 Watermark가 독립적이라 한쪽만 새 데이터가
 도착하는 경우가 정상적으로 발생하며, 이 단계가 그 부분 결측을 흡수한다. Fact까지 번지지
