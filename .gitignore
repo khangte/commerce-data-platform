@@ -246,3 +246,4 @@ airflow/logs/*
 !airflow/logs/.gitkeep
 dbt/target/
 dbt/dbt_packages/
+dbt/data/
