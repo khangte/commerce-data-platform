@@ -22,3 +22,17 @@ models:
         data_tests: [not_null]
       - name: payment_sequence
         data_tests: [not_null]
+
+  - name: fact_subscription_payments
+    description: 고객별 청구 순번 Grain의 구독 결제 Fact다. 복합 PK는 tests/fact_subscription_payments_unique.sql이 검증한다.
+    columns:
+      - name: customer_unique_id
+        data_tests: [not_null]
+      - name: billing_sequence
+        data_tests: [not_null]
+      - name: payment_status
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [completed, failed]

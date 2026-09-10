@@ -19,6 +19,20 @@ Ingestion과 Warehouse의 품질 책임을 명확히 분리하고, 품질 검증
 
 Phase 3과 5에서 각 계층의 기본 테스트를 구현하고, 이 Phase에서는 이를 실행 가능한 통합 Gate와 Publish 경계로 완성한다.
 
+## 구독·등급 전환 Step 7 반영 완료
+
+전환 계획 7단계의 Warehouse 품질 검증은 Phase 5 dbt 프로젝트에 먼저 반영했다. 이 작업은
+Phase 6의 Publish Workflow와 E2E 품질 Gate를 완료했다는 뜻은 아니다.
+
+| 경로 | 변경 내용 |
+| ---- | --------- |
+| `dbt/models/marts/dimensions/schema.yml` | 고객 SCD2 Key·상태 도메인·등급 도메인·필수값 테스트를 추가했다. |
+| `dbt/tests/dim_customer_*.sql` | SCD2 구간 비중복, 고객별 Current Version 1건, 허용 상태 전이, 재가입 측정값, 등급 하락 금지를 검증한다. |
+| `dbt/tests/fact_subscription_payments_missing_customer_key.sql` | 구독 결제 Fact의 고객 SCD2 Version 누락을 검증한다. |
+
+- [x] 구독 상태 전이·SCD2 구간 비중복·재가입·등급 규칙을 dbt Test로 검증한다.
+- [ ] Publish 경계, 실패 Build 격리와 마지막 성공 Mart 보존은 `P6-13` 이후 작업으로 남는다.
+
 ## 선행 조건
 
 - Phase 3의 Quarantine과 Batch Failure 정책이 자동 테스트된다.

@@ -193,10 +193,12 @@ Membership Grain 분리 후 `customers`는 계정 불변값과 `created_at`만 �
 - [x] 구독 생명주기 요구사항(주기 1개월, 자동결제, 유예 7일, 만료 스캔)을 확정했다.
 - [x] 재기준화 후 새 Seed로 기준선을 만드는 전환 방식을 확정했다. 기존 등급 이관 Migration은
   만들지 않는다.
-- [ ] Source DDL, Seed, Generator를 B안 두 테이블 구조로 구현한다. 통합 테이블(A안)로
+- [x] Source DDL, Seed, Generator를 B안 두 테이블 구조로 구현했다. 통합 테이블(A안)로
   먼저 작성한 코드를 [전환 계획](../architecture/02-subscription-membership-transition-plan.md)
-  5절 순서에 따라 재작업한다.
-- [ ] 증분 수집 Schema, dbt SCD2 Hash, BI 측정값은 후속 Phase에서 갱신한다.
+  5절 순서에 따라 재작업했다.
+- [x] 증분 수집 Schema, dbt SCD2 Hash, BI 지표 모델을 후속 Phase에서 갱신하고, `2026-09-10`에
+  Source·Bronze 재기준화를 완료했다. 결제 이력이 없는 기준 시점의 `subscription_payments`는
+  0행 `SUCCESS_NO_DATA`로 정상 완료한다.
 
 ## Definition of Done
 

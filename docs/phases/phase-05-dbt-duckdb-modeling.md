@@ -379,7 +379,7 @@ Watermark는 dbt 실패로 되돌리지 않는다. 컨테이너에서 `dbt` CLI�
 - dbt Project/Profile Template와 DuckDB Warehouse
 - Catalog-based Bronze Source Macro
 - Staging/Intermediate Model
-- 4개 Dimension과 3개 Fact
+- 4개 Dimension과 4개 Fact
 - SCD2와 Temporal Join
 - Affected Key/Date 기반 Incremental 재계산
 - Mapping, Grain, Measure, SCD2, Full Refresh 비교 Test
@@ -400,47 +400,59 @@ Watermark는 dbt 실패로 되돌리지 않는다. 컨테이너에서 `dbt` CLI�
 | `dbt/tests/stg_source_mapping.sql`             | Bronze Current 행과 Staging의 Prefix 제거, Timestamp Rename, 상태 표준화, 고객 키·기간 경계를 행 단위로 대조한다.                                                                                |
 | `dbt/README.md`                                | 루트 기준 dbt 실행 명령과 Catalog Macro의 입력 경계를 기록했다.                                                                                                                               |
 | `tests/test_dbt_catalog_macro.py`               | 빈 Catalog 처리, Commit된 명시적 Parquet 목록 생성, 미지원 Schema Version의 dbt 사전 차단을 독립 DuckDB로 검증한다.                                                                            |
-| `dbt/macros/bronze_source.sql` | 수정 | 7번째 Source인 `customer_memberships`와 분리된 계정/멤버십 Schema를 Bronze Macro에 등록했다. |
-| `dbt/models/staging/stg_customers_current.sql` | 수정 | 불변 계정 주소와 `created_at`만 주문 결합 Grain으로 노출하도록 축소했다. |
-| `dbt/models/staging/stg_customer_observations.sql` | 수정 | 사람 단위 Membership Bronze 관측만으로 SCD2 입력과 단일 속성 Hash를 만들도록 변경했다. |
-| `dbt/models/intermediate/int_customer_history.sql` | 수정 | 주소 추적을 제거하고 Membership Version 구간만 계산하도록 변경했다. |
-| `dbt/models/intermediate/int_orders_enriched.sql` | 수정 | 계정 주소를 `source_customer_id`로 직접 결합해 주문 스냅샷으로 보존하도록 변경했다. |
-| `dbt/models/marts/dimensions/dim_customer.sql` | 수정 | 사람 Membership Version Dimension에서 `city`·`state`를 제거했다. |
-| `dbt/models/staging/schema.yml`, `dbt/tests/stg_source_mapping.sql` | 수정 | 분리된 계정/멤버십 Mapping과 검증 계약을 반영했다. |
-| `docs/phases/phase-05-dbt-duckdb-modeling.md` | 수정 | 계정 주소 스냅샷과 사람 단위 Membership SCD2의 Grain 분리를 기록했다. |
+| `dbt/macros/bronze_source.sql` (수정) | `customer_subscriptions`, `customer_membership_tiers`, `subscription_payments`를 포함한 9개 Source의 Catalog 기반 Relation과 빈 Schema를 등록했다. |
+| `dbt/models/staging/stg_customers_current.sql` (수정) | 불변 계정 주소와 `created_at`만 주문 결합 Grain으로 노출하도록 축소했다. |
+| `dbt/models/staging/stg_customer_subscription_observations.sql`, `dbt/models/staging/stg_customer_tier_observations.sql` (생성·수정) | 사람 단위 구독 상태·거래 실적 등급 Bronze 관측을 축별 Hash로 중복 제거한다. |
+| `dbt/models/staging/stg_subscription_payments.sql` (생성) | 고객별 청구 순번 Grain의 최신 구독 결제를 노출한다. |
+| `dbt/models/intermediate/int_customer_history.sql` (수정) | 두 축의 관측 시각을 as-of 방식으로 병합해 SCD2 Version, 재가입 횟수와 재가입 시각을 계산한다. |
+| `dbt/models/intermediate/int_orders_enriched.sql` (수정) | 계정 주소를 `source_customer_id`로 직접 결합해 주문 스냅샷으로 보존하도록 변경했다. |
+| `dbt/models/marts/dimensions/dim_customer.sql` (수정) | 사람 단위 구독 상태·거래 실적 등급 SCD2 Version과 재가입 측정값을 Dimension에 보존한다. |
+| `dbt/models/marts/facts/fact_subscription_payments.sql` (생성) | 구독 결제 시각과 고객 SCD2 구간을 Temporal Join해 결제 당시 상태·등급 분석 키를 연결한다. |
+| `dbt/models/staging/schema.yml`, `dbt/models/marts/facts/schema.yml`, `dbt/tests/*.sql` (수정·생성) | 축별 상태 도메인, 동일 관측 시각의 상충 Hash, 구독 결제 Source→Staging Mapping, 구독 결제 Fact 복합 Grain을 검증한다. |
+| `dbt/models/marts/dimensions/schema.yml`, `dbt/tests/dim_customer_*.sql` (생성) | 고객 SCD2 키·도메인, 구간 비중복, 고객별 Current Version 1건, 허용 구독 상태 전이, 재가입 측정값과 등급 하락 금지를 검증한다. |
+| `dbt/tests/fact_subscription_payments_missing_customer_key.sql` (생성) | 구독 결제가 결제 시점의 고객 SCD2 Version과 결합되지 않은 경우를 차단한다. |
+| `dbt/models/marts/metrics/*.sql`, `dbt/models/marts/metrics/schema.yml`, `dbt/dbt_project.yml` (생성·수정) | 구독 퍼널·결제 결과·주문 시점 등급 성과 지표 View와 `metrics` Schema Materialization을 추가했다. |
+| `docs/phases/phase-05-dbt-duckdb-modeling.md` (수정) | 구독·등급 분리 구현과 검증 보강 내역을 실제 파일명 기준으로 기록했다. |
 
 ## Definition of Done
 
 - [ ] 모든 `P5-*` Task가 완료됐다.
 - [ ] dbt가 COMMITTED Catalog Object만 읽는다.
 - [ ] Staging Naming/상태 Mapping이 100% 일치한다.
-- [ ] 모든 Mart의 Grain과 Unique Key가 검증된다. Dimension 4개와 Fact 3개를 모두 포함한다.
+- [ ] 모든 Mart의 Grain과 Unique Key가 검증된다. Dimension 4개와 Fact 4개를 모두 포함한다.
 - [ ] Phase 4 Warehouse DAG의 `dbt_build` 호출 경계가 활성화된다.
 - [ ] Customer SCD2 구간 중첩이 0이고 Current가 정확히 1개다.
 - [ ] 주문이 구매 시점에 유효한 Customer Version을 참조한다.
 - [ ] Incremental과 Full Refresh의 Logical Hash가 같다.
 - [ ] AC-01, 09, 10, 11, 12, 19, 22가 통과한다.
 
-## 구독·등급 전환 반영 범위
+## 구독·등급 전환 반영 완료
 
-이 Phase는 미완료 상태다. PRD v1.8의 구독·등급 분리를 처음부터 반영해 구현한다.
+PRD v1.8의 구독·등급 분리를 dbt 모델과 데이터 테스트에 반영했다. 이 완료 표시는 전환 계획
+6단계에 해당하며, 재기준화와 실제 Catalog `dbt build`는 `2026-09-10` 전환 계획 8단계에서
+완료했다. Phase 전체 Definition of Done은 별도 기준으로 관리한다.
 
-- `stg_customer_observations` 하나 대신 `stg_customer_subscriptions`와
-  `stg_customer_membership_tiers` 둘을 만든다. 각 축의 Bronze 관측을 따로 표준화하고 축별
-  `attribute_hash`를 만든다.
-- `int_customer_history`는 두 Staging을 하나의 시간축으로 병합한다. 두 축의 관측 시각이
+- [x] `stg_customer_observations` 하나를 `stg_customer_subscription_observations`와
+  `stg_customer_tier_observations`로 나누고, 축별 Bronze 관측을 표준화해 각각의
+  `attribute_hash`를 만들었다.
+- [x] `int_customer_history`는 두 Staging을 하나의 시간축으로 병합한다. 두 축의 관측 시각이
   서로 다르므로 각 시점에서 다른 축의 그 시점 유효 값을 이어받는다. 두 Source의 증분
-  Watermark가 독립적이라 생기는 Late Arrival 부분 결측을 이 단계가 흡수한다. 병합 방식은
-  [비교 문서](../architecture/04-membership-table-split-comparison.md) 3.5.2절의 두 후보 중
-  하나를 SQL 작성 시 정한다.
-- `dim_customer` SCD2 속성 Hash는 `subscription_status`, `membership_tier`,
+  Watermark가 독립적이라 생기는 Late Arrival 부분 결측을 as-of 병합으로 흡수한다.
+- [x] `dim_customer` SCD2 속성 Hash는 `subscription_status`, `membership_tier`,
   `trial_ends_at`, `benefit_ends_at`, `payment_failed_at`, `cancel_requested_at`으로
   만든다. `next_billing_at`은 매월 갱신되지만 상태 변화가 아니므로 제외한다.
-- `int_customer_history`에서 `lag(subscription_status)` 윈도우로 `CHURNED → TRIAL/ACTIVE`
+- [x] `int_customer_history`에서 `lag(subscription_status)` 윈도우로 `CHURNED → TRIAL/ACTIVE`
   전이를 재가입으로 표시하고 `rejoin_count`, `rejoined_at`을 파생한다.
-- `fact_subscription_payments`를 추가한다. 결제 시각으로 `dim_customer`와 Temporal Join해
+- [x] `fact_subscription_payments`를 추가했다. 결제 시각으로 `dim_customer`와 Temporal Join해
   결제 당시의 구독 상태와 등급을 함께 분석할 수 있게 한다.
-- `dbt/macros/bronze_source.sql`에 세 Source를 등록한다.
+- [x] `dbt/macros/bronze_source.sql`에 세 Source를 등록하고, Source→Staging Mapping 및
+  구독 결제 Fact 복합 Grain 테스트를 추가했다.
+- [x] 같은 사람·같은 원천 변경 시각에 축별 속성 Hash가 상충하는지 Staging 관측에서 직접
+  검증해 비결정적인 SCD2 병합을 차단한다.
+- [x] SCD2 구간 비중복·Current Version 1건, 허용 구독 상태 전이, 재가입 측정값, 거래 실적
+  등급 하락 금지와 구독 결제의 고객 Version 결합을 dbt 데이터 테스트로 검증한다.
+- [x] BI가 Mart만 읽도록 구독 퍼널, 구독 결제 결과, 주문 시점 등급 성과 View를 `metrics`
+  Schema에 제공한다. Metabase 연결과 Dashboard 구성은 Phase 9 범위다.
 
 세부 순서는 [전환 계획](../architecture/02-subscription-membership-transition-plan.md) 5절
 6단계에 있다.

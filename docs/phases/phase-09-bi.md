@@ -18,6 +18,23 @@ Metabase에서 검증 완료된 Mart만 사용해 Sales, Product, Customer Dashb
 - Metabase/DuckDB 연결이 불안정하면 PostgreSQL Serving DB 대안을 검증하고 ADR로 결정한다.
 - Dashboard 재현에 필요한 Query, Filter, Metric 정의를 문서화한다.
 
+## 구독·등급 전환 Step 7 사전 지표
+
+Metabase Dashboard 구현 전에도 BI가 Source·Bronze가 아닌 Mart만 읽도록, 아래 `metrics`
+Schema View를 제공한다. 이는 Phase 9의 연결·Dashboard·스크린샷 완료를 뜻하지 않는다.
+
+| View | Grain | 용도 |
+| ---- | ----- | ---- |
+| `rpt_subscription_funnel_daily` | 구독 상태 진입일 1행 | 체험 시작, 활성화, 결제 실패, 해지 신청, 이탈, 재가입 퍼널 |
+| `rpt_subscription_payment_outcomes_daily` | 청구 시작일·결제 상태 1행 | 구독 결제 성공·실패 건수와 결제 금액 |
+| `rpt_membership_tier_performance` | 주문 시점 등급·구독 상태 1행 | 등급별 주문 수, GMV, Delivered AOV |
+
+`rpt_membership_tier_performance`는 주문 시점 SCD2 속성을 사용한다. 현재 고객 분포는
+`dim_customer`의 `is_current = true`만 사용해야 하며, 두 관점을 같은 지표로 합치지 않는다.
+
+- [x] 전환 계획 7단계의 구독 퍼널·결제 실패·해지·재가입·등급별 지표 View를 구현했다.
+- [ ] Metabase Connection과 Sales/Product/Customer Dashboard는 Phase 9 구현 순서에서 진행한다.
+
 ## 선행 조건
 
 - Phase 6의 Published Mart 품질 Gate가 통과한다.

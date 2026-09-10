@@ -26,6 +26,10 @@ tiers_source as (
     select *
     from {{ current_bronze_records('customer_membership_tiers', ['customer_unique_id']) }}
 ),
+subscription_payments_source as (
+    select *
+    from {{ current_bronze_records('subscription_payments', ['customer_unique_id', 'billing_sequence']) }}
+),
 mapping_failures as (
     select 'products' as source_table, products_source.product_id as business_key
     from products_source
@@ -122,6 +126,29 @@ mapping_failures as (
         or stg_tier_obs.membership_tier is distinct from
             {{ standardized_membership_tier('tiers_source.membership_tier') }}
         or stg_tier_obs.created_at is distinct from tiers_source.created_at
+
+    union all
+
+    select
+        'subscription_payments' as source_table,
+        subscription_payments_source.customer_unique_id
+            || ':' || subscription_payments_source.billing_sequence as business_key
+    from subscription_payments_source
+    left join {{ ref('stg_subscription_payments') }} as stg_subscription_payments
+        on subscription_payments_source.customer_unique_id = stg_subscription_payments.customer_id
+        and subscription_payments_source.billing_sequence = stg_subscription_payments.billing_sequence
+    where
+        stg_subscription_payments.customer_id is null
+        or stg_subscription_payments.payment_status
+            is distinct from subscription_payments_source.payment_status
+        or stg_subscription_payments.payment_value
+            is distinct from subscription_payments_source.payment_value
+        or stg_subscription_payments.billing_period_start
+            is distinct from subscription_payments_source.billing_period_start
+        or stg_subscription_payments.billing_period_end
+            is distinct from subscription_payments_source.billing_period_end
+        or stg_subscription_payments.created_at is distinct from subscription_payments_source.created_at
+        or stg_subscription_payments.updated_at is distinct from subscription_payments_source.updated_at
 
     union all
 

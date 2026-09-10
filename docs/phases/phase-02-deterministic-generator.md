@@ -200,14 +200,18 @@ AC-20과 AC-21의 전체 E2E 판정은 Phase 3의 Ingestion과 결합해 완료�
 | `tests/generator/test_customers.py`, `tests/generator/test_scenarios.py` | 수정 | 거래 실적 등급 경계, 구독 상태 전이, 상태별 시각, 해지 후 재가입을 검증했다. |
 | `docs/phases/phase-02-deterministic-generator.md`             | 수정      | P2-01~22와 구독 상태·거래 실적 등급 Generator 전환, 파일별 변경 요약을 기록했다.                                 |
 
-### 구독·등급 Generator 재작업
+### 구독·등급 Generator 재작업 완료
 
 구독 상태 전이와 등급 갱신 로직은 통합 테이블(A안) 기준으로 먼저 작성했다. 이후
 [비교](../architecture/04-membership-table-split-comparison.md)를 거쳐 B안(Source만 분리)으로
 확정했으므로, 저장 대상을 `customer_subscriptions`와 `customer_membership_tiers` 두 테이블로
-나누고 CHECK 제약 위치를 옮긴다. 상태 전이 규칙, 만료 스캔 순서, Seed 기준선 로직은 그대로
-쓴다. `subscription_payments` 자동결제 기록은 이 재작업에서 새로 만든다. 세부 순서는
+나누고 CHECK 제약 위치를 옮겼다. 상태 전이 규칙, 만료 스캔 순서, Seed 기준선 로직은 그대로
+유지했다. `subscription_payments` 자동결제 기록은 이 재작업에서 새로 만들었다. 세부 순서는
 [전환 계획](../architecture/02-subscription-membership-transition-plan.md) 5절에 있다.
+
+- [x] 구독 상태와 거래 실적 등급을 별도 Source Table에 저장한다.
+- [x] 시각 기반 만료 스캔과 자동결제를 실행한다.
+- [x] 허용 상태 전이, 변경 시각 단조 증가, 해지 후 재가입을 단위 테스트로 검증한다.
 
 ## Definition of Done
 
