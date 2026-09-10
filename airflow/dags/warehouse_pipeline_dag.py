@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import subprocess
 import tempfile
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -28,6 +29,7 @@ from src.ingestion.verification import verify_bronze_commit
 
 CATALOG_PATH = PROJECT_ROOT / "data" / "warehouse" / "warehouse.duckdb"
 LOCAL_DIRECTORY = Path(tempfile.gettempdir()) / "commerce-data-platform" / "warehouse-pipeline-dag"
+DBT_PROJECT_DIR = PROJECT_ROOT / "dbt"
 
 DEFAULT_TASK_ARGS = {
     "retries": 2,
@@ -171,13 +173,31 @@ with DAG(
             raise
         return {"catalog_entry_count": len(entries)}
 
+    @task(trigger_rule="all_success")
+    def dbt_build_task(catalog: dict) -> dict:
+        """Catalog 동기화가 성공한 뒤에만 dbt build를 실행한다. dbt 실패는 이미 Commit된 Bronze와 Watermark를 되돌리지 않는다."""
+        process = subprocess.run(
+            ["dbt", "build", "--project-dir", str(DBT_PROJECT_DIR), "--profiles-dir", str(DBT_PROJECT_DIR)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if process.returncode != 0:
+            raise AirflowFailException(
+                f"dbt build failed (exit {process.returncode}):\n{process.stdout}\n{process.stderr}"
+            )
+        return {"dbt_build_status": "SUCCESS"}
+
     @task(trigger_rule="all_done")
-    def publish_run_summary(run_info: dict, verification: dict | None, catalog: dict | None) -> dict:
+    def publish_run_summary(
+        run_info: dict, verification: dict | None, catalog: dict | None, dbt_build: dict | None
+    ) -> dict:
         """DagRun 결과를 작은 JSON Summary로 로그와 XCom에 남긴다."""
         summary = {
             "batch_id": run_info["batch_id"],
             "verified_table_count": verification["verified_table_count"] if verification else 0,
             "catalog_entry_count": catalog["catalog_entry_count"] if catalog else 0,
+            "dbt_build_status": dbt_build["dbt_build_status"] if dbt_build else "SKIPPED",
         }
         print(summary)
         return summary
@@ -190,7 +210,8 @@ with DAG(
     release_task = release_source_snapshot_lease(lease_token)
     verification = verify_bronze_commit_task(run_info, extract_results)
     catalog = sync_bronze_catalog_task(verification)
+    dbt_build = dbt_build_task(catalog)
 
     extract_results >> release_task
-    extract_results >> verification >> catalog
-    publish_run_summary(run_info, verification, catalog)
+    extract_results >> verification >> catalog >> dbt_build
+    publish_run_summary(run_info, verification, catalog, dbt_build)
