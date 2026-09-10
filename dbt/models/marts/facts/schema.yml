@@ -1,0 +1,24 @@
+version: 2
+
+models:
+  - name: fact_orders
+    description: 주문 Grain Fact다. Item/Payment는 이미 주문 단위로 집계되어 반영되어 있다.
+    columns:
+      - name: order_id
+        data_tests: [not_null, unique]
+
+  - name: fact_order_items
+    description: 주문 Line Grain Fact다. 복합 PK는 tests/fact_order_items_unique.sql이 검증한다.
+    columns:
+      - name: order_id
+        data_tests: [not_null]
+      - name: order_item_id
+        data_tests: [not_null]
+
+  - name: fact_payments
+    description: 결제 Sequence Grain Fact다. 복합 PK는 tests/fact_payments_unique.sql이 검증한다.
+    columns:
+      - name: order_id
+        data_tests: [not_null]
+      - name: payment_sequence
+        data_tests: [not_null]
