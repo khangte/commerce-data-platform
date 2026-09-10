@@ -6,7 +6,7 @@
 >
 > 선행 Phase: [Phase 1. Source Environment](phase-01-source-environment.md)
 >
-> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.7](../../PRD_v1.7.md)
+> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.8](../../PRD_v1.8.md)
 
 ## 목표
 
@@ -16,7 +16,7 @@
 
 - Business ID는 UUIDv5 또는 결정적 Hash로 생성한다.
 - `customer_unique_id`는 동일 인물의 Business Key, `customer_id`는 주문 시점 Customer Record다.
-- 기존 가변 Membership 행의 새 `updated_at`은 직전 값보다 반드시 크다. 계정 행은 생성 후 불변이다.
+- 기존 가변 고객 구독·등급 행의 새 `updated_at`은 직전 값보다 반드시 크다. 계정 행은 생성 후 불변이다.
 - Late Arrival은 과거 Business Event Time과 현재 원천 변경 시각으로 표현한다.
 - Order/Item/Payment 묶음은 하나의 Transaction으로 생성한다.
 - Warehouse가 원천 데이터 동시성 잠금을 보유하는 동안 Generator는 Source를 변경하지 않는다.
@@ -104,10 +104,17 @@ Payment: pending → completed → refunded
 - [x] Lease 보호 아래 결정적 Order Bundle 생성과 `generator_runs` 결과 기록
 - [x] 동일 성공 입력의 결과 재사용과 Warehouse의 원천 데이터 동시성 잠금 중 Source 변경 0 검증
 
-CLI가 직접 실행하는 Profile은 `default`, `late-arrival`, `membership-change`다.
-`membership-change`는 bronze 또는 silver 사람 한 명을 결정적으로 골라 사람 단위
-`customer_memberships` 행만 갱신한다. `delayed-payment`는 Phase 3 검증에서도 조합할 수 있는
-재사용 가능한 Source Scenario Fixture로 제공한다.
+CLI가 직접 실행하는 Profile은 `default`, `late-arrival`, `membership-change`,
+`subscription-trial`, `subscription-active`, `subscription-payment-failed`,
+`subscription-cancel-requested`, `subscription-churned`, `subscription-rejoined`다.
+`membership-change`는 `BRONZE` 또는 `SILVER` 사람 한 명의 `customer_loyalty_tiers` 행만
+갱신한다. 구독 Profile은 상태별로 허용된 현재 상태의 사람 한 명을 결정적으로 골라
+`customer_subscriptions` 행을 갱신한다. `subscription-active`의 정기 결제와 `subscription-trial`
+종료 시점의 결제는 `subscription_payments`에 행을 추가한다. `PAYMENT_FAILED`는 7일 유예
+종료 시각을 만들고, `subscription-churned`는 해당 시각 이후에만 실행할 수 있다.
+`CHURNED → ACTIVE`는 재가입 전이로 보존한다. 시각 기반 만료 스캔은 매 실행마다 돌며
+`benefit_ends_at` 경과 행을 `CHURNED`로 전이한다. `delayed-payment`는 Phase 3 검증에서도
+조합할 수 있는 재사용 가능한 Source Scenario Fixture로 제공한다.
 
 ## 범위 밖
 
@@ -171,12 +178,13 @@ AC-20과 AC-21의 전체 E2E 판정은 Phase 3의 Ingestion과 결합해 완료�
 | `src/generator/config.py`                                     | 생성·수정 | 결정성 실행 Config, UTC `logical_date`, 지원 Version·Profile 검증과 CLI 실행 Profile 범위를 추가했다.                 |
 | `src/generator/ids.py`                                        | 생성      | UUIDv5 Business ID와 안정적인 Logical Hash 유틸리티를 추가했다.                                                       |
 | `src/generator/metadata.py`                                   | 생성      | `generator_runs` Schema 준비와 RUNNING/완료 실행 이력 기록 기능을 추가했다.                                           |
-| `src/generator/customers.py`                                  | 수정      | 불변 Customer 계정과 사람 단위 `MembershipRecord`를 분리하고 Membership의 단조 변경 저장을 추가했다.                  |
-| `src/generator/orders.py`                                     | 수정      | Order·Item·Payment Bundle 저장 시 새 사람의 최초 Membership을 함께 보장하도록 변경했다.                               |
+| `src/generator/customers.py`                                  | 수정      | 불변 Customer 계정, 사람 단위 구독 Record와 등급 Record를 각각 `customer_subscriptions`·`customer_loyalty_tiers`로 분리하고, 구독 상태 전이·등급의 단조 변경 저장과 시각 기반 만료 스캔을 추가했다. |
+| `src/generator/subscription_payments.py`                      | 생성      | 구독 자동결제 1건을 `subscription_payments`에 결정적으로 기록하고 `next_billing_at`을 1개월 뒤로 민다.                 |
+| `src/generator/orders.py`                                     | 수정      | Order·Item·Payment Bundle 저장 시 새 사람의 `customer_subscriptions` `NON_MEMBER` 행과 `customer_loyalty_tiers` `BRONZE` 행을 함께 보장하도록 변경했다.                               |
 | `src/generator/transitions.py`                                | 생성      | Order·Payment 허용 상태 전이, 기대 Version, 원천 변경 시각 검증을 추가했다.                                           |
 | `src/generator/scenarios.py`                                  | 생성      | Late Order·Delayed Payment·Late Update·Membership Change Scenario를 추가했다.                                         |
 | `src/generator/lease.py`                                      | 생성      | Generator·Warehouse 원천 데이터 동시성 잠금의 획득·갱신·Fencing·해제를 추가했다.                                      |
-| `src/generator/service.py`                                    | 수정      | Seed Snapshot 검증, Lease 보호 Source 생성, 실행 결과 재사용과 실제 Membership 변경 Profile 실행을 추가했다.          |
+| `src/generator/service.py`                                    | 수정      | Seed Snapshot 검증, Lease 보호 Source 생성, 실행 결과 재사용과 거래 실적 등급·구독 상태 변경 Profile 실행을 추가했다.          |
 | `src/generator/__main__.py`                                   | 생성·수정 | Generator CLI 기반을 만들고, 기본 실행 적재·`--validate-only`·실행 가능 Profile 선택을 지원하도록 변경했다.           |
 | `sql/metadata/002_create_generator_metadata.sql`              | 생성·수정 | Generator 실행 Metadata Schema를 만들고, 성공 실행 입력만 Unique하게 보관해 실패 실행의 재시도를 허용하도록 변경했다. |
 | `sql/metadata/003_create_source_mutation_leases.sql`          | 생성      | `commerce_source` 원천 데이터 동시성 잠금 Table을 추가했다.                                                           |
@@ -189,7 +197,17 @@ AC-20과 AC-21의 전체 E2E 판정은 Phase 3의 Ingestion과 결합해 완료�
 | `tests/integration/test_generator_scenario_integration.py`    | 생성      | Service-level Scenario의 Business Event와 원천 변경 시각 분리를 검증하는 통합 테스트를 추가했다.                      |
 | `tests/integration/test_source_mutation_lease_integration.py` | 생성      | Generator·Warehouse 원천 데이터 동시성 잠금의 배타성, 해제, 만료 인수 Fencing을 검증하는 통합 테스트를 추가했다.      |
 | `tests/integration/test_generator_service_integration.py`     | 생성      | 실제 Generator 적재, 성공 결과 재사용, Warehouse의 원천 데이터 동시성 잠금 차단을 검증하는 통합 테스트를 추가했다.    |
-| `docs/phases/phase-02-deterministic-generator.md`             | 수정      | P2-01~22와 실행 통합 진행 상태, 파일별 변경 요약, 내부 용어의 한국어 표기를 기록했다.                                 |
+| `tests/generator/test_customers.py`, `tests/generator/test_scenarios.py` | 수정 | 거래 실적 등급 경계, 구독 상태 전이, 상태별 시각, 해지 후 재가입을 검증했다. |
+| `docs/phases/phase-02-deterministic-generator.md`             | 수정      | P2-01~22와 구독 상태·거래 실적 등급 Generator 전환, 파일별 변경 요약을 기록했다.                                 |
+
+### 구독·등급 Generator 재작업
+
+구독 상태 전이와 등급 갱신 로직은 통합 테이블(A안) 기준으로 먼저 작성했다. 이후
+[비교](../architecture/membership-table-split-comparison.md)를 거쳐 B안(Source만 분리)으로
+확정했으므로, 저장 대상을 `customer_subscriptions`와 `customer_loyalty_tiers` 두 테이블로
+나누고 CHECK 제약 위치를 옮긴다. 상태 전이 규칙, 만료 스캔 순서, Seed 기준선 로직은 그대로
+쓴다. `subscription_payments` 자동결제 기록은 이 재작업에서 새로 만든다. 세부 순서는
+[전환 계획](../architecture/subscription-membership-transition-plan.md) 5절에 있다.
 
 ## Definition of Done
 

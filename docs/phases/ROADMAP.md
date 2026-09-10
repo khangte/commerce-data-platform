@@ -1,6 +1,6 @@
 # ROADMAP: Commerce Analytics Data Platform
 
-> 기준 PRD: PRD v1.7
+> 기준 PRD: PRD v1.8
 > 목적: Phase 0부터 Phase 9까지의 실제 개발 순서와 검증 기준 정의  
 > 원칙: 전체 아키텍처와 핵심 계약은 PRD를 기준으로 유지하고, 구현은 Phase 단위로 완료·검증한 뒤 다음 단계로 진행한다.
 
@@ -8,7 +8,7 @@
 
 ## Phase 실행 문서
 
-ROADMAP은 전체 순서와 범위를 관리하고, 아래 문서는 Phase별 Task, 산출물, 검증 Evidence, Definition of Done을 관리한다. 공통 Architecture와 데이터 계약의 Source of Truth는 [PRD v1.7](../../PRD_v1.7.md)다.
+ROADMAP은 전체 순서와 범위를 관리하고, 아래 문서는 Phase별 Task, 산출물, 검증 Evidence, Definition of Done을 관리한다. 공통 Architecture와 데이터 계약의 Source of Truth는 [PRD v1.8](../../PRD_v1.8.md)다.
 
 | Phase | 실행 문서                                                      | 주요 Gate                        |
 | ----- | -------------------------------------------------------------- | -------------------------------- |
@@ -111,7 +111,7 @@ Phase 7~9
 프로젝트 전체 코드를 한 번에 생성한 뒤 수정하는 방식은 사용하지 않는다.
 
 ```text
-PRD v1.7
+PRD v1.8
 전체 Architecture / Contract 확정
         ↓
 Phase 0 구현
@@ -337,7 +337,7 @@ P2-07 신규 customer_unique_id
 P2-08 신규 customer_id
 P2-09 기존 고객 재구매
 P2-10 주소 변경
-P2-11 Membership 계산
+P2-11 구독 기준선·거래 실적 등급 계산
 ```
 
 Identity 계약:
@@ -391,7 +391,7 @@ pending
 P2-15 Late Order
 P2-16 Delayed Payment
 P2-17 과거 Event의 Late Update
-P2-18 Membership Change
+P2-18 구독 상태 전이·등급 변경
 ```
 
 파이프라인 오류 주입은 Phase 3/6에서 처리한다.
@@ -879,7 +879,7 @@ order_count
 
 ## Phase 5F. SCD2
 
-Synthetic Membership / Address 변경으로 검증한다.
+Synthetic 구독 상태 전이·등급 변경·Address 변경으로 검증한다. `dim_customer`는 구독 축과 등급 축을 병합한 SCD2 Version이다.
 
 ```text
 BRONZE
@@ -1172,7 +1172,9 @@ Sales Volume
 ```text
 New Customers
 Repeat Customers
-Membership
+구독 상태 분포·추이
+거래 실적 등급 분포·추이
+구독 퍼널·결제 실패·해지·재가입
 Region
 ```
 
@@ -1286,7 +1288,7 @@ P3-08 Watermark CAS 구현
 # 실제 시작 순서
 
 ```text
-1. PRD v1.7 Baseline Commit
+1. PRD v1.8 Baseline Commit
 2. AGENTS.md 확정
 3. Phase 0 구현
 4. Phase 0 DoD 검증

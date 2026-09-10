@@ -3,7 +3,7 @@
 > 상태: Planned  
 > Milestone: 3 — Portfolio Evidence  
 > 선행 Phase: [Phase 6. Data Quality & Publish](phase-06-data-quality-publish.md)  
-> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.7](../../PRD_v1.7.md)
+> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.8](../../PRD_v1.8.md)
 
 ## 목표
 
@@ -67,7 +67,7 @@
 | ------ | -------------------- | --------------------------------------------- |
 | `R-08` | Late Order           | 새 Mutation Cursor로 1회 수집, 과거 Mart 갱신 |
 | `R-09` | Late Payment         | 연결 주문의 구매일이 영향 범위에 포함         |
-| `R-10` | Customer SCD2 Change | Version 구간과 주문 Temporal Join 갱신        |
+| `R-10` | Customer SCD2 Change | 구독 상태 또는 등급 변경으로 Version 구간과 주문 Temporal Join 갱신 |
 | `R-11` | Missing Schedule     | 누락 기간을 Replay/명시 Batch로 회복          |
 | `R-12` | Backfill Replay      | Source Read 없이 COMMITTED Bronze 재적용      |
 | `R-13` | Re-extract           | 명시 범위를 새 `reprocess_id`로 추출          |

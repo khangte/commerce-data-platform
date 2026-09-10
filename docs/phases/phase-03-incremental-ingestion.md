@@ -3,7 +3,7 @@
 > 상태: 구현 완료 · `orders` 최초 Bronze 적재 완료
 > Milestone: 2 — Data Platform Core  
 > 선행 Phase: [Phase 2. Deterministic Generator](phase-02-deterministic-generator.md)  
-> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.7](../../PRD_v1.7.md)
+> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.8](../../PRD_v1.8.md)
 
 ## 목표
 
@@ -508,6 +508,26 @@ uv run python -m src.rebaseline --seeded-at 2026-09-03T00:00:00Z --confirm
 - [x] Reject와 Batch Failure 정책이 구분된다.
 - [x] 원천 데이터 동시성 잠금과 테이블별 수집 잠금, Watermark CAS가 경쟁 조건을 차단한다.
 - [x] Phase 3의 모든 AC가 재현 가능한 명령으로 통과한다.
+
+## 구독·등급 전환으로 재작업할 범위
+
+위 완료 기록은 `customer_memberships` 7개 Table 기준이다. PRD v1.8의 구독·등급 분리로 이
+Phase의 Ingestion 계층을 재작업한다.
+
+- 7개 Table 프레임워크를 9개로 확장한다. `customer_memberships`가
+  `customer_subscriptions`와 `customer_loyalty_tiers`로 나뉘고 `subscription_payments`가
+  새로 생긴다.
+- `src/ingestion/tables.py`의 Cursor·PK·Arrow Schema에 세 테이블을 추가한다.
+  `subscription_payments`의 PK는 `(customer_unique_id, billing_sequence)`, Cursor는
+  `(updated_at, customer_unique_id, billing_sequence)`다.
+- `src/ingestion/bronze.py`, `src/ingestion/batch.py`, `src/ingestion/service.py`,
+  `src/rebaseline.py`의 "7개 Table" 순회를 9개로 넓힌다.
+- `tests/ingestion/test_tables.py`, `tests/ingestion/test_batch.py`의 계약 테스트에 세
+  테이블을 추가한다.
+- 재기준화를 다시 실행해 9개 Source Table Bronze와 Catalog를 재생성한다.
+
+세부 순서는 [전환 계획](../architecture/subscription-membership-transition-plan.md) 5절
+5단계에 있다.
 
 ## Portfolio Evidence
 

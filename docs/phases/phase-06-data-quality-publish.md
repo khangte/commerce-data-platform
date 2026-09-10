@@ -3,7 +3,7 @@
 > 상태: Planned  
 > Milestone: 2 — Data Platform Core  
 > 선행 Phase: [Phase 5. dbt + DuckDB Modeling](phase-05-dbt-duckdb-modeling.md)  
-> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.7](../../PRD_v1.7.md)
+> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.8](../../PRD_v1.8.md)
 
 ## 목표
 
@@ -42,7 +42,7 @@ Phase 3과 5에서 각 계층의 기본 테스트를 구현하고, 이 Phase에�
 - [ ] `P6-06` dbt Generic Test 구성: `unique`, `not_null`, `relationships`, `accepted_values`
 - [ ] `P6-07` 금액 Non-negative Custom Test
 - [ ] `P6-08` 주문 Timestamp 순서 Custom Test
-- [ ] `P6-09` SCD2 Overlap/Current Version Custom Test
+- [ ] `P6-09` SCD2 Overlap/Current Version Custom Test. `dim_customer`는 구독·등급 두 축을 병합한 Version이므로 두 축 변경이 겹치는 경우도 구간 비중복을 검증한다.
 - [ ] `P6-10` Fact FK Missing/Business Key Duplicate Test
 - [ ] `P6-11` 정상 E2E Unknown Key 0 Test
 - [ ] `P6-12` Fact Measure/Fan-out 회귀 Test

@@ -1,6 +1,6 @@
 # PRD: Commerce Analytics Data Platform
 
-> Version: 1.7
+> Version: 1.8
 >
 > Status: Implementation-Ready Baseline
 >
@@ -12,14 +12,29 @@
 
 ---
 
-## 0. v1.7 변경 요약
+## 0. v1.8 변경 요약
+
+v1.8은 v1.7의 모든 계약을 유지하면서 사람 단위 멤버십을 구독 생명주기와 거래 실적 등급
+두 축으로 분리하고, 구독 자동결제를 Fact로 도입한다.
+
+- 주문 횟수 기반 단일 `membership_level`을 `subscription_status`(구독 생명주기)와
+  `membership_tier`(거래 실적 등급)로 분리한다. 두 속성은 변경 원인이 독립적이다.
+- 두 축을 별도 Source Table로 나눈다. `customer_memberships`는 `customer_subscriptions`와
+  `customer_loyalty_tiers`로 대체된다. Warehouse는 두 Staging을 `int_customer_history`에서
+  병합해 단일 `dim_customer`를 유지한다. 분리 근거와 대안 비교는 5.5에 기록한다.
+- 구독 주기를 1개월로 고정하고 자동결제를 도입한다. 결제 1건은 상태가 아니라 사건이므로
+  `subscription_payments` Source Table과 `fact_subscription_payments`로 관리한다.
+- `next_billing_at`은 SCD2 속성 Hash에서 제외한다. 매월 갱신되지만 상태 변화가 아니다.
+- Source Table은 7개에서 9개가 된다. Seed 기준선은 모든 사람이 `NON_MEMBER`다.
+
+## 0.1 v1.7 변경 요약
 
 v1.7은 v1.6의 모든 계약을 유지하면서 Source 범위 제외 결정과 Delivery Measure 소속을 명문화한다.
 
 - `geolocation`, `reviews`, `product_category_name_translation`을 V1 제외로 확정한다. 세 CSV는 `data/raw/olist/`에 내려오지만 PostgreSQL Source Table과 Bronze 수집 대상이 아니다. 제외 근거는 5.1에 기록한다.
 - Delivery Measure는 `fact_orders`에 둔다. 배송 Timestamp가 주문 1건당 각 1개이므로 Delivery Grain은 주문 Grain과 같고, 1:1 `fact_delivery`로 분리하지 않는다. Measure 정의와 Non-additive 집계 규칙은 14.4에 기록한다.
 
-## 0.1 v1.6 변경 요약
+## 0.2 v1.6 변경 요약
 
 v1.6은 v1.5의 Source 원본 보존, 증분 수집, Bronze 불변성, SCD2, Late Arrival, 재처리 계약을 유지하면서 계정과 개인 멤버십의 분석 단위를 분리한다.
 
@@ -278,7 +293,10 @@ Mutable Row 변경 규칙:
 | `olist_products_dataset.csv`       | `products`              |
 | `olist_sellers_dataset.csv`        | `sellers`               |
 
-Seed는 위 6개 CSV만 PostgreSQL Source Table로 적재한다. `customers`에서 분리한 `customer_memberships`를 더해 Source Table은 7개다.
+Seed는 위 6개 CSV만 PostgreSQL Source Table로 적재한다. `customers`에서 분리한
+`customer_subscriptions`와 `customer_loyalty_tiers`, 그리고 구독 자동결제 이력을 담는
+`subscription_payments`를 더해 Source Table은 9개다. `subscription_payments`는 Seed 대상이
+아니며 Generator가 채운다.
 
 #### V1 제외 CSV
 
@@ -304,7 +322,9 @@ Seed Loader는 분석용 표준화를 수행하지 않는다.
 | Table          | 확장 필드                                      | 목적                            |
 | -------------- | ---------------------------------------------- | ------------------------------- |
 | customers      | `created_at`                                   | 불변 주문 계정 증분 수집       |
-| customer_memberships | `membership_level`, `created_at`, `updated_at` | 사람 단위 Synthetic 등급과 증분 수집 |
+| customer_subscriptions | `subscription_status`, 구독 시각 5개, `created_at`, `updated_at` | 사람 단위 구독 생명주기와 증분 수집 |
+| customer_loyalty_tiers | `membership_tier`, `created_at`, `updated_at` | 사람 단위 거래 실적 등급과 증분 수집 |
+| subscription_payments | `payment_status`, `payment_value`, 청구 기간, `created_at`, `updated_at` | 구독 자동결제 이력과 증분 수집 |
 | products       | `created_at`, `updated_at`                     | 증분 수집                       |
 | sellers        | `created_at`, `updated_at`                     | 증분 수집                       |
 | orders         | `created_at`, `updated_at`                     | 생성/상태 변경 증분 수집        |
@@ -329,21 +349,26 @@ Seed Loader는 분석용 표준화를 수행하지 않는다.
 | Table            | 규칙                                                                                     |
 | ---------------- | ---------------------------------------------------------------------------------------- |
 | customers        | 연결 주문의 최초 `order_purchase_timestamp` → `created_at`                                |
-| customer_memberships | 사람별 최소 계정 `created_at` → `created_at`, `--seeded-at` → `updated_at`          |
+| customer_subscriptions | 사람별 최소 계정 `created_at` → `created_at`, `NON_MEMBER`·구독 시각 `NULL`, `--seeded-at` → `updated_at` |
+| customer_loyalty_tiers | 사람별 최소 계정 `created_at` → `created_at`, `--seeded-at` → `updated_at` |
+| subscription_payments | Seed 없음. Generator가 자동결제 시점에만 생성 |
 | orders           | `order_purchase_timestamp` → `created_at`, `--seeded-at` → `updated_at`                  |
 | order_items      | 연결 주문의 `order_purchase_timestamp` → `created_at`                                    |
 | products/sellers | `created_at = updated_at = --seeded-at`                                                  |
 | order_payments   | 연결 주문의 `order_purchase_timestamp` → `created_at`, `--seeded-at` → `updated_at`      |
 
-Seed `membership_level`은 `customer_unique_id`별 `order_status='delivered'` 주문 수로 계산해
-사람 단위 `customer_memberships`에 정확히 한 행으로 기록한다.
+Seed는 Olist 원본에 구독 이력이 없으므로 모든 사람을 `customer_subscriptions`에
+`subscription_status='NON_MEMBER'`와 구독 관련 시각 `NULL`로 기록한다. `membership_tier`는
+`customer_unique_id`별 `order_status='delivered'` 주문 수로 계산해 `customer_loyalty_tiers`에
+정확히 한 행으로 기록한다. `subscription_payments`는 Seed 대상이 아니며 Generator의
+자동결제 시점에만 행이 생긴다.
 
 Seed `payment_status`는 연결 주문이 `canceled` 또는 `unavailable`이면 `failed`, 그 외에는 `completed`다.
 
 ```text
-bronze 0~4
-silver 5~14
-gold   15+
+BRONZE 0~4
+SILVER 5~14
+GOLD   15+
 ```
 
 ### 5.4 Seed CLI와 재실행
@@ -372,6 +397,35 @@ Header/File 검증
 
 ---
 
+### 5.5 구독·등급 Source 분리 근거
+
+구독 생명주기와 거래 실적 등급은 변경 원인이 독립적이다. 구독은 결제 이벤트와 만료 스캔으로
+바뀌고, 등급은 완료 주문 수로 바뀐다. 두 축을 한 테이블에 두면 등급 변경이 `updated_at`을
+밀어 구독 상태별 시각 제약을 깨뜨린다.
+
+```text
+2026-01-05  구독 NON_MEMBER→TRIAL   updated_at = 01-05
+2026-02-01  등급 BRONZE→SILVER      updated_at = 02-01   -- 구독은 안 바뀜
+```
+
+`CANCEL_REQUESTED` 상태에서 등급만 바뀌면 `updated_at`이 앞으로 밀리는데 `benefit_ends_at`은
+그대로다. 혜택 종료일을 지나면 상태가 정상인데도 CHECK 위반이 된다.
+
+세 대안을 비교했다.
+
+| 안                        | Source | Dimension | 판정                                              |
+| ------------------------- | ------ | --------- | ------------------------------------------------- |
+| 통합                      | 1개    | 1개       | 축별 `updated_at` 컬럼 2개와 CHECK 3개로 방어해야 한다 |
+| **Source만 분리 (채택)**  | 2개    | 1개       | 제약 오염이 구조적으로 해결되고 Temporal Join은 1회를 유지한다 |
+| 완전 분리                 | 2개    | 2개       | SCD2 행 수가 줄지 않는데 Temporal Join이 Fact마다 2회로 는다 |
+
+Dimension까지 나누면 SCD2 총 행 수는 두 축 변경 시점의 합집합이라 그대로인 반면, Late
+Arrival 부분 결측 규칙을 `fact_orders`와 `fact_subscription_payments` 두 곳에서 각각 정해야
+한다. Source만 나누면 그 결측을 `int_customer_history` 한 곳에서 흡수한다.
+
+상세 비교는 `docs/architecture/membership-table-split-comparison.md`에 있다.
+
+
 ## 6. PostgreSQL Source 계약
 
 한 PostgreSQL Container에 `commerce_source`, `airflow_metadata`, `pipeline_metadata` Database와 역할별 계정을 둔다.
@@ -388,14 +442,54 @@ Header/File 검증
 | `customer_state`     | CHAR(2)      | 원본 Prefix 보존               |
 | `created_at`         | TIMESTAMPTZ  | NOT NULL                       |
 
-#### customer_memberships
+#### customer_subscriptions
 
-| Column               | Type         | Constraint                     |
-| -------------------- | ------------ | ------------------------------ |
-| `customer_unique_id` | VARCHAR(64)  | PK, 사람 Business Key          |
-| `membership_level`   | VARCHAR(16)  | NOT NULL, `bronze/silver/gold` |
-| `created_at`         | TIMESTAMPTZ  | NOT NULL                       |
-| `updated_at`         | TIMESTAMPTZ  | NOT NULL, `>= created_at`      |
+| Column                | Type         | Constraint                                                                   |
+| --------------------- | ------------ | ---------------------------------------------------------------------------- |
+| `customer_unique_id`  | VARCHAR(64)  | PK, 사람 Business Key                                                        |
+| `subscription_status` | VARCHAR(32)  | NOT NULL DEFAULT `NON_MEMBER`, `NON_MEMBER/TRIAL/ACTIVE/PAYMENT_FAILED/CANCEL_REQUESTED/CHURNED` |
+| `trial_ends_at`       | TIMESTAMPTZ  | NULL, 무료체험 종료 시각                                                     |
+| `benefit_ends_at`     | TIMESTAMPTZ  | NULL, 구독 혜택 종료 시각                                                    |
+| `next_billing_at`     | TIMESTAMPTZ  | NULL, 다음 청구 예정 시각                                                    |
+| `payment_failed_at`   | TIMESTAMPTZ  | NULL, 가장 최근 결제 실패 시각                                               |
+| `cancel_requested_at` | TIMESTAMPTZ  | NULL, 해지 신청 시각                                                         |
+| `created_at`          | TIMESTAMPTZ  | NOT NULL                                                                     |
+| `updated_at`          | TIMESTAMPTZ  | NOT NULL, `>= created_at`, 구독 축 변경 시각이자 증분 Cursor                 |
+
+상태별 시각 제약은 이 테이블의 `updated_at`을 기준으로 강제한다. 등급이 별도 테이블에
+있으므로 등급 변경이 이 값을 밀지 않는다.
+
+```text
+CANCEL_REQUESTED  benefit_ends_at > updated_at
+CHURNED           benefit_ends_at <= updated_at
+PAYMENT_FAILED    payment_failed_at NOT NULL, benefit_ends_at = payment_failed_at + 7일
+TRIAL             trial_ends_at NOT NULL
+```
+
+#### customer_loyalty_tiers
+
+| Column               | Type        | Constraint                                            |
+| -------------------- | ----------- | ----------------------------------------------------- |
+| `customer_unique_id` | VARCHAR(64) | PK, 사람 Business Key                                 |
+| `membership_tier`    | VARCHAR(16) | NOT NULL DEFAULT `BRONZE`, `BRONZE/SILVER/GOLD`       |
+| `created_at`         | TIMESTAMPTZ | NOT NULL                                              |
+| `updated_at`         | TIMESTAMPTZ | NOT NULL, `>= created_at`, 등급 축 변경 시각이자 Cursor |
+
+#### subscription_payments
+
+| Column                  | Type          | Constraint                                    |
+| ----------------------- | ------------- | --------------------------------------------- |
+| `customer_unique_id`    | VARCHAR(64)   | PK 일부, FK → `customer_subscriptions`        |
+| `billing_sequence`      | INTEGER       | PK 일부, 사람별 결제 순번, 1부터              |
+| `payment_status`        | VARCHAR(16)   | NOT NULL, `completed/failed`                  |
+| `payment_value`         | NUMERIC(14,2) | NOT NULL, `>= 0`                              |
+| `billing_period_start`  | TIMESTAMPTZ   | NOT NULL                                      |
+| `billing_period_end`    | TIMESTAMPTZ   | NOT NULL, `= billing_period_start + 1개월`    |
+| `created_at`            | TIMESTAMPTZ   | NOT NULL                                      |
+| `updated_at`            | TIMESTAMPTZ   | NOT NULL, `>= created_at`                     |
+
+구독 결제는 즉시 확정이므로 `pending`이 없고 환불은 V1 범위 밖이다. 주문 결제인
+`order_payments`와 성격이 다르므로 같은 테이블에 섞지 않는다.
 
 #### products
 
@@ -486,7 +580,9 @@ refunded
 
 ```text
 customers       (created_at, customer_id)
-customer_memberships (updated_at, customer_unique_id)
+customer_subscriptions (updated_at, customer_unique_id)
+customer_loyalty_tiers (updated_at, customer_unique_id)
+subscription_payments  (updated_at, customer_unique_id, billing_sequence)
 products        (updated_at, product_id)
 sellers         (updated_at, seller_id)
 orders          (updated_at, order_id)
@@ -631,7 +727,9 @@ Source는 현재 상태만 보관하므로 성공 수집 사이의 중간 변경
 | Table          | Cursor Tuple                                 |
 | -------------- | -------------------------------------------- |
 | customers      | `(created_at, customer_id)`                  |
-| customer_memberships | `(updated_at, customer_unique_id)`     |
+| customer_subscriptions | `(updated_at, customer_unique_id)`     |
+| customer_loyalty_tiers | `(updated_at, customer_unique_id)`     |
+| subscription_payments  | `(updated_at, customer_unique_id, billing_sequence)` |
 | products       | `(updated_at, product_id)`                   |
 | sellers        | `(updated_at, seller_id)`                    |
 | orders         | `(updated_at, order_id)`                     |
@@ -1186,7 +1284,9 @@ marts
 
 ```text
 stg_customers_current
-stg_customer_observations
+stg_customer_subscriptions
+stg_customer_loyalty_tiers
+stg_subscription_payments
 stg_products
 stg_sellers
 stg_orders
@@ -1203,12 +1303,18 @@ Customer Mapping:
 | `customer_city`         | `city`                    |
 | `customer_state`        | `state`                   |
 | `customers.created_at` | `created_at`              |
-| `customer_memberships.membership_level` | `stg_customer_observations.membership_level` |
-| `customer_memberships.created_at` | `stg_customer_observations.created_at` |
-| `customer_memberships.updated_at` | `stg_customer_observations.updated_at` |
+| `customer_subscriptions.subscription_status` | `stg_customer_subscriptions.subscription_status` |
+| `customer_subscriptions` 구독 시각 | `stg_customer_subscriptions`의 같은 이름 시각 |
+| `customer_subscriptions.created_at` | `stg_customer_subscriptions.created_at` |
+| `customer_subscriptions.updated_at` | `stg_customer_subscriptions.updated_at` |
+| `customer_loyalty_tiers.membership_tier` | `stg_customer_loyalty_tiers.membership_tier` |
+| `customer_loyalty_tiers.updated_at` | `stg_customer_loyalty_tiers.updated_at` |
+| `subscription_payments.payment_value` | `stg_subscription_payments.payment_value` |
 
 `stg_customers_current`는 불변 계정의 `source_customer_id` 1행과 해당 주문 주소 스냅샷을
-보존한다. 사람 단위 Membership 관측은 `customer_memberships` Bronze 누적 행에서 별도로 만든다.
+보존한다. 사람 단위 구독 관측과 등급 관측은 각각 `customer_subscriptions`와
+`customer_loyalty_tiers` Bronze 누적 행에서 별도로 만든다. 두 축은
+`int_customer_history`에서 하나의 시간축으로 병합해 단일 `dim_customer`를 만든다.
 
 Order Mapping:
 
@@ -1256,7 +1362,8 @@ row_number() over (
 ) = 1
 ```
 
-Customer Observation은 `customer_id + updated_at + tracked_attribute_hash` 기준 Deduplicate.
+Customer Observation은 축별로 `customer_id + updated_at + tracked_attribute_hash` 기준
+Deduplicate. 구독 축과 등급 축은 Source가 분리되어 있으므로 각 Staging에서 따로 수행한다.
 
 ### 14.2 Intermediate
 
@@ -1267,6 +1374,14 @@ int_payment_summary
 int_customer_history
 int_affected_business_dates
 ```
+
+`int_customer_history`는 `stg_customer_subscriptions`와 `stg_customer_loyalty_tiers`를
+하나의 시간축으로 병합한다. 두 축의 관측 시각이 서로 다르므로 각 시점에서 다른 축의 그
+시점 유효 값을 이어받는다. 두 Source의 증분 Watermark가 독립적이라 한쪽만 새 데이터가
+도착하는 경우가 정상적으로 발생하며, 이 단계가 그 부분 결측을 흡수한다. Fact까지 번지지
+않는다.
+
+병합 후 두 축을 이어붙여 `attribute_hash`를 계산하고 SCD2 Version 경계를 만든다.
 
 ### 14.3 Mart Grain
 
@@ -1283,10 +1398,11 @@ Unique Key는 그 문장을 데이터로 강제하는 수단이다. 새 컬럼�
 | fact_orders      | 주문 1행          | `order_id`                     |
 | fact_order_items | 주문 Line 1행     | `(order_id, order_item_id)`    |
 | fact_payments    | 결제 Sequence 1행 | `(order_id, payment_sequence)` |
+| fact_subscription_payments | 구독 결제 1행 | `(customer_unique_id, billing_sequence)` |
 
-- `dim_customer`: 한 행은 한 고객의 `membership_level`이 일정하게 유지된 하나의 유효 기간
-  Version을 나타낸다. 같은 고객이 등급을 바꾸면 이전 Version은 닫히고 새 Version이 한 행 더
-  생긴다.
+- `dim_customer`: 한 행은 한 고객의 구독 상태·거래 실적 등급과 구독 시각이 일정하게 유지된
+  하나의 유효 기간 Version을 나타낸다. 같은 고객의 상태 또는 등급이 바뀌면 이전 Version은
+  닫히고 새 Version이 한 행 더 생긴다.
 - `dim_product`: 한 행은 하나의 상품을 나타낸다.
 - `dim_seller`: 한 행은 하나의 판매자를 나타낸다.
 - `dim_date`: 한 행은 UTC 기준 하나의 날짜를 나타낸다.
@@ -1296,6 +1412,9 @@ Unique Key는 그 문장을 데이터로 강제하는 수단이다. 새 컬럼�
   주문 1건이 상품 3개를 담으면 세 행이 된다.
 - `fact_payments`: 한 행은 하나의 주문에 대한 하나의 결제 시도(payment sequence)를 나타낸다.
   같은 주문을 두 수단으로 나눠 결제하면 두 행이 된다.
+- `fact_subscription_payments`: 한 행은 한 사람의 한 번의 구독 자동결제를 나타낸다. 결제
+  시각으로 `dim_customer`와 Temporal Join하므로 결제 당시의 구독 상태와 거래 실적 등급을
+  함께 분석할 수 있다. 주문 결제인 `fact_payments`와는 별개다.
 
 ### 14.4 Measure 계약
 
@@ -1374,8 +1493,17 @@ dbt Staging customer_id
 추적 속성:
 
 ```text
-membership_level
+subscription_status
+membership_tier
+trial_ends_at
+benefit_ends_at
+payment_failed_at
+cancel_requested_at
 ```
+
+`next_billing_at`은 현재 청구 예정일을 보여 주는 비추적 운영 속성이다. 구독 상태가 바뀌지 않아도
+매달 달라지므로 `attribute_hash`와 SCD2 Version 생성 조건에서는 제외한다. 현재 값은
+`is_current=true` 고객 Version에서 조회한다.
 
 ```text
 customer_key = Hash(customer_id, valid_from, attribute_hash)
@@ -1387,7 +1515,13 @@ Schema:
 customer_key
 customer_id
 source_customer_unique_id
-membership_level
+subscription_status
+membership_tier
+trial_ends_at
+benefit_ends_at
+next_billing_at
+payment_failed_at
+cancel_requested_at
 attribute_hash
 valid_from
 valid_to
