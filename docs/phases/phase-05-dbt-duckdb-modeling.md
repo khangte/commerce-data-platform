@@ -3,7 +3,7 @@
 > 상태: Planned  
 > Milestone: 2 — Data Platform Core  
 > 선행 Phase: [Phase 4. Airflow Orchestration](phase-04-airflow-orchestration.md)  
-> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.7](../../PRD_v1.7.md)
+> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.8](../../PRD_v1.8.md)
 > 참고: [데이터 변환 흐름](../architecture/data-transformation-flow.md) — 계층별 이름·타입·Grain 변환의 근거
 
 ## 목표
@@ -27,7 +27,7 @@ Metadata에서 COMMITTED인 Bronze Object만 읽어 DuckDB에 Staging, Intermedi
 - Phase 3의 `sync_bronze_catalog`가 COMMITTED Bronze만 `control.bronze_files`에 동기화한다.
 - Phase 4 Warehouse DAG가 `sync_bronze_catalog_task`를 실행한다. `P4-11` dbt Build 호출 경계는 아직 비어 있고, 이 Phase가 dbt Project와 CLI를 완성한 뒤 활성화한다.
 - 지원 가능한 Bronze `schema_version` 목록이 정의됐다.
-- Phase 2의 Membership/Address 변경 Fixture가 존재한다.
+- Phase 2의 구독 상태 전이·등급 변경·Address 변경 Fixture가 존재한다.
 
 ## Warehouse 구조
 
@@ -67,13 +67,15 @@ dbt source macro
 4. `stg_payments`
 5. `stg_orders`
 6. `stg_customers_current`
-7. `stg_customer_observations`
+7. `stg_customer_subscriptions`
+8. `stg_customer_loyalty_tiers`
+9. `stg_subscription_payments`
 
 - [x] `P5-05` Product/Seller Naming과 Type 표준화
 - [x] `P5-06` Order Item/Payment Naming과 Type 표준화
 - [x] `P5-07` Order Timestamp Rename과 8개 표준 상태 매핑
 - [x] `P5-08` Customer Business Key 변환과 Current 선택
-- [x] `P5-09` Customer Observation Deduplication
+- [x] `P5-09` Customer Observation Deduplication (구독 축·등급 축 각각)
 - [x] `P5-10` Staging Mapping 자동 검증
 
 Customer Mapping:
@@ -86,9 +88,10 @@ Customer Mapping:
 | `customer_state`        | `state`                   |
 | `customers.created_at`  | `created_at`              |
 
-`customer_memberships`는 별도 `stg_customer_observations`에서 사람 키를 `customer_id`로 바꾸고
-`membership_level`을 대문자로 표준화한다. 이력은 Current 선택을 하지 않고 Bronze 누적 행을
-`customer_id + updated_at + attribute_hash`로 중복 제거한다.
+구독 축은 `stg_customer_subscriptions`, 등급 축은 `stg_customer_loyalty_tiers`에서 각각 사람
+키를 `customer_id`로 바꾸고 값을 대문자로 표준화한다. 두 Staging 모두 Current 선택을 하지
+않고 Bronze 누적 행을 `customer_id + updated_at + attribute_hash`로 중복 제거한다.
+`int_customer_history`가 두 축을 하나의 시간축으로 병합한다.
 
 Order Mapping:
 
@@ -181,8 +184,15 @@ Late Arrival 영향 범위는 주문 구매일, 연결 주문 구매일, 고객 
 SCD2 추적 속성:
 
 ```text
-membership_level
+subscription_status
+membership_tier
+trial_ends_at
+benefit_ends_at
+payment_failed_at
+cancel_requested_at
 ```
+
+`next_billing_at`은 매월 갱신되지만 상태 변화가 아니므로 추적 속성에서 제외한다.
 
 SCD2 규칙:
 
@@ -204,7 +214,15 @@ SCD2 규칙:
 customer_key
 customer_id
 source_customer_unique_id
-membership_level
+subscription_status
+membership_tier
+trial_ends_at
+benefit_ends_at
+next_billing_at
+payment_failed_at
+cancel_requested_at
+rejoin_count
+rejoined_at
 attribute_hash
 valid_from
 valid_to
@@ -402,6 +420,30 @@ Watermark는 dbt 실패로 되돌리지 않는다. 컨테이너에서 `dbt` CLI�
 - [ ] 주문이 구매 시점에 유효한 Customer Version을 참조한다.
 - [ ] Incremental과 Full Refresh의 Logical Hash가 같다.
 - [ ] AC-01, 09, 10, 11, 12, 19, 22가 통과한다.
+
+## 구독·등급 전환 반영 범위
+
+이 Phase는 미완료 상태다. PRD v1.8의 구독·등급 분리를 처음부터 반영해 구현한다.
+
+- `stg_customer_observations` 하나 대신 `stg_customer_subscriptions`와
+  `stg_customer_loyalty_tiers` 둘을 만든다. 각 축의 Bronze 관측을 따로 표준화하고 축별
+  `attribute_hash`를 만든다.
+- `int_customer_history`는 두 Staging을 하나의 시간축으로 병합한다. 두 축의 관측 시각이
+  서로 다르므로 각 시점에서 다른 축의 그 시점 유효 값을 이어받는다. 두 Source의 증분
+  Watermark가 독립적이라 생기는 Late Arrival 부분 결측을 이 단계가 흡수한다. 병합 방식은
+  [비교 문서](../architecture/membership-table-split-comparison.md) 3.5.2절의 두 후보 중
+  하나를 SQL 작성 시 정한다.
+- `dim_customer` SCD2 속성 Hash는 `subscription_status`, `membership_tier`,
+  `trial_ends_at`, `benefit_ends_at`, `payment_failed_at`, `cancel_requested_at`으로
+  만든다. `next_billing_at`은 매월 갱신되지만 상태 변화가 아니므로 제외한다.
+- `int_customer_history`에서 `lag(subscription_status)` 윈도우로 `CHURNED → TRIAL/ACTIVE`
+  전이를 재가입으로 표시하고 `rejoin_count`, `rejoined_at`을 파생한다.
+- `fact_subscription_payments`를 추가한다. 결제 시각으로 `dim_customer`와 Temporal Join해
+  결제 당시의 구독 상태와 등급을 함께 분석할 수 있게 한다.
+- `dbt/macros/bronze_source.sql`에 세 Source를 등록한다.
+
+세부 순서는 [전환 계획](../architecture/subscription-membership-transition-plan.md) 5절
+6단계에 있다.
 
 ## Portfolio Evidence
 

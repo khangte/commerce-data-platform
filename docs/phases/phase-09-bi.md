@@ -3,7 +3,7 @@
 > 상태: Planned  
 > Milestone: 3 — Portfolio Evidence  
 > 선행 Phase: [Phase 8. Benchmark](phase-08-benchmark.md)  
-> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.7](../../PRD_v1.7.md)
+> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.8](../../PRD_v1.8.md)
 
 ## 목표
 
@@ -87,7 +87,7 @@ AOV    = GMV / Delivered Orders
 
 - [ ] `P9-16` New Customers
 - [ ] `P9-17` Repeat Customers
-- [ ] `P9-18` Membership 분포/추이
+- [ ] `P9-18` 구독 상태·거래 실적 등급 분포/추이
 - [ ] `P9-19` Region 분석
 - [ ] 현재 속성과 주문 시점 SCD2 속성의 사용 목적을 명시
 

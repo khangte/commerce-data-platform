@@ -1,7 +1,7 @@
 # 데이터 변환 흐름: Source → Data Lake → Data Warehouse
 
 > 상태: Reference
-> 기준 문서: [PRD v1.7](../../PRD_v1.7.md), [Phase 3](../phases/phase-03-incremental-ingestion.md), [Phase 4](../phases/phase-04-airflow-orchestration.md), [Phase 5](../phases/phase-05-dbt-duckdb-modeling.md)
+> 기준 문서: [PRD v1.8](../../PRD_v1.8.md), [Phase 3](../phases/phase-03-incremental-ingestion.md), [Phase 4](../phases/phase-04-airflow-orchestration.md), [Phase 5](../phases/phase-05-dbt-duckdb-modeling.md)
 
 이 문서는 하나의 주문 레코드가 PostgreSQL 원천에서 DuckDB Mart에 도달할 때까지 이름, 타입, 값, Grain이 어느 지점에서 왜 바뀌는지를 정리한다. 각 변환의 근거와, 그 변환을 다른 지점에서 했을 때 무엇이 깨지는지를 함께 기록한다.
 
@@ -646,4 +646,4 @@ AND order.purchase_at < COALESCE(dim_customer.valid_to, TIMESTAMPTZ 'infinity')
 - [Phase 3. Incremental Ingestion](../phases/phase-03-incremental-ingestion.md) — Source에서 Bronze까지의 Commit Protocol
 - [Phase 4. Airflow Orchestration](../phases/phase-04-airflow-orchestration.md) — 각 구간의 실행 경계와 Lease
 - [Phase 5. dbt + DuckDB Modeling](../phases/phase-05-dbt-duckdb-modeling.md) — Staging 이후의 Model 구현
-- [PRD v1.7](../../PRD_v1.7.md) — Section 7.1 상태 Mapping, Section 14 dbt Model, Section 15 SCD2
+- [PRD v1.8](../../PRD_v1.8.md) — Section 7.1 상태 Mapping, Section 14 dbt Model, Section 15 SCD2

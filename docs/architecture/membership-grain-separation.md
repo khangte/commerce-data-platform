@@ -2,7 +2,7 @@
 
 > 상태: Implemented
 > 작성일: 2026-09-09
-> 관련 문서: [PRD v1.7](../../PRD_v1.7.md), [데이터 변환 흐름](data-transformation-flow.md), [Phase 5](../phases/phase-05-dbt-duckdb-modeling.md)
+> 관련 문서: [PRD v1.8](../../PRD_v1.8.md), [데이터 변환 흐름](data-transformation-flow.md), [Phase 5](../phases/phase-05-dbt-duckdb-modeling.md)
 
 > 후속 계획: [구독 상태와 멤버십 등급 전환 계획](subscription-membership-transition-plan.md)은
 > 현재 구현된 주문 실적 등급 모델에 구독 생명주기를 추가하기 위한 아직 미구현인 전환 계획이다.
@@ -131,7 +131,7 @@ FR-15(SCD2/Temporal Join, P0)는 그대로 유지된다.
 
 | 문서                                       | 수정 내용                                                              |
 | ------------------------------------------ | ---------------------------------------------------------------------- |
-| `PRD_v1.7.md`                               | Section 7.5, 14.1, 15, Source Table 목록(6→7), AC-19                    |
+| `PRD_v1.8.md`                               | Section 7.5, 14.1, 15, Source Table 목록(6→7), AC-19                    |
 | `docs/phases/phase-01-*`                   | DDL 변경, 테이블 7개                                                   |
 | `docs/phases/phase-02-*`                   | Seed·Generator 정책                                                    |
 | `docs/phases/phase-03-*`                   | 수집 계약, Cursor 컬럼                                                 |

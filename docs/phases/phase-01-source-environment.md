@@ -3,7 +3,7 @@
 > 상태: Done  
 > Milestone: 1 — Source Foundation  
 > 선행 Phase: [Phase 0. Bootstrap](phase-00-bootstrap.md)  
-> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.7](../../PRD_v1.7.md)
+> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.8](../../PRD_v1.8.md)
 
 ## 목표
 
@@ -14,6 +14,11 @@ Olist Raw 데이터를 원본 Naming과 값을 최대한 유지하는 PostgreSQL
 - PostgreSQL과 이후 Bronze는 선택한 Olist Column Name을 유지한다.
 - 분석용 Rename과 상태 표준화는 Source가 아니라 dbt Staging에서 수행한다.
 - Source 확장은 `created_at`, `updated_at`과 Synthetic 시나리오 필드로 제한한다.
+- 사람 단위 구독 생명주기는 `customer_subscriptions`, 거래 실적 등급은 `customer_loyalty_tiers`
+  가 보관한다. 두 축은 변경 원인이 독립적이라 별도 Table로 나눈다. Olist Seed의 구독
+  기준선은 `NON_MEMBER`다.
+- 구독 자동결제 이력은 `subscription_payments`가 사람당 N행으로 보관한다. Seed 대상이
+  아니며 Generator가 채운다.
 - Timestamp는 UTC `TIMESTAMPTZ`, 금액은 PRD에 정의된 고정 Precision을 사용한다.
 - Seed는 임시 Staging을 거친 Transactional UPSERT로 처리한다.
 - 같은 Raw 입력과 같은 `seeded_at`은 같은 Row Count와 Content Hash를 만든다.
@@ -82,7 +87,7 @@ customers   products   sellers
 
 ### 4. Seed Loader
 
-먼저 `customers` 하나로 전체 흐름을 검증한 뒤 7개 Table로 확장한다.
+먼저 `customers` 하나로 전체 흐름을 검증한 뒤 9개 Table로 확장한다.
 
 - [x] `P1-19` 임시 PostgreSQL Staging Schema/Table 구성
 - [x] `P1-20` CSV 문자열을 Source Type으로 명시적 변환
@@ -146,7 +151,7 @@ Source Schema Allowlist
 ## 산출물
 
 - PostgreSQL Compose Service와 초기화 SQL
-- Source 7개 Table DDL 및 증분 Index
+- Source 9개 Table DDL 및 증분 Index
 - Raw Dataset 검증기와 Checksum 기록
 - Transactional Seed Loader/CLI
 - `seed_runs` Metadata DDL과 기록 로직
@@ -159,22 +164,39 @@ Source Schema Allowlist
 | `.env.example`                                   | 수정      | PostgreSQL 포트, Database, 역할별 계정 환경 변수 계약을 추가했다.          |
 | `compose.yaml`                                   | 수정      | PostgreSQL 18.6 서비스, 영속 Volume, 초기화 SQL, Health Check를 추가했다.  |
 | `sql/bootstrap/01-create-databases-and-roles.sh` | 생성      | Source·Metadata·Airflow Database와 역할을 멱등적으로 생성하도록 추가했다.  |
-| `sql/source/001_create_source_tables.sql`        | 수정      | 불변 계정 `customers`와 사람 단위 `customer_memberships` 7개 테이블, 기존 계정 멤버십의 호환 마이그레이션, Cursor Index를 반영했다. |
+| `sql/source/001_create_source_tables.sql`        | 수정      | 불변 계정 `customers`, 사람 단위 `customer_subscriptions`·`customer_loyalty_tiers`, 구독 결제 `subscription_payments`를 포함한 9개 테이블, 구독 상태·거래 실적 등급·상태별 시각 제약과 Cursor Index를 반영했다. |
 | `sql/metadata/001_create_seed_metadata.sql`      | 생성      | Seed 실행 이력과 Count/Hash/상태를 기록하는 `seed_runs` 테이블을 추가했다. |
 | `src/common/database.py`                         | 생성      | `.env` 기반 PostgreSQL 연결과 SQL 적용 공통 기능을 추가했다.               |
 | `src/seed/contracts.py`                          | 생성      | CSV 파일·헤더·기본 키 계약 검증과 Raw Checksum 계산을 추가했다.            |
-| `src/seed/loader.py`                             | 수정      | CSV 변환, 검증, 임시 Staging, Transactional UPSERT에 사람 단위 Membership Seed를 추가했다. |
+| `src/seed/loader.py`                             | 수정      | CSV 변환, 검증, 임시 Staging, Transactional UPSERT에 `customer_subscriptions` 구독 기준선과 `customer_loyalty_tiers` 거래 실적 등급 Seed를 추가했다. |
 | `src/seed/__main__.py`                           | 생성      | `python -m src.seed` CLI와 `seeded_at` 입력 처리를 추가했다.               |
 | `src/__init__.py`, `src/seed/__init__.py`        | 생성·수정 | Seed 모듈을 Python Package로 구성했다.                                     |
-| `tests/seed/test_contracts.py`                   | 생성      | CSV 계약과 Timestamp/Checksum 단위 테스트를 추가했다.                      |
+| `tests/seed/test_contracts.py`                   | 수정      | CSV 계약과 Timestamp/Checksum, 거래 실적 등급 경계·구독 기준선 Column 단위 테스트를 추가했다. |
 | `tests/integration/test_seed_integration.py`     | 생성      | 멱등 적재, Source Allowlist, Seed Guard 통합 테스트를 추가했다.            |
 | `pyproject.toml`                                 | 수정      | pytest 경로와 PostgreSQL 통합 테스트 Marker를 추가했다.                    |
 | `README.md`                                      | 수정      | PostgreSQL 기동, Seed 실행, 통합 테스트 명령을 추가했다.                   |
 | `docs/phases/phase-01-source-environment.md`     | 수정      | 완료 상태, 체크리스트, 검증 증적, 내부 용어의 한국어 표기를 반영했다.      |
+| `docs/architecture/subscription-membership-transition-plan.md` | 생성·수정 | 구독 상태와 거래 실적 등급 분리, 전환 순서를 기록했다. |
+| `docs/architecture/membership-table-split-comparison.md` | 생성 | 통합·Source분리·완전분리 세 안을 비교하고 B안(Source만 분리)으로 확정했다. |
+| `docs/architecture/subscription-lifecycle-requirements.md` | 생성 | 구독 주기 1개월, 자동결제, 유예 7일, 만료 스캔 요구사항을 확정했다. |
 
-Membership Grain 분리 후 `customers`는 계정 불변값과 `created_at`만 보관하고,
-`customer_memberships`가 사람 단위 등급과 `created_at`·`updated_at`을 보관한다. Seed는 완료
-주문 수를 `customer_unique_id`별로 집계해 정확히 한 Membership 행을 만든다.
+Membership Grain 분리 후 `customers`는 계정 불변값과 `created_at`만 보관한다. 사람 단위
+구독 생명주기는 `customer_subscriptions`, 거래 실적 등급은 `customer_loyalty_tiers`가 각각
+`created_at`·`updated_at`과 함께 보관한다. Seed는 모든 사람을 `customer_subscriptions`에
+`NON_MEMBER`로 만들고, 완료 주문 수를 `customer_unique_id`별로 집계해
+`customer_loyalty_tiers`에 `BRONZE`·`SILVER`·`GOLD` 등급을 한 행씩 기록한다.
+
+### 구독 상태·등급 전환 진행
+
+- [x] 세 대안(통합·Source분리·완전분리)을 비교하고 B안(Source만 분리)으로 확정했다.
+  근거는 [비교 문서](../architecture/membership-table-split-comparison.md)에 있다.
+- [x] 구독 생명주기 요구사항(주기 1개월, 자동결제, 유예 7일, 만료 스캔)을 확정했다.
+- [x] 재기준화 후 새 Seed로 기준선을 만드는 전환 방식을 확정했다. 기존 등급 이관 Migration은
+  만들지 않는다.
+- [ ] Source DDL, Seed, Generator를 B안 두 테이블 구조로 구현한다. 통합 테이블(A안)로
+  먼저 작성한 코드를 [전환 계획](../architecture/subscription-membership-transition-plan.md)
+  5절 순서에 따라 재작업한다.
+- [ ] 증분 수집 Schema, dbt SCD2 Hash, BI 측정값은 후속 Phase에서 갱신한다.
 
 ## Definition of Done
 

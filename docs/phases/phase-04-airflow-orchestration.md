@@ -3,7 +3,7 @@
 > 상태: Planned  
 > Milestone: 2 — Data Platform Core  
 > 선행 Phase: [Phase 3. Incremental Ingestion](phase-03-incremental-ingestion.md)  
-> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.7](../../PRD_v1.7.md)
+> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.8](../../PRD_v1.8.md)
 
 ## 목표
 
@@ -455,6 +455,20 @@ AC-01과 AC-16의 Fact/dbt 부분은 Phase 5~6에서 완성한다.
 - [x] XCom 금지 Payload가 존재하지 않는다.
 - [x] Lease 해제 후 Catalog/dbt 구간에서 Generator가 원천 데이터 동시성 잠금을 획득할 수 있다.
 - [x] dbt Project 미구현 상태에서 Warehouse DAG가 dbt 성공을 가장하지 않는다.
+
+## 구독·등급 전환으로 재작업할 범위
+
+Dynamic Task Mapping 입력이 7개 Table 기준이다. PRD v1.8의 구독·등급 분리로 아래를
+갱신한다.
+
+- `airflow/dags/warehouse_pipeline_dag.py`의 Dynamic Mapping 입력 순서를
+  `customers, customer_subscriptions, customer_loyalty_tiers, subscription_payments,
+  products, sellers, orders, order_items, order_payments` 9개로 바꾼다.
+- Generator DAG가 새 구독 Profile과 만료 스캔을 호출하도록 Task 인자를 넓힌다.
+- DAG Parse Smoke Test를 9개 Table 기준으로 다시 통과시킨다.
+
+세부 순서는 [전환 계획](../architecture/subscription-membership-transition-plan.md) 5절에
+있다.
 
 ## Portfolio Evidence
 

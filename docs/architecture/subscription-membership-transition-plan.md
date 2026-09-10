@@ -1,10 +1,12 @@
 # 구독 상태와 멤버십 등급 전환 계획
 
-> 상태: Proposed
+> 상태: Decided — B안 (Source만 분리)
 > 작성일: 2026-09-10
 > 관련 문서:
+> [구독 생명주기 요구사항](subscription-lifecycle-requirements.md),
+> [구독·등급 테이블 분리 비교](membership-table-split-comparison.md),
 > [Membership Grain 분리 기획안](membership-grain-separation.md),
-> [PRD v1.7](../../PRD_v1.7.md),
+> [PRD v1.8](../../PRD_v1.8.md),
 > [데이터 변환 흐름](data-transformation-flow.md),
 > [Phase 1](../phases/phase-01-source-environment.md),
 > [Phase 2](../phases/phase-02-deterministic-generator.md),
@@ -14,8 +16,8 @@
 
 ## 1. 결정
 
-사람(`customer_unique_id`) 단위의 현재 `customer_memberships` 테이블을 유지하되, 기존의 주문
-횟수 기반 단일 `membership_level`을 다음 두 독립 속성으로 분리한다.
+사람(`customer_unique_id`) 단위 Grain은 유지하되, 기존의 주문 횟수 기반 단일
+`membership_level`을 다음 두 독립 속성으로 분리한다.
 
 | 속성                  | 의미                            | 변경 원인                                  |
 | --------------------- | ------------------------------- | ------------------------------------------ |
@@ -25,8 +27,18 @@
 이 결정으로 구독 중인 고객의 혜택 상태와 고객의 거래 실적을 혼동하지 않는다. 예를 들어
 `subscription_status = 'ACTIVE'`이면서 `membership_tier = 'GOLD'`일 수 있다.
 
-기존 `customer_memberships`라는 DB 식별자는 호환성과 사람 단위 Grain을 유지하기 위해 그대로
-사용한다. 문서에서는 이를 **고객 구독·등급 현황**으로 부른다.
+[테이블 분리 비교](membership-table-split-comparison.md)에서 **B안(Source만 분리)**으로
+확정했다. 두 속성은 별도 Source Table로 나누고 Warehouse에서 하나의 `dim_customer`로
+합친다. 기존 `customer_memberships`는 `customer_subscriptions`와 `customer_loyalty_tiers`
+둘로 대체된다.
+
+분리 근거는 CHECK 제약 오염이다. 한 테이블에 두 축을 두면 등급 변경이 `updated_at`을
+밀어 구독 시각 제약을 깨뜨린다. A안은 축별 `updated_at` 컬럼 2개와 CHECK 3개로 이를
+막지만, 테이블을 나누면 각 테이블의 `updated_at`이 곧 축별 변경 시각이라 구조적으로
+해결된다.
+
+Dimension은 나누지 않는다. 나눠도 SCD2 총 행 수가 줄지 않는 반면 Temporal Join이 Fact마다
+2회로 늘고 Late Arrival 부분 결측 규칙을 Fact 두 곳에서 정해야 한다.
 
 ## 2. 상태와 등급 계약
 
@@ -84,18 +96,29 @@ CHURNED → TRIAL 또는 ACTIVE                       # 재가입 이벤트
 ## 3. 목표 Source 모델
 
 ```text
-customer_memberships  -- 사람(customer_unique_id)당 현재 상태 1행
+customer_subscriptions  -- 사람(customer_unique_id)당 현재 구독 상태 1행
 ├── customer_unique_id       PK
 ├── subscription_status      NOT NULL DEFAULT 'NON_MEMBER'
-├── membership_tier          NOT NULL DEFAULT 'BRONZE'
 ├── trial_ends_at            NULL
 ├── benefit_ends_at          NULL
 ├── next_billing_at          NULL
 ├── payment_failed_at        NULL
 ├── cancel_requested_at      NULL
 ├── created_at               NOT NULL
-└── updated_at               NOT NULL
+└── updated_at               NOT NULL    -- 증분 Cursor, 구독 축 변경 시각
+
+customer_loyalty_tiers  -- 사람(customer_unique_id)당 현재 등급 1행
+├── customer_unique_id       PK
+├── membership_tier          NOT NULL DEFAULT 'BRONZE'
+├── created_at               NOT NULL
+└── updated_at               NOT NULL    -- 증분 Cursor, 등급 축 변경 시각
+
+subscription_payments   -- 사람당 N행, 결제 1건이 1행
+└── 상세는 구독 생명주기 요구사항 3.3절 참조
 ```
+
+각 테이블의 `updated_at`이 곧 해당 축의 변경 시각이므로 6절 제약을 그대로 CHECK로 쓴다.
+등급 변경이 구독 제약을 오염시키지 않는다.
 
 모든 시각은 UTC `TIMESTAMPTZ`를 사용한다. 구독 주기는 1개월 고정이다. `ACTIVE` 상태에서
 `next_billing_at`은 직전 결제일의 1개월 뒤이며, 연 단위나 다중 요금제는 이번 범위에 없다.
@@ -108,8 +131,13 @@ SCD2 이력으로 복원한다.
 
 ## 4. Warehouse 모델과 분석 계약
 
-`stg_customer_observations`는 위 Source의 상태와 등급을 표준화해 노출한다. `int_customer_history`와
-`dim_customer`는 적어도 아래 속성의 변경을 SCD2 Version으로 만든다.
+Staging은 Source마다 하나씩 둔다. `stg_customer_subscriptions`와
+`stg_customer_loyalty_tiers`가 각 축을 표준화한다. 두 축은 `int_customer_history`에서
+하나의 시간축으로 병합되며, 어느 한 축만 새 관측이 있으면 다른 축은 직전 값을 이어받는다.
+이 단계가 두 Source의 독립적인 Watermark로 생기는 Late Arrival 부분 결측을 흡수한다.
+
+병합된 `int_customer_history`와 `dim_customer`는 적어도 아래 속성의 변경을 SCD2 Version으로
+만든다.
 
 ```text
 subscription_status
@@ -142,22 +170,26 @@ cancel_requested_at
 
 ## 5. 구현 범위와 순서
 
-| 순서 | 대상             | 변경 내용                                                                                                   |
-| ---- | ---------------- | ----------------------------------------------------------------------------------------------------------- |
-| 1    | PRD·Phase 문서   | 용어, 상태 전이, Source Schema, 인수 조건과 BI 요구사항을 동기화한다.                                       |
-| 2    | Source DDL       | `customer_memberships` DDL을 새 스키마로 재작성하고 v1.6 등급 이관 DO 블록을 삭제한다.                       |
-| 3    | Seed             | 기존 등급 계산을 대문자 `membership_tier`에 적용하고 모든 Seed 고객을 `NON_MEMBER`로 초기화한다.            |
-| 4    | Generator        | 구독 상태 전이와 실적 등급 갱신을 분리하고, 전이·시각 단조 증가·재가입 판별 테스트를 추가한다.              |
-| 5    | Ingestion·Bronze | Arrow Schema, 상태 도메인 검증, Schema Version, Catalog 검증을 새 컬럼에 맞춘다.                            |
-| 6    | dbt              | Staging 표준화, SCD2 Hash, Temporal Join 및 재가입 파생 측정값을 갱신한다.                                  |
-| 7    | 품질·BI          | 상태 전이·구간 비중복·등급 규칙을 검증하고 구독 퍼널, 결제 실패, 해지, 재가입, 등급별 지표를 만든다.        |
-| 8    | 재기준화         | Source와 Bronze의 호환 불가 스키마를 교체하고, 전체 재수집·Catalog 동기화·dbt build로 기준선을 다시 만든다. |
+| 순서 | 대상             | 변경 내용                                                                                                   | 상태 |
+| ---- | ---------------- | ----------------------------------------------------------------------------------------------------------- | ---- |
+| 1    | PRD·Phase 문서   | 용어, 상태 전이, Source Schema, 인수 조건과 BI 요구사항을 동기화한다. PRD v1.8에 반영했다.                  | 완료 |
+| 2    | Source DDL       | `customer_memberships`를 `customer_subscriptions`와 `customer_loyalty_tiers`로 나누고 `subscription_payments`를 신설한다. v1.6 등급 이관 DO 블록을 삭제한다. | 재작업 |
+| 3    | Seed             | 기존 등급 계산을 대문자 `membership_tier`에 적용하고 모든 Seed 고객을 `NON_MEMBER`로 초기화한다. 두 테이블에 나눠 적재한다. | 재작업 |
+| 4    | Generator        | 구독 상태 전이와 실적 등급 갱신을 분리하고, 시각 기반 만료 스캔과 자동결제를 만든다. 전이·시각 단조 증가·재가입 판별 테스트를 추가한다. | 재작업 |
+| 5    | Ingestion·Bronze | Arrow Schema, 상태 도메인 검증, Schema Version, Catalog 검증을 새 컬럼에 맞춘다.                            | 미진행 |
+| 6    | dbt              | Staging을 축별로 나누고 `int_customer_history` 병합 단계를 만든다. SCD2 Hash, Temporal Join, 재가입 파생 측정값과 `fact_subscription_payments`를 갱신한다. | 미진행 |
+| 7    | 품질·BI          | 상태 전이·구간 비중복·등급 규칙을 검증하고 구독 퍼널, 결제 실패, 해지, 재가입, 등급별 지표를 만든다.        | 미진행 |
+| 8    | 재기준화         | Source와 Bronze의 호환 불가 스키마를 교체하고, 전체 재수집·Catalog 동기화·dbt build로 기준선을 다시 만든다. | 미진행 |
+
+2~4단계는 통합 테이블(A안) 기준으로 먼저 구현했다. 이후 비교를 거쳐 B안으로 확정했으므로
+해당 코드를 두 테이블 구조로 다시 만든다. 이미 작성한 상태 전이 규칙과 Seed 기준선 로직은
+그대로 쓸 수 있고, 테이블 경계와 CHECK 제약 위치만 바뀐다.
 
 ## 6. 데이터 제약과 테스트
 
 - `subscription_status`는 정의된 여섯 값만 허용한다.
 - `membership_tier`는 `BRONZE`, `SILVER`, `GOLD`만 허용한다.
-- `updated_at >= created_at`은 DB CHECK 제약으로 강제한다.
+- 두 Source 모두 `updated_at >= created_at`을 DB CHECK 제약으로 강제한다.
 - 기존 행 변경 시 새 `updated_at`이 이전 값보다 커야 한다. 단일 행 CHECK로 표현할 수 없으므로
   Generator 계약으로 강제한다. `persist_membership_records`가 이 검증을 수행한다.
 - `TRIAL`에는 `trial_ends_at`, `PAYMENT_FAILED`에는 `payment_failed_at`,
@@ -165,6 +197,8 @@ cancel_requested_at
 - `CANCEL_REQUESTED`에는 `benefit_ends_at > updated_at`이 있어야 하며, `CHURNED`에는
   `benefit_ends_at <= updated_at`이 있어야 한다. `PAYMENT_FAILED`에도 유예 종료를 나타내는
   `benefit_ends_at`이 있어야 한다. 재시도 횟수와 유예 길이는 이후 제품 정책으로 정한다.
+- 위 제약의 `updated_at`은 `customer_subscriptions`의 것이다. 등급 테이블이 분리되어
+  있으므로 등급 변경은 이 값을 밀지 않는다.
 - 위 제약은 각 행의 `updated_at` 시점에만 성립한다. Bronze 관측 시각 기준으로는 검증하지
   않는다. `CANCEL_REQUESTED` 행은 `benefit_ends_at`이 지나도 다음 전이 배치 전까지 Source에
   그대로 남아 매일 같은 값으로 관측되며, 이는 정상이다. 혜택 종료일 경과 후 `CHURNED` 전이는
@@ -179,6 +213,8 @@ cancel_requested_at
 ## 7. 호환성과 전환 위험
 
 이 변경은 Source·Bronze·dbt Schema와 SCD2 속성 Hash를 모두 바꾸는 호환 불가 변경이다.
+Source Table은 7개에서 9개가 된다. `customer_memberships` 하나가 둘로 나뉘고
+`subscription_payments`가 새로 생긴다.
 기존 Bronze Object를 새 스키마와 함께 읽으면 안 된다. 기존 Membership Grain 분리와 같은
 재기준화 절차로 Source, Watermark, Bronze Object, DuckDB Catalog를 정리한 뒤 전체 수집을
 실행한다.
