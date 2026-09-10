@@ -1,7 +1,7 @@
-with membership_observations as (
+with tier_observations as (
     select
         customer_unique_id as customer_id,
-        {{ standardized_membership_level('membership_level') }} as membership_level,
+        {{ standardized_membership_tier('membership_tier') }} as membership_tier,
         created_at,
         updated_at,
         _batch_id,
@@ -9,14 +9,14 @@ with membership_observations as (
         _ingested_at,
         _source_table,
         _schema_version
-    from {{ bronze_source('customer_memberships') }}
+    from {{ bronze_source('customer_membership_tiers') }}
 ),
 with_attribute_hash as (
     select
         *,
-        md5(coalesce('membership_level:' || length(membership_level) || ':' || membership_level, 'membership_level:-1:'))
+        md5(coalesce('membership_tier:' || length(membership_tier) || ':' || membership_tier, 'membership_tier:-1:'))
             as attribute_hash
-    from membership_observations
+    from tier_observations
 ),
 deduplicated as (
     select
@@ -29,7 +29,7 @@ deduplicated as (
 )
 select
     customer_id,
-    membership_level,
+    membership_tier,
     attribute_hash,
     created_at,
     updated_at,

@@ -19,6 +19,16 @@ affected_from_payments as (
     inner join {{ ref('stg_orders') }} using (order_id)
     where stg_payments._batch_id = (select _batch_id from latest_batch)
 ),
+-- 이번 Batch가 건드린 고객 축(구독 상태 또는 등급) 관측 시각.
+customer_axis_batch as (
+    select updated_at
+    from {{ ref('stg_customer_subscription_observations') }}
+    where _batch_id = (select _batch_id from latest_batch)
+    union
+    select updated_at
+    from {{ ref('stg_customer_tier_observations') }}
+    where _batch_id = (select _batch_id from latest_batch)
+),
 affected_from_customers as (
     select stg_orders.order_id, stg_orders.purchase_at
     from {{ ref('int_customer_history') }}
@@ -27,8 +37,7 @@ affected_from_customers as (
         and stg_orders.purchase_at >= int_customer_history.valid_from
         and stg_orders.purchase_at < coalesce(int_customer_history.valid_to, timestamptz 'infinity')
     where int_customer_history.valid_from >= (
-        select min(created_at) from {{ ref('stg_customer_observations') }}
-        where _batch_id = (select _batch_id from latest_batch)
+        select coalesce(min(updated_at), timestamptz 'infinity') from customer_axis_batch
     )
 ),
 affected_from_products as (

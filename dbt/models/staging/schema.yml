@@ -35,12 +35,30 @@ models:
               arguments:
                 values: [PENDING, COMPLETED, FAILED, REFUNDED]
 
-  - name: stg_customer_observations
-    description: 사람 단위 Membership 이력 SCD2 입력용으로 중복 제거한 관측을 노출한다.
+  - name: stg_customer_subscription_observations
+    description: 사람 단위 구독 상태 이력 SCD2 입력용으로 중복 제거한 관측을 노출한다.
     columns:
       - name: customer_id
         data_tests: [not_null]
-      - name: membership_level
+      - name: subscription_status
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [NON_MEMBER, TRIAL, ACTIVE, PAYMENT_FAILED, CANCEL_REQUESTED, CHURNED]
+      - name: attribute_hash
+        data_tests: [not_null]
+      - name: created_at
+        data_tests: [not_null]
+      - name: updated_at
+        data_tests: [not_null]
+
+  - name: stg_customer_tier_observations
+    description: 사람 단위 거래 실적 등급 이력 SCD2 입력용으로 중복 제거한 관측을 노출한다.
+    columns:
+      - name: customer_id
+        data_tests: [not_null]
+      - name: membership_tier
         data_tests:
           - not_null
           - accepted_values:
@@ -52,6 +70,20 @@ models:
         data_tests: [not_null]
       - name: updated_at
         data_tests: [not_null]
+
+  - name: stg_subscription_payments
+    description: 최신 구독 결제 Version을 결제 Grain으로 노출한다. 주문 결제 stg_payments와 별개다.
+    columns:
+      - name: customer_id
+        data_tests: [not_null]
+      - name: billing_sequence
+        data_tests: [not_null]
+      - name: payment_status
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [completed, failed]
 
   - name: stg_customers_current
     description: 주문 결합용 불변 계정 주소 스냅샷을 노출한다.
