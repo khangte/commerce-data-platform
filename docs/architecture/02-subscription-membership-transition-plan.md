@@ -173,17 +173,23 @@ cancel_requested_at
 | 순서 | 대상             | 변경 내용                                                                                                                                                    | 상태   |
 | ---- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------ |
 | 1    | PRD·Phase 문서   | 용어, 상태 전이, Source Schema, 인수 조건과 BI 요구사항을 동기화한다. PRD v1.8에 반영했다.                                                                   | 완료   |
-| 2    | Source DDL       | `customer_memberships`를 `customer_subscriptions`와 `customer_membership_tiers`로 나누고 `subscription_payments`를 신설한다. v1.6 등급 이관 DO 블록을 삭제한다. | 재작업 |
-| 3    | Seed             | 기존 등급 계산을 대문자 `membership_tier`에 적용하고 모든 Seed 고객을 `NON_MEMBER`로 초기화한다. 두 테이블에 나눠 적재한다.                                  | 재작업 |
-| 4    | Generator        | 구독 상태 전이와 실적 등급 갱신을 분리하고, 시각 기반 만료 스캔과 자동결제를 만든다. 전이·시각 단조 증가·재가입 판별 테스트를 추가한다.                      | 재작업 |
-| 5    | Ingestion·Bronze | Arrow Schema, 상태 도메인 검증, Schema Version, Catalog 검증을 새 컬럼에 맞춘다.                                                                             | 미진행 |
-| 6    | dbt              | Staging을 축별로 나누고 `int_customer_history` 병합 단계를 만든다. SCD2 Hash, Temporal Join, 재가입 파생 측정값과 `fact_subscription_payments`를 갱신한다.   | 미진행 |
-| 7    | 품질·BI          | 상태 전이·구간 비중복·등급 규칙을 검증하고 구독 퍼널, 결제 실패, 해지, 재가입, 등급별 지표를 만든다.                                                         | 미진행 |
-| 8    | 재기준화         | Source와 Bronze의 호환 불가 스키마를 교체하고, 전체 재수집·Catalog 동기화·dbt build로 기준선을 다시 만든다.                                                  | 미진행 |
+| 2    | Source DDL       | `customer_memberships`를 `customer_subscriptions`와 `customer_membership_tiers`로 나누고 `subscription_payments`를 신설한다. v1.6 등급 이관 DO 블록을 삭제한다. | 완료   |
+| 3    | Seed             | 기존 등급 계산을 대문자 `membership_tier`에 적용하고 모든 Seed 고객을 `NON_MEMBER`로 초기화한다. 두 테이블에 나눠 적재한다.                                  | 완료   |
+| 4    | Generator        | 구독 상태 전이와 실적 등급 갱신을 분리하고, 시각 기반 만료 스캔과 자동결제를 만든다. 전이·시각 단조 증가·재가입 판별 테스트를 추가한다.                      | 완료   |
+| 5    | Ingestion·Bronze | Arrow Schema, 상태 도메인 검증, Schema Version, Catalog 검증을 새 컬럼에 맞춘다.                                                                             | 완료   |
+| 6    | dbt              | Staging을 축별로 나누고 `int_customer_history` 병합 단계를 만든다. SCD2 Hash, Temporal Join, 재가입 파생 측정값과 `fact_subscription_payments`를 갱신한다.   | 완료   |
+| 7    | 품질·BI          | 상태 전이·구간 비중복·등급 규칙을 검증하고 구독 퍼널, 결제 실패, 해지, 재가입, 등급별 지표를 만든다.                                                         | 완료   |
+| 8    | 재기준화         | Source와 Bronze의 호환 불가 스키마를 교체하고, 전체 재수집·Catalog 동기화·dbt build로 기준선을 다시 만들었다.                                                | 완료   |
 
 2~4단계는 통합 테이블(A안) 기준으로 먼저 구현했다. 이후 비교를 거쳐 B안으로 확정했으므로
 해당 코드를 두 테이블 구조로 다시 만든다. 이미 작성한 상태 전이 규칙과 Seed 기준선 로직은
 그대로 쓸 수 있고, 테이블 경계와 CHECK 제약 위치만 바뀐다.
+
+8단계는 `2026-09-10`에 실행했다. 구 `customer_memberships` Table을 제거하고 9개 Source를
+Seed·Bronze로 다시 만들었다. `subscription_payments`는 기준 시점에 행이 없어
+`SUCCESS_NO_DATA`(0행)로 완료했으며 Bronze Object를 만들지 않는다. `control.bronze_files`에는
+행이 있는 8개 Table이 등록됐고, 실제 Catalog에서 실행한 `dbt build`는 모델 25개와 데이터 테스트
+79개를 포함해 총 105개 항목을 모두 통과했다.
 
 ## 6. 데이터 제약과 테스트
 

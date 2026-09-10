@@ -28,3 +28,6 @@ models:
       facts:
         +materialized: incremental
         +schema: facts
+      metrics:
+        +materialized: view
+        +schema: metrics

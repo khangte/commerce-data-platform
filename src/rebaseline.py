@@ -36,6 +36,7 @@ SOURCE_TABLES = (
     "products",
     "sellers",
 )
+LEGACY_SOURCE_TABLES = ("customer_memberships",)
 PIPELINE_METADATA_TABLES = (
     "quarantine_batches",
     "bronze_objects",
@@ -156,7 +157,7 @@ def _existing_source_tables(connection) -> tuple[str, ...]:
     """구 스키마에도 동작하도록 현재 존재하는 재기준화 대상 Source Table만 반환한다."""
     return tuple(
         table_name
-        for table_name in SOURCE_TABLES
+        for table_name in (*SOURCE_TABLES, *LEGACY_SOURCE_TABLES)
         if connection.execute("SELECT to_regclass(%s)", (f"public.{table_name}",)).fetchone()[0]
         is not None
     )
@@ -185,11 +186,13 @@ def _reset_catalog_file(catalog_path: Path) -> None:
 
 
 def _reset_source(postgres: PostgresSettings, lease: SourceMutationLease) -> None:
-    """새 Source DDL을 적용한 뒤 주문·계정·Membership Source 행을 한 Transaction으로 비운다."""
+    """새 Source DDL을 적용한 뒤 구 Membership Table과 9개 Source 행을 한 Transaction으로 비운다."""
     assert_source_mutation_lease(postgres, lease)
     with postgres.source_connection() as connection:
         apply_sql_file(connection, "sql/source/001_create_source_tables.sql")
         with connection.transaction():
+            for table_name in LEGACY_SOURCE_TABLES:
+                connection.execute(f"DROP TABLE IF EXISTS {table_name}")
             connection.execute(f"TRUNCATE TABLE {', '.join(SOURCE_TABLES)}")
 
 
@@ -220,7 +223,7 @@ def _ingest_baseline(
             local_directory=PROJECT_ROOT / "data" / "generated" / "rebaseline",
             source_lease=lease,
         )
-        if result.status != "SUCCESS":
+        if result.status not in {"SUCCESS", "SUCCESS_NO_DATA"}:
             raise RuntimeError(f"Baseline ingestion did not succeed for {source_table}: {result.status}")
         row_counts[source_table] = result.row_count
     return row_counts
