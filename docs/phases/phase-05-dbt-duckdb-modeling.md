@@ -18,7 +18,7 @@ Metadata에서 COMMITTED인 Bronze Object만 읽어 DuckDB에 Staging, Intermedi
 - Bronze 기술 컬럼 `_batch_id`, `_ingested_at`은 Staging에서 보존한다. Current 선택과 SCD2 정렬의 Tie-breaker가 이 컬럼을 사용한다.
 - Mutable Entity는 `updated_at`, `_ingested_at`, `_batch_id` 순으로 Bronze Version 중 Current를 결정한다.
 - 모든 Mart는 문서화된 Grain과 `unique_key`를 가진다.
-- Item과 Payment를 각각 주문 Grain으로 집계한 뒤 `fact_orders`에 Join한다.
+- Item과 Payment를 각각 주문 Grain으로 Intermediate에서 집계·결합하고, `fact_orders`는 준비된 주문 Grain을 투영한다.
 - SCD2 구간은 `[valid_from, valid_to)`이고 고객별 Current Version은 정확히 하나다.
 - Incremental 결과는 동일 입력의 Full Refresh와 Logical Hash가 같아야 한다.
 
@@ -253,7 +253,7 @@ freight_value    = freight_value
 line_gross_value = item_price + freight_value
 ```
 
-`fact_orders` Measure:
+`int_order_fact_ready`가 준비하고 `fact_orders`가 제공하는 Measure:
 
 ```text
 item_subtotal     = SUM(item.price)
@@ -407,11 +407,16 @@ Watermark는 dbt 실패로 되돌리지 않는다. 컨테이너에서 `dbt` CLI�
 | `dbt/models/intermediate/int_customer_history.sql` (수정) | 두 축의 관측 시각을 as-of 방식으로 병합해 SCD2 Version, 재가입 횟수와 재가입 시각을 계산한다. |
 | `dbt/models/intermediate/int_orders_enriched.sql` (수정) | 계정 주소를 `source_customer_id`로 직접 결합해 주문 스냅샷으로 보존하도록 변경했다. |
 | `dbt/models/marts/dimensions/dim_customer.sql` (수정) | 사람 단위 구독 상태·거래 실적 등급 SCD2 Version과 재가입 측정값을 Dimension에 보존한다. |
-| `dbt/models/marts/facts/fact_subscription_payments.sql` (생성) | 구독 결제 시각과 고객 SCD2 구간을 Temporal Join해 결제 당시 상태·등급 분석 키를 연결한다. |
+| `dbt/models/marts/facts/fact_subscription_payments.sql` (생성·수정) | `int_subscription_payments_enriched`가 결제 시각과 고객 SCD2 구간을 결합한 결과를 구독 결제 Fact로 투영한다. |
 | `dbt/models/staging/schema.yml`, `dbt/models/marts/facts/schema.yml`, `dbt/tests/*.sql` (수정·생성) | 축별 상태 도메인, 동일 관측 시각의 상충 Hash, 구독 결제 Source→Staging Mapping, 구독 결제 Fact 복합 Grain을 검증한다. |
 | `dbt/models/marts/dimensions/schema.yml`, `dbt/tests/dim_customer_*.sql` (생성) | 고객 SCD2 키·도메인, 구간 비중복, 고객별 Current Version 1건, 허용 구독 상태 전이, 재가입 측정값과 등급 하락 금지를 검증한다. |
 | `dbt/tests/fact_subscription_payments_missing_customer_key.sql` (생성) | 구독 결제가 결제 시점의 고객 SCD2 Version과 결합되지 않은 경우를 차단한다. |
 | `dbt/models/marts/metrics/*.sql`, `dbt/models/marts/metrics/schema.yml`, `dbt/dbt_project.yml` (생성·수정) | 구독 퍼널·결제 결과·주문 시점 등급 성과 지표 View와 `metrics` Schema Materialization을 추가했다. |
+| `dbt/models/intermediate/int_order_item_totals.sql`, `dbt/models/intermediate/int_order_fact_ready.sql` (생성) | 주문 Line 합계를 주문 1건 Grain으로 사전 집계하고, 주문 금액·구매일 키·배송 측정값을 계산한다. `customer_city`, `customer_state`는 주문 시점 스냅샷으로 유지한다. 정비 전후 주문 Fact는 99,441행과 동일 Logical Hash를 유지했다. |
+| `dbt/models/intermediate/int_subscription_payments_enriched.sql` (생성) | 구독 결제를 결제 시점의 고객 SCD2 Version과 결합해 Fact 입력을 준비한다. |
+| `dbt/models/marts/facts/fact_orders.sql`, `dbt/models/marts/facts/fact_subscription_payments.sql` (수정) | 집계·파생·Temporal Join을 수행하지 않고, Intermediate에서 준비된 선언 Grain 행을 투영한다. |
+| `tests/test_fact_layer_contract.py` (생성) | 주문·구독 결제 Fact에 집계·날짜·배송 파생·시점 Join이 다시 들어오지 않는 정적 계층 계약을 검증한다. |
+| `docs/architecture/05-fact-layer-responsibility-refactoring-plan.md` (생성·수정) | Fact 책임 분리의 현재 상태·위험·회귀 검증 계획과, `customer_city`·`customer_state` 유지 및 `dim_membership` 분리 보류 판단을 기록했다. |
 | `docs/phases/phase-05-dbt-duckdb-modeling.md` (수정) | 구독·등급 분리 구현과 검증 보강 내역을 실제 파일명 기준으로 기록했다. |
 
 ## Definition of Done
@@ -423,7 +428,7 @@ Watermark는 dbt 실패로 되돌리지 않는다. 컨테이너에서 `dbt` CLI�
 - [ ] Phase 4 Warehouse DAG의 `dbt_build` 호출 경계가 활성화된다.
 - [ ] Customer SCD2 구간 중첩이 0이고 Current가 정확히 1개다.
 - [ ] 주문이 구매 시점에 유효한 Customer Version을 참조한다.
-- [ ] Incremental과 Full Refresh의 Logical Hash가 같다.
+- [x] Incremental과 Full Refresh의 Logical Hash가 같다.
 - [ ] AC-01, 09, 10, 11, 12, 19, 22가 통과한다.
 
 ## 구독·등급 전환 반영 완료
@@ -443,8 +448,9 @@ PRD v1.8의 구독·등급 분리를 dbt 모델과 데이터 테스트에 반영
   만든다. `next_billing_at`은 매월 갱신되지만 상태 변화가 아니므로 제외한다.
 - [x] `int_customer_history`에서 `lag(subscription_status)` 윈도우로 `CHURNED → TRIAL/ACTIVE`
   전이를 재가입으로 표시하고 `rejoin_count`, `rejoined_at`을 파생한다.
-- [x] `fact_subscription_payments`를 추가했다. 결제 시각으로 `dim_customer`와 Temporal Join해
-  결제 당시의 구독 상태와 등급을 함께 분석할 수 있게 한다.
+- [x] `fact_subscription_payments`를 추가했다. `int_subscription_payments_enriched`에서 결제
+  시각으로 `dim_customer`와 Temporal Join한 결과를 투영해, 결제 당시의 구독 상태와 등급을
+  함께 분석할 수 있게 한다.
 - [x] `dbt/macros/bronze_source.sql`에 세 Source를 등록하고, Source→Staging Mapping 및
   구독 결제 Fact 복합 Grain 테스트를 추가했다.
 - [x] 같은 사람·같은 원천 변경 시각에 축별 속성 Hash가 상충하는지 Staging 관측에서 직접
