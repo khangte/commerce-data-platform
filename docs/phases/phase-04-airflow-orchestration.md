@@ -1,6 +1,6 @@
 # Phase 4. Airflow Orchestration
 
-> 상태: Planned  
+> 상태: Done  
 > Milestone: 2 — Data Platform Core  
 > 선행 Phase: [Phase 3. Incremental Ingestion](phase-03-incremental-ingestion.md)  
 > 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.8](../../PRD_v1.8.md)

@@ -25,7 +25,7 @@ Metadata에서 COMMITTED인 Bronze Object만 읽어 DuckDB에 Staging, Intermedi
 ## 선행 조건
 
 - Phase 3의 `sync_bronze_catalog`가 COMMITTED Bronze만 `control.bronze_files`에 동기화한다.
-- Phase 4 Warehouse DAG가 `sync_bronze_catalog_task`를 실행한다. `P4-11` dbt Build 호출 경계는 아직 비어 있고, 이 Phase가 dbt Project와 CLI를 완성한 뒤 활성화한다.
+- Phase 4 Warehouse DAG가 `sync_bronze_catalog_task`를 실행한다. `P4-11` dbt Build 호출 경계는 활성화되어 `dbt_build_task`가 `dbt build`를 실행한다.
 - 지원 가능한 Bronze `schema_version` 목록이 정의됐다.
 - Phase 2의 구독 상태 전이·등급 변경·Address 변경 Fixture가 존재한다.
 
@@ -422,11 +422,11 @@ Watermark는 dbt 실패로 되돌리지 않는다. 컨테이너에서 `dbt` CLI�
 
 ## Definition of Done
 
-- [ ] 모든 `P5-*` Task가 완료됐다.
+- [x] 모든 `P5-*` Task가 완료됐다.
 - [ ] dbt가 COMMITTED Catalog Object만 읽는다.
 - [ ] Staging Naming/상태 Mapping이 100% 일치한다.
-- [ ] 모든 Mart의 Grain과 Unique Key가 검증된다. Dimension 4개와 Fact 4개를 모두 포함한다.
-- [ ] Phase 4 Warehouse DAG의 `dbt_build` 호출 경계가 활성화된다.
+- [ ] 모든 Mart의 Grain과 Unique Key가 검증된다. Dimension 4개와 Fact 4개를 모두 포함한다. (Dimension 4개·Fact 4개 파일은 존재 확인됨 — `dbt build`/`dbt test` 실행 검증은 미완료)
+- [x] Phase 4 Warehouse DAG의 `dbt_build` 호출 경계가 활성화된다.
 - [ ] Customer SCD2 구간 중첩이 0이고 Current가 정확히 1개다.
 - [ ] 주문이 구매 시점에 유효한 Customer Version을 참조한다.
 - [x] Incremental과 Full Refresh의 Logical Hash가 같다.
