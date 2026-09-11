@@ -354,7 +354,10 @@ Phase 5 문서의 "Intermediate/Mart는 Raw Source Prefix를 직접 참조하지
 | ----------------------------- | ----------------- | ---------------- | ----------------------------------- |
 | `int_orders_enriched`         | 주문 1행          | 주문 1행         | 고객 정보를 Join한다                |
 | `int_order_items_enriched`    | 주문 Line 1행     | 주문 Line 1행    | 상품·판매자 정보를 Join한다         |
+| `int_order_item_totals`       | 주문 Line N행     | **주문 1행**     | 상품 금액·운임을 주문 단위로 사전 집계한다 |
 | `int_payment_summary`         | 결제 Sequence 1행 | **주문 1행**     | 주문 단위로 사전 집계한다           |
+| `int_order_fact_ready`        | 주문·집계 1행     | 주문 1행         | 주문 금액·구매일 키·배송 측정값을 계산한다 |
+| `int_subscription_payments_enriched` | 구독 결제 1행 | 구독 결제 1행 | 결제 시점의 고객 SCD2 Version을 결합한다 |
 | `int_customer_history`        | 고객 관측 1행     | 고객 Version 1행 | SCD2 구간을 만든다                  |
 | `int_affected_business_dates` | 변경 Key          | Business Date    | Late Arrival 재계산 범위를 계산한다 |
 
@@ -375,12 +378,14 @@ Item 3행, Payment 2행인 주문에서 Join 결과는 6행이 된다. `SUM(i.pr
 올바른 방식은 각각을 먼저 주문 Grain으로 접은 뒤 1:1로 Join하는 것이다.
 
 ```text
-int_order_items_enriched  → 주문 Grain 집계 ┐
-                                            ├→ fact_orders (1:1 Join)
-int_payment_summary       → 주문 Grain 집계 ┘
+int_order_items_enriched → int_order_item_totals ┐
+                                                   ├→ int_order_fact_ready → fact_orders
+int_payment_summary      ─────────────────────────┘
 ```
 
-이것이 Phase 5 "Item과 Payment를 각각 주문 Grain으로 집계한 뒤 `fact_orders`에 Join한다" 계약의 근거다.
+사전 집계와 주문 단위 파생은 Intermediate에서 끝낸다. `fact_orders`는
+`int_order_fact_ready`의 주문 1건 결과만 투영하므로, Fact의 Grain·Key·Measure 제공 책임과
+집계·계산 책임이 섞이지 않는다.
 
 ---
 
@@ -395,10 +400,11 @@ int_payment_summary       → 주문 Grain 집계 ┘
 | `fact_orders`      | 주문 1행          | `order_id`                     | incremental            |
 | `fact_order_items` | 주문 Line 1행     | `(order_id, order_item_id)`    | incremental            |
 | `fact_payments`    | 결제 Sequence 1행 | `(order_id, payment_sequence)` | incremental            |
+| `fact_subscription_payments` | 고객별 청구 순번 1행 | `(customer_unique_id, billing_sequence)` | incremental |
 
 ### 8.1 Warehouse Mart ERD
 
-아래 ERD는 Intermediate Model이 아닌, 분석가와 BI가 조회하는 Warehouse Mart의 관계를 나타낸다. `fact_orders`가 주문 중심 Fact이고, 주문 Line과 결제 Sequence Fact는 `order_id`로 주문에 연결된다. 고객은 주문 시점의 SCD2 Version인 `customer_key`로 연결한다. `city`/`state`는 [Membership Grain 분리](membership-grain-separation.md) 이후 고객 속성이 아니라 주문 시점 배송지 스냅샷이므로 `dim_customer`가 아닌 `fact_orders`에 `customer_city`/`customer_state`로 존재한다(`int_orders_enriched`에서 Join). 배송 Measure도 `fact_orders`에 있다. 배송 Timestamp가 주문 1건당 각 1개이므로 Delivery Grain은 주문 Grain과 같고, 1:1 `fact_delivery`를 따로 두지 않는다.
+아래 ERD는 Intermediate Model이 아닌, 분석가와 BI가 조회하는 Warehouse Mart의 관계를 나타낸다. `fact_orders`가 주문 중심 Fact이고, 주문 Line과 결제 Sequence Fact는 `order_id`로 주문에 연결된다. 고객은 주문 시점의 SCD2 Version인 `customer_key`로 연결한다. `city`/`state`는 [Membership Grain 분리](membership-grain-separation.md) 이후 고객 속성이 아니라 주문 시점 배송지 스냅샷이므로 `dim_customer`가 아닌 `fact_orders`에 `customer_city`/`customer_state`로 존재한다. 이 스냅샷과 배송 Measure는 `int_order_fact_ready`에서 준비한다. 배송 Timestamp가 주문 1건당 각 1개이므로 Delivery Grain은 주문 Grain과 같고, 1:1 `fact_delivery`를 따로 두지 않는다.
 
 ```mermaid
 erDiagram
@@ -548,14 +554,14 @@ fact_order_items:
   freight_value    = freight_value
   line_gross_value = item_price + freight_value
 
-fact_orders:
+intermediate.int_order_fact_ready:
   item_subtotal     = SUM(item.price)
   freight_total     = SUM(item.freight_value)
   gross_order_value = item_subtotal + freight_total
   payment_total     = SUM(payment.payment_value)
   order_count       = 1
 
-fact_orders (Delivery):
+intermediate.int_order_fact_ready (Delivery):
   carrier_handoff_days = carrier_at   - purchase_at            (일)
   delivery_days        = delivered_at - purchase_at            (일)
   delivery_delay_days  = delivered_at - estimated_delivery_at  (일)
@@ -622,7 +628,7 @@ AND order.purchase_at < COALESCE(dim_customer.valid_to, TIMESTAMPTZ 'infinity')
 | Bronze       | `bronze/orders/ingestion_date=2026-09-08/batch_id=warehouse_pipeline_dag__20260908T000000Z/data.parquet` | 위와 동일한 컬럼명 + `_batch_id`, `_ingested_at`, `_schema_version=1`                                                                  |
 | Catalog      | `control.bronze_files`                                                                                   | `source_table='orders'`, `object_key='bronze/orders/...'`, `schema_version=1`                                                          |
 | Staging      | `staging.stg_orders`                                                                                     | `order_id='o1'`, `source_customer_id='c1'`, `customer_id='u1'`(Join), `order_status='DELIVERED'`, `purchase_at='2026-09-05T10:00:00Z'` |
-| Intermediate | `intermediate.int_orders_enriched`                                                                       | 위 + Temporal Join으로 얻은 `customer_key`                                                                                             |
+| Intermediate | `intermediate.int_order_fact_ready`                                                                       | 주문 시점 고객 키, Item·결제 사전 집계, 주문 총액, 구매일 키, 배송 측정값                                                              |
 | Mart         | `facts.fact_orders`                                                                                      | `order_id='o1'`, `customer_key`, `gross_order_value`, `order_status='DELIVERED'`                                                       |
 
 `ingestion_date`는 2026-09-08이지만 `purchase_at`은 2026-09-05다. 이 분리 덕분에 Late Arrival 주문이 과거 Business Date의 Fact로 정확히 들어간다.
