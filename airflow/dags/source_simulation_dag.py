@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
+from airflow.providers.standard.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.sdk import DAG, task
 from airflow.sdk.definitions.param import Param
 from airflow.sdk.exceptions import AirflowFailException
@@ -80,4 +81,15 @@ with DAG(
             "reused_successful_run": result.reused_successful_run,
         }
 
-    run_source_simulation()
+    generator_result = run_source_simulation()
+
+    trigger_warehouse_pipeline = TriggerDagRunOperator(
+        task_id="trigger_warehouse_pipeline",
+        trigger_dag_id="warehouse_pipeline_dag",
+        logical_date="{{ params.logical_date or logical_date }}",
+        wait_for_completion=False,
+        skip_when_already_exists=True,
+        fail_when_dag_is_paused=True,
+    )
+
+    generator_result >> trigger_warehouse_pipeline
