@@ -416,6 +416,7 @@ Watermark는 dbt 실패로 되돌리지 않는다. 컨테이너에서 `dbt` CLI�
 | `dbt/models/intermediate/int_subscription_payments_enriched.sql` (생성) | 구독 결제를 결제 시점의 고객 SCD2 Version과 결합해 Fact 입력을 준비한다. |
 | `dbt/models/marts/facts/fact_orders.sql`, `dbt/models/marts/facts/fact_subscription_payments.sql` (수정) | 집계·파생·Temporal Join을 수행하지 않고, Intermediate에서 준비된 선언 Grain 행을 투영한다. |
 | `tests/test_fact_layer_contract.py` (생성) | 주문·구독 결제 Fact에 집계·날짜·배송 파생·시점 Join이 다시 들어오지 않는 정적 계층 계약을 검증한다. |
+| `tests/integration/test_subscription_payment_temporal_join_integration.py` (생성) | 고정 Seed 구독 전이·결제를 Source에 임시 생성하고, Bronze 수집과 격리된 dbt Build를 거쳐 결제 시점의 `ACTIVE/BRONZE` 고객 SCD2 Version 결합을 검증한다. |
 | `docs/architecture/05-fact-layer-responsibility-refactoring-plan.md` (생성·수정) | Fact 책임 분리의 현재 상태·위험·회귀 검증 계획과, `customer_city`·`customer_state` 유지 및 `dim_membership` 분리 보류 판단을 기록했다. |
 | `docs/phases/phase-05-dbt-duckdb-modeling.md` (수정) | 구독·등급 분리 구현과 검증 보강 내역을 실제 파일명 기준으로 기록했다. |
 
@@ -457,6 +458,10 @@ PRD v1.8의 구독·등급 분리를 dbt 모델과 데이터 테스트에 반영
   검증해 비결정적인 SCD2 병합을 차단한다.
 - [x] SCD2 구간 비중복·Current Version 1건, 허용 구독 상태 전이, 재가입 측정값, 거래 실적
   등급 하락 금지와 구독 결제의 고객 Version 결합을 dbt 데이터 테스트로 검증한다.
+- [x] 고정 Seed 통합 Fixture가 `NON_MEMBER/BRONZE` 초기 관측, `ACTIVE` 전이, 구독 결제를
+  각각 Bronze로 수집하고, 임시 Warehouse의 `fact_subscription_payments`가 결제 시각의
+  `ACTIVE/BRONZE` 고객 SCD2 Version을 정확히 참조하는지 검증한다. 기존 기준선 Bronze Object와
+  Warehouse는 Fixture Catalog에 포함하지 않으며 테스트 종료 시 Source·Object·Metadata를 제거한다.
 - [x] BI가 Mart만 읽도록 구독 퍼널, 구독 결제 결과, 주문 시점 등급 성과 View를 `metrics`
   Schema에 제공한다. Metabase 연결과 Dashboard 구성은 Phase 9 범위다.
 
