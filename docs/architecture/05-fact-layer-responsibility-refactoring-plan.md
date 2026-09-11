@@ -1,6 +1,6 @@
 # Fact 계층 책임 분리 정비 계획
 
-> 상태: Proposed — 구현 전 검토 완료 필요
+> 상태: In progress — Fact 책임 분리는 완료했고, Metrics 기준선 대조와 Publish 보존 검증이 남아 있다.
 > 작성일: 2026-09-11
 > 관련 문서:
 > [데이터 변환 흐름](00-data-transformation-flow.md),
@@ -144,9 +144,9 @@ SCD2 Version 수는 고객 수보다 커질 수 있다.
 
 - [x] `int_subscription_payments_enriched`를 만들었다. 구독 결제와 `dim_customer`의
   `[valid_from, valid_to)` 구간 결합을 이곳에서 수행한다.
-- [ ] 결제 행이 있는 Generator Fixture에서 Temporal Join 누락·중복 고객 Version이 0건인지
-  검증한다. 현재 기준선의 `subscription_payments`는 0행이므로, 이번 검증은 SQL 컴파일·빈 입력
-  처리와 기존 데이터 테스트 실행까지다.
+- [x] 결제 행이 있는 고정 Seed Generator Fixture에서 Temporal Join을 검증했다. Fixture는
+  `NON_MEMBER/BRONZE` 초기 관측, `ACTIVE` 전이, 결제를 서로 다른 Bronze Batch로 수집하고,
+  임시 Warehouse에서 결제 시각의 `ACTIVE/BRONZE` 고객 Version에 정확히 한 번 결합됨을 확인한다.
 
 ### Step 4. Fact를 투영 계층으로 축소
 
@@ -159,8 +159,8 @@ SCD2 Version 수는 고객 수보다 커질 수 있다.
 
 - [x] Fact SQL에 새 `GROUP BY`, 집계 함수, 비즈니스 파생식이 들어가지 않는 정적 계약 검사를 추가했다.
 - [x] Fact별 Unique Key, 행 수, 금액·배송 Measure, 구독 결제 고객 키의 변경 전후 결과를 대조했다.
-  주문 Fact의 행 수·키·Measure는 대조했고, `subscription_payments` 기준선은 0행이어서 구독 결제
-  Fact도 0행으로 유지된다. 결제 행의 고객 키 결과 대조는 비어 있지 않은 Fixture가 필요하다.
+  주문 Fact의 행 수·키·Measure는 기준선으로 대조했고, 구독 결제는 고정 Seed Fixture로 비어 있지
+  않은 결제의 고객 키·상태·등급 시점 결합을 대조한다.
 - [x] `dbt build`와 `dbt build --full-refresh`가 각각 108개 항목을 통과했고, 주문 Fact Logical Hash가 같다.
 - [ ] Metrics View의 합계가 정비 전 기준선과 일치하는지 검증한다.
 
