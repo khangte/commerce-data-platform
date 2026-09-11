@@ -247,3 +247,4 @@ airflow/logs/*
 dbt/target/
 dbt/dbt_packages/
 dbt/data/
+dbt/logs/

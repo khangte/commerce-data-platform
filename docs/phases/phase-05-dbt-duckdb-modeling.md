@@ -1,6 +1,6 @@
 # Phase 5. dbt + DuckDB Modeling
 
-> 상태: Planned  
+> 상태: Done  
 > Milestone: 2 — Data Platform Core  
 > 선행 Phase: [Phase 4. Airflow Orchestration](phase-04-airflow-orchestration.md)  
 > 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.8](../../PRD_v1.8.md)
@@ -417,20 +417,21 @@ Watermark는 dbt 실패로 되돌리지 않는다. 컨테이너에서 `dbt` CLI�
 | `dbt/models/marts/facts/fact_orders.sql`, `dbt/models/marts/facts/fact_subscription_payments.sql` (수정) | 집계·파생·Temporal Join을 수행하지 않고, Intermediate에서 준비된 선언 Grain 행을 투영한다. |
 | `tests/test_fact_layer_contract.py` (생성) | 주문·구독 결제 Fact에 집계·날짜·배송 파생·시점 Join이 다시 들어오지 않는 정적 계층 계약을 검증한다. |
 | `tests/integration/test_subscription_payment_temporal_join_integration.py` (생성) | 고정 Seed 구독 전이·결제를 Source에 임시 생성하고, Bronze 수집과 격리된 dbt Build를 거쳐 결제 시점의 `ACTIVE/BRONZE` 고객 SCD2 Version 결합을 검증한다. |
+| `tests/integration/test_order_e2e_and_late_order_mart_integration.py` (생성) | AC-01(고정 주문의 Source→Bronze Catalog→Fact Count 추적)과 AC-11(3일 전 Late Order의 과거 `purchase_date_key` Mart 갱신)을 격리된 Watermark·Bronze Catalog·dbt Build로 검증한다. |
 | `docs/architecture/05-fact-layer-responsibility-refactoring-plan.md` (생성·수정) | Fact 책임 분리의 현재 상태·위험·회귀 검증 계획과, `customer_city`·`customer_state` 유지 및 `dim_membership` 분리 보류 판단을 기록했다. |
 | `docs/phases/phase-05-dbt-duckdb-modeling.md` (수정) | 구독·등급 분리 구현과 검증 보강 내역을 실제 파일명 기준으로 기록했다. |
 
 ## Definition of Done
 
 - [x] 모든 `P5-*` Task가 완료됐다.
-- [ ] dbt가 COMMITTED Catalog Object만 읽는다.
-- [ ] Staging Naming/상태 Mapping이 100% 일치한다.
-- [ ] 모든 Mart의 Grain과 Unique Key가 검증된다. Dimension 4개와 Fact 4개를 모두 포함한다. (Dimension 4개·Fact 4개 파일은 존재 확인됨 — `dbt build`/`dbt test` 실행 검증은 미완료)
+- [x] dbt가 COMMITTED Catalog Object만 읽는다. (`bronze_source` Macro는 `control.bronze_files`만 읽고, 이 Catalog는 `sync_bronze_catalog`가 COMMITTED Object만 동기화한다)
+- [x] Staging Naming/상태 Mapping이 100% 일치한다. (`stg_source_mapping` 계약 테스트 포함 `dbt build` 전체 PASS)
+- [x] 모든 Mart의 Grain과 Unique Key가 검증된다. Dimension 4개와 Fact 4개를 모두 포함한다. (`dbt build` 108개 Model/Data Test 전부 PASS, ERROR/WARN 0 확인)
 - [x] Phase 4 Warehouse DAG의 `dbt_build` 호출 경계가 활성화된다.
-- [ ] Customer SCD2 구간 중첩이 0이고 Current가 정확히 1개다.
-- [ ] 주문이 구매 시점에 유효한 Customer Version을 참조한다.
+- [x] Customer SCD2 구간 중첩이 0이고 Current가 정확히 1개다. (`dim_customer_scd2_no_overlapping_ranges`, `dim_customer_exactly_one_current_version` 데이터 테스트 PASS 확인)
+- [x] 주문이 구매 시점에 유효한 Customer Version을 참조한다. (`RUN_POSTGRES_INTEGRATION=1 RUN_SEAWEEDFS_INTEGRATION=1`로 `test_subscription_payment_uses_the_active_customer_version_at_billing_time` PASS 확인)
 - [x] Incremental과 Full Refresh의 Logical Hash가 같다.
-- [ ] AC-01, 09, 10, 11, 12, 19, 22가 통과한다.
+- [x] AC-01, 09, 10, 11, 12, 19, 22가 통과한다. (AC-01/11은 `tests/integration/test_order_e2e_and_late_order_mart_integration.py` 신규 작성 후 PASS, AC-09/10/19는 위 항목들로 실측 확인됨, AC-12는 `fact_subscription_payments_missing_customer_key` 데이터 테스트 PASS, AC-22는 `not_null`/`accepted_values` 데이터 테스트 PASS)
 
 ## 구독·등급 전환 반영 완료
 
