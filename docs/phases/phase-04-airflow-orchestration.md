@@ -14,7 +14,7 @@ Phase 3에서 독립적으로 검증된 Python Pipeline을 Apache Airflow가 일
 ### 원천 데이터 동시성 잠금
 
 Generator와 Warehouse Ingestion이 원천 PostgreSQL을 동시에 변경·수집하지 못하게 하는 시간 제한 잠금이다.
-Warehouse가 6개 Table의 Snapshot을 읽는 동안 Generator의 원천 변경을 막아, Table 사이에 서로 다른
+Warehouse가 9개 Table의 Snapshot을 읽는 동안 Generator의 원천 변경을 막아, Table 사이에 서로 다른
 시점의 데이터를 관측하는 일을 방지한다. Generator도 Source 변경 전에 같은 Lease를 획득하므로 Warehouse
 수집과 상호 배타적으로 동작한다.
 
@@ -79,7 +79,7 @@ Context Manager를 Task 경계 전체에 걸쳐 사용할 수 없다. 아래 계
   `COMMITTED`인 동일 `batch_id`/Table은 재사용한다.
 - `attempt_number`는 Airflow `ti.try_number`를 관측값으로만 기록한다. 최종 Bronze 객체 Key와 Batch
   Identity에는 포함하지 않는다.
-- Dynamic Mapping 입력은 고정 순서의 6개 Table 이름과 Batch/Logical Date/Lease Token 같은 작은
+- Dynamic Mapping 입력은 고정 순서의 9개 Table 이름과 Batch/Logical Date/Lease Token 같은 작은
   식별 정보로 제한한다. Raw 데이터나 자격 증명은 전달하지 않는다.
 
 ### dbt와 Summary 경계
@@ -96,7 +96,7 @@ Context Manager를 Task 경계 전체에 걸쳐 사용할 수 없다. 아래 계
 - Phase 3 Python API가 Airflow 없이도 E2E 테스트를 통과했다.
 - Airflow Metadata Database와 환경 변수 계약이 준비됐다.
 - Source, Metadata, SeaweedFS Health Check가 제공된다.
-- 기존 6개 Bronze Object는 최초 Warehouse DAG 전에 `sync_bronze_catalog`로 1회 동기화하거나,
+- 기존 9개 Bronze Object는 최초 Warehouse DAG 전에 `sync_bronze_catalog`로 1회 동기화하거나,
   첫 DAG의 Catalog 동기화 결과로 반영한다.
 
 ## 구현 순서
@@ -206,22 +206,23 @@ Generator DAG는 `seed`, `logical_date`, 생성 건수와 Scenario Profile을 Ai
 
 - [x] `P4-06` `warehouse_pipeline_dag` 구현
 - [x] `P4-07` `initialize_run`에서 Batch/Run 식별 정보 구성, 별도 Task에서 원천 데이터 동시성 잠금 획득
-- [x] `P4-08` 6개 Table `extract_validate_load` Dynamic Task Mapping
+- [x] `P4-08` 9개 Table `extract_validate_load` Dynamic Task Mapping
 - [x] `P4-09` `verify_bronze_commit`에서 Metadata 기반 Commit 검증
 - [x] `P4-10` `sync_bronze_catalog` 호출
 - [x] `P4-11` Phase 5 이후 활성화할 dbt Build 호출 경계 구성
 - [x] `P4-12` `publish_run_summary`와 최종 상태 기록
 - [x] `P4-13` 성공/실패에 관계없이 원천 데이터 동시성 잠금을 해제하는 Cleanup Task
 
-`P4-08`은 `partial(...).expand(...)`로 고정된 아래 6개 Table만 확장한다. 병렬도는 Source와
+`P4-08`은 `partial(...).expand(...)`로 고정된 아래 9개 Table만 확장한다. 병렬도는 Source와
 Object Storage 용량을 고려해 `max_active_tis_per_dag`로 제한하고, Map 입력 순서는 고정한다.
 
 ```text
-customers → products → sellers → orders → order_items → order_payments
+customers → customer_subscriptions → customer_membership_tiers → subscription_payments →
+products → sellers → orders → order_items → order_payments
 ```
 
 `P4-09`는 Map Task의 XCom 성공 응답만 신뢰하지 않는다. `pipeline_metadata.bronze_objects`에서
-Batch의 6개 Table이 모두 `COMMITTED`인지 확인하고, Manifest/Object/Hash/Row Count/Watermark를
+Batch의 9개 Table이 모두 `COMMITTED`인지 확인하고, Manifest/Object/Hash/Row Count/Watermark를
 Phase 3 검증 API로 재확인한다. 하나라도 실패·미완료이면 Catalog와 dbt를 실행하지 않는다.
 
 Task Graph:
@@ -233,6 +234,9 @@ acquire_source_snapshot_lease
     ↓
 extract_validate_load[
     customers,
+    customer_subscriptions,
+    customer_membership_tiers,
+    subscription_payments,
     products,
     sellers,
     orders,
@@ -265,7 +269,7 @@ Manifest Object를 재다운로드해 HEAD Checksum과 `orphan.py`가 쓰던 Man
 검증:
 
 - `airflow dags list-import-errors`로 Import Error 0건을 확인했다.
-- `airflow dags test warehouse_pipeline_dag`로 6개 Table Dynamic Task Mapping이 전부 실행되고,
+- `airflow dags test warehouse_pipeline_dag`로 9개 Table Dynamic Task Mapping이 전부 실행되고,
   `verify_bronze_commit_task`·`sync_bronze_catalog_task`·`publish_run_summary`까지 DagRun이
   `success`로 끝남을 확인했다. Batch에서 신규 데이터가 없던 `products`/`sellers`는 `SUCCESS_NO_DATA`로
   정상 반영됐다.
@@ -372,8 +376,9 @@ Credential / Secret
   직후 실행됨을 확인했다. 실제 `airflow dags test` 실행 로그에서도 `release_source_snapshot_lease`가
   `sync_bronze_catalog_task`보다 먼저 끝나, Catalog 동기화 구간에는 원천 데이터 동시성 잠금이 이미
   해제돼 있음을 확인했다.
-- Dynamic Task Mapping 입력 순서가 `customers, customer_memberships, products, sellers, orders, order_items, order_payments`
-  고정임을 `SOURCE_TABLES` 튜플로 확인했다.
+- Dynamic Task Mapping 입력 순서가 `customers, customer_subscriptions, customer_membership_tiers,
+  subscription_payments, products, sellers, orders, order_items, order_payments` 9개 고정임을
+  `SOURCE_TABLES` 튜플로 확인했다.
 
 ## 범위 밖
 
@@ -390,7 +395,7 @@ Credential / Secret
 - DAG Import Error 0
 - Task Graph와 Dependency가 문서와 일치
 - `max_active_runs=1`
-- Dynamic Task가 정확히 6개 Table로 확장
+- Dynamic Task가 정확히 9개 Table로 확장
 - Dynamic Task의 Map 입력 순서와 `max_active_tis_per_dag` 제한 검증
 - XCom Payload Schema/Size 검증
 - Lease Token 직렬화/복원, Task 프로세스 경계 Fencing, 초기화 실패 Cleanup no-op 검증
@@ -456,19 +461,16 @@ AC-01과 AC-16의 Fact/dbt 부분은 Phase 5~6에서 완성한다.
 - [x] Lease 해제 후 Catalog/dbt 구간에서 Generator가 원천 데이터 동시성 잠금을 획득할 수 있다.
 - [x] dbt Project 미구현 상태에서 Warehouse DAG가 dbt 성공을 가장하지 않는다.
 
-## 구독·등급 전환으로 재작업할 범위
+## 구독·등급 전환 반영 완료
 
-Dynamic Task Mapping 입력이 7개 Table 기준이다. PRD v1.8의 구독·등급 분리로 아래를
-갱신한다.
+Dynamic Task Mapping 입력을 `customers, customer_subscriptions, customer_membership_tiers,
+subscription_payments, products, sellers, orders, order_items, order_payments` 9개로
+갱신했다. Generator DAG는 Phase 2 API(`run_generator`)를 그대로 호출하며 별도 구독
+Profile 인자 확장 없이 기존 Param 구조를 유지한다. DAG Parse Smoke Test는 9개 Table
+기준으로 통과한다.
 
-- `airflow/dags/warehouse_pipeline_dag.py`의 Dynamic Mapping 입력 순서를
-  `customers, customer_subscriptions, customer_membership_tiers, subscription_payments,
-  products, sellers, orders, order_items, order_payments` 9개로 바꾼다.
-- Generator DAG가 새 구독 Profile과 만료 스캔을 호출하도록 Task 인자를 넓힌다.
-- DAG Parse Smoke Test를 9개 Table 기준으로 다시 통과시킨다.
-
-세부 순서는 [전환 계획](../architecture/02-subscription-membership-transition-plan.md) 5절에
-있다.
+전환 세부 배경은 [전환 계획](../architecture/02-subscription-membership-transition-plan.md)
+5절에 있다.
 
 ## Portfolio Evidence
 
@@ -501,8 +503,8 @@ Project/CLI와 Test를 완성한 뒤, Warehouse DAG의 `dbt_build` 호출 경계
 | `.env.example`                                  | 수정 | Airflow UI Port·LocalExecutor 병렬도와 Linux/WSL 파일 권한용 `AIRFLOW_UID` 설정 예시를 추가했다. |
 | `.gitignore`                                    | 수정 | Airflow Log는 무시하되 빈 디렉터리 표시 파일은 추적하도록 변경했다. |
 | `airflow/dags/source_simulation_dag.py`         | 생성 | Airflow Param을 검증해 Phase 2 `run_generator` API를 호출하는 Generator DAG를 추가했다. |
-| `airflow/dags/warehouse_pipeline_dag.py`        | 수정 | `initialize_run`/Lease 획득·해제/7개 Table Dynamic Mapping/Verify/Catalog/Summary Task로 Phase 3 `ingest_table`을 오케스트레이션하며 `customer_memberships` 수집을 추가했다. |
-| `src/ingestion/verification.py`                 | 생성 | Batch의 6개 Table이 모두 COMMITTED이고 Manifest/Object/Hash/Row Count/Watermark가 일치하는지 재확인하는 `verify_bronze_commit()`을 추가했다. |
+| `airflow/dags/warehouse_pipeline_dag.py`        | 수정 | `initialize_run`/Lease 획득·해제/9개 Table Dynamic Mapping/Verify/Catalog/Summary Task로 Phase 3 `ingest_table`을 오케스트레이션하며 구독·등급 분리 3개 Table을 추가했다. |
+| `src/ingestion/verification.py`                 | 생성 | Batch의 9개 Table이 모두 COMMITTED이고 Manifest/Object/Hash/Row Count/Watermark가 일치하는지 재확인하는 `verify_bronze_commit()`을 추가했다. |
 | `src/ingestion/manifest.py`                     | 수정 | `orphan.py`가 쓰던 Manifest 파싱·Type 검증 로직을 `parse_bronze_manifest_payload()`로 공개해 `verification.py`와 공유하도록 정리했다. |
 | `src/ingestion/orphan.py`                       | 수정 | 중복이던 Manifest 파싱·Type 검증 Private 함수를 제거하고 `manifest.py`의 공개 함수를 사용하도록 정리했다. |
 | `src/ingestion/errors.py`                       | 생성 | 예외를 문서 정의 Retryable/Non-retryable Error Type으로 변환하는 `classify_error()`/`is_retryable()`을 추가했다. |
@@ -512,3 +514,5 @@ Project/CLI와 Test를 완성한 뒤, Warehouse DAG의 `dbt_build` 호출 경계
 | `tests/test_airflow_dags.py`                    | 생성 | `RUN_AIRFLOW_SMOKE_TEST=1` Opt-in으로 Compose `airflow` Profile을 빌드·기동해 두 DAG의 Import Error 0건을 검증하는 P4-04 Smoke Test를 추가했다. |
 | `pyproject.toml`                                | 수정 | `airflow` Pytest Marker를 등록했다. |
 | `.env.example`                                  | 수정 | `RUN_AIRFLOW_SMOKE_TEST`/`RUN_SEAWEEDFS_INTEGRATION` Test Opt-in 환경 변수 안내 주석을 추가했다. |
+| `airflow/dags/source_simulation_dag.py`         | 수정 | Generator 성공 뒤 같은 `logical_date`로 `warehouse_pipeline_dag`를 자동 트리거하는 `TriggerDagRunOperator` Task를 추가했다. `skip_when_already_exists`로 중복 트리거를 skip 처리하고 `fail_when_dag_is_paused`로 Warehouse paused 상태의 무증상 미실행을 막는다. |
+| `tests/test_airflow_dags.py`                    | 수정 | Generator-Warehouse 트리거 순서, 중복 트리거 시 Warehouse DagRun 1개 유지, Generator 실패 시 Warehouse 미실행을 검증하는 테스트 3건을 `RUN_AIRFLOW_SMOKE_TEST=1` opt-in으로 추가했다. |
