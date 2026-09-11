@@ -56,7 +56,7 @@ Phase 3 `ingest_table()`이 담당한다. `src/ingestion/tables.py`의 `TableCon
 
 | 작업           | 내용                                                                       |
 | -------------- | -------------------------------------------------------------------------- |
-| 증분 추출      | Table별 Cursor 컬럼 기준 Keyset Pagination (`customers`는 `created_at`, `customer_memberships`는 `updated_at` 등 Table마다 다르다) |
+| 증분 추출      | Table별 Cursor 컬럼 기준 Keyset Pagination (`customers`는 `created_at`, `customer_subscriptions`/`customer_membership_tiers`는 `updated_at` 등 Table마다 다르다) |
 | Type 고정      | PostgreSQL 타입을 Arrow 타입으로 명시 변환                                 |
 | 기술 컬럼 추가 | `_batch_id`, `_run_id`, `_ingested_at`, `_source_table`, `_schema_version` |
 | 검증과 격리    | 계약 위반 Row를 Quarantine으로 분리                                        |
@@ -80,7 +80,7 @@ Phase 3 `ingest_table()`이 담당한다. `src/ingestion/tables.py`의 `TableCon
 
 | 컬럼              | 타입                 | 값                             | 용도                                                        |
 | ----------------- | -------------------- | ------------------------------ | ----------------------------------------------------------- |
-| `_batch_id`       | `string`             | `{dag_id}__{YYYYMMDDTHHMMSSZ}` | 같은 Batch의 7개 Table을 묶는다. Current 선택 Tie-breaker다 |
+| `_batch_id`       | `string`             | `{dag_id}__{YYYYMMDDTHHMMSSZ}` | 같은 Batch의 9개 Table을 묶는다. Current 선택 Tie-breaker다 |
 | `_run_id`         | `string`             | Pipeline Run UUID              | 실행 추적용이다                                             |
 | `_ingested_at`    | `timestamp[us, UTC]` | Bronze 기록 시각               | Current 선택 Tie-breaker다                                  |
 | `_source_table`   | `string`             | 원천 Table 이름                | Object 자체로 출처를 식별한다                               |
@@ -146,7 +146,7 @@ Metadata를 Source of Truth로 두면 Commit Protocol이 보장한 Object만 dbt
 | Table Prefix 제거     | 9개 컬럼                                             | 소속이 이미 Table 이름에 있다              |
 | Timestamp 접미사 통일 | 5개 컬럼                                             | 이름이 타입을 속인다                       |
 | Business Key 교체     | `customer_id` / `customer_unique_id`                 | 원천 PK가 사람을 식별하지 않는다           |
-| 상태값 표준화         | `order_status`, `payment_status`, `membership_level` | 원천 상태를 분석용 표기 규칙으로 통일한다 |
+| 상태값 표준화         | `order_status`, `payment_status`, `subscription_status`, `membership_tier` | 원천 상태를 분석용 표기 규칙으로 통일한다 |
 
 ### 5.1 Table Prefix 제거
 
@@ -263,14 +263,14 @@ GROUP BY customer_id HAVING COUNT(*) > 1
 
 **대가**: `stg_orders`는 `customer_id`를 직접 얻지 못한다. 원천 `orders.customer_id`는 결합 키일 뿐이므로, 사람 ID를 얻으려면 `stg_customers_current`를 `source_customer_id`로 Join해야 한다.
 
-**SCD2와의 연결**: `dim_customer`의 Business Key도 이 교체된 `customer_id`다. 한 사람의 `membership_level` 변경 이력을 추적하려면 사람 단위 키여야 한다. 결합 키로 SCD2를 만들면 Version이 항상 1개씩 생겨 이력 추적이 무의미해진다.
+**SCD2와의 연결**: `dim_customer`의 Business Key도 이 교체된 `customer_id`다. 한 사람의 `subscription_status`/`membership_tier` 변경 이력을 추적하려면 사람 단위 키여야 한다. 결합 키로 SCD2를 만들면 Version이 항상 1개씩 생겨 이력 추적이 무의미해진다.
 
 ### 5.4 사람 단위 집계
 
 `customers`는 계정 불변 테이블이므로 `created_at`, `_ingested_at`, `_batch_id`로 같은 계정의
 Current Bronze 행만 고른다. `stg_customers_current`는 모든 `source_customer_id`마다 한 행을
 유지하며 해당 계정의 `city`·`state`를 주문 배송지 스냅샷으로 전달한다. 분석 고객 키는
-`customer_unique_id`이고, 사람 단위 등급 이력은 별도 `customer_memberships` 관측에서 만든다.
+`customer_unique_id`이고, 사람 단위 구독 상태·등급 이력은 별도 `customer_subscriptions`/`customer_membership_tiers` 관측에서 만든다.
 
 <!--  -->### 5.5 나머지 이름 변환
 
@@ -286,8 +286,12 @@ PostgreSQL DDL의 CHECK 제약이 허용하는 값이 원천 Domain이다.
 order_status IN ('created','approved','processing','invoiced',
                  'shipped','delivered','canceled','unavailable')
 payment_status IN ('pending','completed','failed','refunded')
-membership_level IN ('bronze','silver','gold')
+subscription_status IN ('NON_MEMBER','TRIAL','ACTIVE','PAYMENT_FAILED',
+                        'CANCEL_REQUESTED','CHURNED')
+membership_tier IN ('BRONZE','SILVER','GOLD')
 ```
+
+`subscription_status`와 `membership_tier`는 원천에서부터 이미 대문자다. `order_status`/`payment_status`만 소문자 원천을 Staging에서 대문자로 바꾼다.
 
 Staging은 원천 8개 주문 상태를 축약하지 않고, 대문자 `order_status`로 표준화해 보존한다.
 
@@ -312,6 +316,10 @@ Staging은 원천 8개 주문 상태를 축약하지 않고, 대문자 `order_st
   | `completed` | `COMPLETED` |
   | `failed`    | `FAILED`    |
   | `refunded`  | `REFUNDED`  |
+
+- subscription / tier
+
+  `subscription_status`(`NON_MEMBER`/`TRIAL`/`ACTIVE`/`PAYMENT_FAILED`/`CANCEL_REQUESTED`/`CHURNED`)와 `membership_tier`(`BRONZE`/`SILVER`/`GOLD`)는 원천 값 자체가 이미 대문자 표준 표기다. Staging Macro(`standardized_subscription_status`, `standardized_membership_tier`)는 값을 바꾸지 않고 허용 목록 검증만 수행한다. `order_status`/`payment_status`와 달리 소문자→대문자 변환 구간이 아니다.
 
 **왜 대문자인가**: 소문자는 원천 값, 대문자는 Staging 표준 상태다. Model에서 `= 'delivered'`를 보면 원천을 직접 참조하는 실수이고, `= 'DELIVERED'`면 Staging 이후다. 규칙이 눈에 보이므로 리뷰에서 잡을 수 있다.
 
@@ -401,6 +409,11 @@ int_payment_summary      ──────────────────�
 | `fact_order_items` | 주문 Line 1행     | `(order_id, order_item_id)`    | incremental            |
 | `fact_payments`    | 결제 Sequence 1행 | `(order_id, payment_sequence)` | incremental            |
 | `fact_subscription_payments` | 고객별 청구 순번 1행 | `(customer_unique_id, billing_sequence)` | incremental |
+| `rpt_subscription_funnel_daily` | 이벤트 일자 1행 | `event_date_key` | table 또는 incremental |
+| `rpt_subscription_payment_outcomes_daily` | 청구일·결제 상태 1행 | `(billing_date_key, payment_status)` | table 또는 incremental |
+| `rpt_membership_tier_performance` | 구독 상태·등급 1행 | `(subscription_status, membership_tier)` | table 또는 incremental |
+
+`rpt_*` 3개는 Intermediate가 아닌 Mart 위에서 파생되는 Metrics Model이다. `dim_customer`/`fact_subscription_payments`를 다시 집계하며, [Membership Grain 분리](membership-grain-separation.md)가 도입한 구독 Funnel·결제 성과 지표를 담는다. 이 문서의 ERD·Fact 컬럼 사전은 원천 Grain Fact/Dimension까지만 다루고 `rpt_*`는 별도로 다루지 않는다.
 
 ### 8.1 Warehouse Mart ERD
 
@@ -409,6 +422,7 @@ int_payment_summary      ──────────────────�
 ```mermaid
 erDiagram
     DIM_CUSTOMER ||--o{ FACT_ORDERS : customer_key
+    DIM_CUSTOMER ||--o{ FACT_SUBSCRIPTION_PAYMENTS : customer_key
     DIM_DATE ||--o{ FACT_ORDERS : purchase_date_key
     FACT_ORDERS ||--o{ FACT_ORDER_ITEMS : order_id
     FACT_ORDERS ||--o{ FACT_PAYMENTS : order_id
@@ -418,7 +432,13 @@ erDiagram
     DIM_CUSTOMER {
         string customer_key PK
         string customer_id
-        string membership_level
+        string subscription_status
+        string membership_tier
+        timestamp trial_ends_at
+        timestamp benefit_ends_at
+        timestamp payment_failed_at
+        timestamp cancel_requested_at
+        integer rejoin_count
         timestamp valid_from
         timestamp valid_to
         boolean is_current
@@ -471,20 +491,33 @@ erDiagram
         string payment_status
         decimal payment_value
     }
+
+    FACT_SUBSCRIPTION_PAYMENTS {
+        string customer_key FK
+        string customer_unique_id PK
+        integer billing_sequence PK
+        string payment_status
+        decimal payment_value
+        timestamp billing_period_start
+        timestamp billing_period_end
+    }
 ```
 
 | 관계                                              | 연결 기준                  | 설계상 의미                                                                                                                 |
 | ------------------------------------------------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | `dim_customer` → `fact_orders`                    | `customer_key`             | `purchase_at`이 `[valid_from, valid_to)`에 드는 고객 Version을 연결한다. 현재 고객 정보로 과거 주문을 다시 해석하지 않는다. |
+| `dim_customer` → `fact_subscription_payments`     | `customer_key`             | 결제 시점(`billing_period_start`)에 유효했던 구독 상태·등급 Version을 연결한다.                                            |
 | `dim_date` → `fact_orders`                        | 주문의 구매 Business Date  | Late Arrival도 수집일이 아닌 구매일에 속한다.                                                                               |
 | `fact_orders` → `fact_order_items`                | `order_id`                 | 주문 1건은 여러 주문 Line을 가질 수 있다.                                                                                   |
 | `fact_orders` → `fact_payments`                   | `order_id`                 | 주문 1건은 여러 결제 Sequence를 가질 수 있다.                                                                               |
 | `dim_product` / `dim_seller` → `fact_order_items` | `product_id` / `seller_id` | 상품과 판매자는 주문 Line Grain에서 분석한다.                                                                               |
 
+`fact_subscription_payments`는 주문 계열 Fact와 `order_id`로 연결되지 않는다. 구독 결제는 주문과 독립적인 청구 주기(`customer_unique_id`, `billing_sequence`) Grain이며, `dim_customer`로만 연결된다.
+
 `fact_order_items`와 `fact_payments`는 서로 직접 Join하지 않는다. 두 Fact의 Grain이 다르므로, 주문 단위 합계는 각각을 `order_id` Grain으로 집계한 뒤 `fact_orders`에 반영한다.
 
 `dim_customer.customer_key`는 `customer_id`(자연키)를 그대로 PK로 쓰지 않고 별도 Surrogate Key로
-만든다. SCD2 구조상 같은 `customer_id`가 `membership_level` Version마다 여러 행으로 존재해
+만든다. SCD2 구조상 같은 `customer_id`가 `subscription_status`/`membership_tier` Version마다 여러 행으로 존재해
 자연키가 이 Table 안에서 유일하지 않기 때문이다. `customer_key = md5(customer_id || valid_from
 || attribute_hash)`로 만들어(`dim_customer.sql`) 같은 고객의 같은 속성 상태는 재계산해도 항상
 같은 Key 값이 나오게 한다(재현성, `uuid()` 같은 비결정적 값은 쓰지 않는다). 이 Key가
@@ -546,6 +579,20 @@ erDiagram
 | `payment_status`   | `string`  | Degenerate | 대문자로 표준화한 결제 상태다. 환불·실패 분석의 유일한 근거다                                            |
 | `payment_value`    | `decimal` | Measure    | 이 결제 Sequence의 금액이다. 주문 단위 합계는 `fact_orders.payment_total`이며 여기서 중복 계산하지 않는다 |
 
+#### `fact_subscription_payments`
+
+한 행은 한 고객의 구독 청구 주기 1회다. 주문 결제(`fact_payments`)와 별개 Fact이며 `order_id`가 없다.
+
+| 컬럼                    | 타입        | 역할       | 담는 값과 출처                                                                                          |
+| ----------------------- | ----------- | ---------- | --------------------------------------------------------------------------------------------------------- |
+| `customer_key`          | `string`    | FK         | 결제 시점(`billing_period_start`)에 유효했던 `dim_customer` Version이다. Temporal Join으로 얻는다        |
+| `customer_unique_id`    | `string`    | PK         | 사람 단위 고객 식별자다                                                                                  |
+| `billing_sequence`      | `integer`   | PK         | 고객 안에서의 청구 순번이다                                                                               |
+| `payment_status`        | `string`    | Degenerate | 구독 결제 결과다. `completed` 또는 `failed` 값을 가지며, 주문 결제 상태(대문자 8종)와 값 집합이 다르다    |
+| `payment_value`         | `decimal`   | Measure    | 이 청구의 결제 금액이다                                                                                   |
+| `billing_period_start`  | `timestamp` | Snapshot   | 청구 기간 시작 시각이다. `dim_customer` Temporal Join의 기준 시각이다                                    |
+| `billing_period_end`    | `timestamp` | Snapshot   | 청구 기간 종료 시각이다                                                                                   |
+
 ### 8.3 Measure 계산 계약
 
 ```text
@@ -576,25 +623,36 @@ Delivery Measure 4개는 Non-additive다. `SUM()` 대상이 아니라 평균·�
 
 ## 9. SCD2: Mutable 원천을 이력으로 바꾸는 구간
 
-PostgreSQL `customer_memberships`는 `UPDATE`로 덮어쓰므로 과거 `membership_level`이 남지 않는다. Bronze는 Batch마다 새 Object를 쌓으므로 관측 이력이 보존된다. 이 차이를 이용해 `dim_customer`가 Version 이력을 복원한다.
+PostgreSQL `customer_subscriptions`와 `customer_membership_tiers`는 `UPDATE`로 덮어쓰므로 과거 상태가 남지 않는다. Bronze는 Batch마다 새 Object를 쌓으므로 관측 이력이 보존된다. 이 차이를 이용해 `dim_customer`가 Version 이력을 복원한다.
+
+`dim_customer`는 [Membership Grain 분리](membership-grain-separation.md) 이후 두 개의 독립 축을 하나의 SCD2 Version으로 병합한다. 구독 상태(`subscription_status`)와 거래 실적 등급(`membership_tier`)은 서로 다른 원천 Table에서 독립적인 Watermark로 수집되며, `int_customer_history`가 두 축의 관측 시각을 하나의 시간축으로 합쳐 as-of 값을 채운 뒤 Version을 만든다.
 
 ```text
-PostgreSQL customer_memberships UPDATE로 현재 값만 존재한다
-        ↓ Batch마다 수집
-Bronze Object 여러 개          Batch별 관측이 누적된다
-        ↓ 관측을 시간 순으로 정렬
-int_customer_history          Version 구간을 만든다
+PostgreSQL customer_subscriptions       UPDATE로 구독 상태 현재 값만 존재한다
+PostgreSQL customer_membership_tiers    UPDATE로 등급 현재 값만 존재한다
+        ↓ 각각 독립 Watermark로 Batch마다 수집
+Bronze Object 여러 개                   축별로 관측이 누적된다
+        ↓ stg_customer_subscription_observations / stg_customer_tier_observations
+        ↓ 두 축의 관측 시각을 하나의 시간축으로 병합, 결측 구간은 as-of로 채움
+int_customer_history                    두 축을 합친 Version 구간을 만든다
         ↓
-dim_customer                  [valid_from, valid_to) 구간을 가진다
+dim_customer                            [valid_from, valid_to) 구간을 가진다
 ```
 
 ### 9.1 추적 속성
 
-| 속성               | 원천 컬럼                    | 근거                         |
-| ------------------ | ---------------------------- | ---------------------------- |
-| `membership_level` | `customer_memberships.membership_level` | 등급 변경 시점을 알아야 한다 |
+| 속성                   | 원천 컬럼                                              | 근거                                                        |
+| ---------------------- | ------------------------------------------------------- | ------------------------------------------------------------ |
+| `subscription_status`  | `customer_subscriptions.subscription_status`            | 구독 진입·이탈·재가입 시점을 알아야 한다                    |
+| `membership_tier`      | `customer_membership_tiers.membership_tier`              | 거래 실적 등급 변경 시점을 알아야 한다                       |
+| `trial_ends_at`        | `customer_subscriptions.trial_ends_at`                   | 체험 종료 시점이다                                           |
+| `benefit_ends_at`      | `customer_subscriptions.benefit_ends_at`                 | 혜택 종료 시점이다                                            |
+| `payment_failed_at`    | `customer_subscriptions.payment_failed_at`                | 결제 실패 시점이다                                            |
+| `cancel_requested_at`  | `customer_subscriptions.cancel_requested_at`              | 해지 요청 시점이다                                            |
 
-등급 Hash가 바뀔 때만 새 Version을 만든다. `updated_at`만 바뀌고 등급이 그대로면 Version을 늘리지 않는다.
+`attribute_hash`가 바뀔 때만 새 Version을 만든다. `next_billing_at`은 Hash 계산에서 제외한다. 매달 고정 주기로 갱신되는 값이라 상태 변화 없이도 매달 새 Version을 만드는 Version 폭증을 유발하기 때문이다. 두 축 중 한쪽만 새 관측이 있으면 다른 쪽은 직전 값을 그대로 이어받아 Hash를 계산하므로, 독립 Watermark로 인한 한쪽 축의 결측이 불필요한 Version 분기를 만들지 않는다.
+
+`rejoin_count`/`rejoined_at`은 파생 속성이다. 직전 Version이 `CHURNED`이고 현재 Version이 `TRIAL` 또는 `ACTIVE`로 전환되는 지점을 재가입 이벤트로 세어 누적한다.
 
 ### 9.2 valid_from 결정 규칙
 
@@ -614,7 +672,14 @@ order.purchase_at >= dim_customer.valid_from
 AND order.purchase_at < COALESCE(dim_customer.valid_to, TIMESTAMPTZ 'infinity')
 ```
 
-현재 Version을 참조하면 과거 주문의 등급이 현재 등급으로 잘못 집계된다. 예를 들어 bronze 등급일 때 산 주문이 지금 gold 등급으로 분류되어 등급별 매출 분석이 왜곡된다.
+현재 Version을 참조하면 과거 주문의 상태·등급이 현재 값으로 잘못 집계된다. 예를 들어 `BRONZE` 등급일 때 산 주문이 지금 `GOLD` 등급으로 분류되거나, `NON_MEMBER`일 때 산 주문이 지금 `ACTIVE` 구독으로 분류되어 등급·구독 상태별 매출 분석이 왜곡된다.
+
+`fact_subscription_payments`도 같은 원리로 Temporal Join한다. 다만 구매가 아닌 결제 시점(`billing_period_start`) 기준이다.
+
+```sql
+payment.billing_period_start >= dim_customer.valid_from
+AND payment.billing_period_start < COALESCE(dim_customer.valid_to, TIMESTAMPTZ 'infinity')
+```
 
 ---
 
