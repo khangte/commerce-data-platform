@@ -44,15 +44,17 @@ Phase 3D: 시간 제한 잠금, CAS, 수집 중 원천 변경 차단 동시성
 
 ## Table별 Cursor
 
-| Table            | Cursor Tuple                                 |
-| ---------------- | -------------------------------------------- |
-| `customers`      | `(created_at, customer_id)`                  |
-| `customer_memberships` | `(updated_at, customer_unique_id)`     |
-| `products`       | `(updated_at, product_id)`                   |
-| `sellers`        | `(updated_at, seller_id)`                    |
-| `orders`         | `(updated_at, order_id)`                     |
-| `order_items`    | `(created_at, order_id, order_item_id)`      |
-| `order_payments` | `(updated_at, order_id, payment_sequential)` |
+| Table                        | Cursor Tuple                                     |
+| ----------------------------- | ------------------------------------------------- |
+| `customers`                  | `(created_at, customer_id)`                      |
+| `customer_subscriptions`     | `(updated_at, customer_unique_id)`               |
+| `customer_membership_tiers`  | `(updated_at, customer_unique_id)`               |
+| `subscription_payments`      | `(updated_at, customer_unique_id, billing_sequence)` |
+| `products`                   | `(updated_at, product_id)`                       |
+| `sellers`                    | `(updated_at, seller_id)`                        |
+| `orders`                     | `(updated_at, order_id)`                         |
+| `order_items`                | `(created_at, order_id, order_item_id)`          |
+| `order_payments`             | `(updated_at, order_id, payment_sequential)`     |
 
 초기 Watermark는 논리적 `-infinity`와 Table별 최소 Key로 해석한다.
 

@@ -287,7 +287,7 @@ P1-25 seed_runs 기록
 P1-26 Seed Guard
 ```
 
-먼저 `customers` 한 Table로 Seed Flow를 검증한 뒤 6개 Table로 확장한다.
+먼저 `customers` 한 Table로 Seed Flow를 검증한 뒤 9개 Table로 확장한다.
 
 ### 테스트
 
@@ -442,7 +442,7 @@ Logical Hash
 
 PostgreSQL 변경 데이터를 안전하게 증분 추출해 SeaweedFS Bronze와 Quarantine으로 Commit한다.
 
-Phase 3은 처음부터 6개 Table을 구현하지 않는다.
+Phase 3은 처음부터 9개 Table을 구현하지 않는다.
 
 ---
 
