@@ -248,3 +248,5 @@ dbt/target/
 dbt/dbt_packages/
 dbt/data/
 dbt/logs/
+
+docs/reference/mart-grain.md.bak
