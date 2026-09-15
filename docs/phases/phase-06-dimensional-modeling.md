@@ -110,18 +110,27 @@ Report Model은 Mart 위에서 파생된다. BI가 Source·Bronze·Staging을 �
 
 ## 기존 구현 현황
 
-Phase 5와 Phase 6을 분리하기 전에 만든 Intermediate/Mart Model이 이미 존재한다. Grain 설계를 직접 다시 진행하므로, 아래 Model은 **참고 자료이며 이 Phase의 완료 근거가 아니다.** Grain 계약이 확정되면 각 Model을 하나씩 검토해 유지·수정·폐기를 결정한다.
+Phase 5와 Phase 6을 분리하기 전에 만든 Intermediate/Mart Model이 이미 존재하고, `warehouse.duckdb`에 빌드되어 데이터까지 채워져 있다. 그러나 이 Model들은 Grain 계약을 먼저 확정하지 않고 만들었다.
 
-| 계층         | 기존 Model                                                                                                                                             |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Intermediate | `int_orders_enriched`, `int_order_items_enriched`, `int_order_item_totals`, `int_payment_summary`, `int_order_fact_ready`, `int_subscription_payments_enriched`, `int_customer_history`, `int_affected_business_dates` |
-| Dimension    | `dim_customer`, `dim_product`, `dim_seller`, `dim_date`                                                                                                |
-| Fact         | `fact_orders`, `fact_order_items`, `fact_payments`, `fact_subscription_payments`                                                                       |
-| Report       | `rpt_subscription_funnel_daily`, `rpt_subscription_payment_outcomes_daily`, `rpt_membership_tier_performance`                                          |
+**이 Phase의 상태가 `Planned`인 이유가 여기 있다.** 아래 Model은 참고 자료이며 이 Phase의 완료 근거가 아니다. Grain을 직접 설계한 뒤 그 계약에 맞지 않는 Model은 폐기한다. 기존 구현이 존재한다는 사실이 Task 완료를 뜻하지 않는다.
+
+| 계층         | 기존 Model                                                                                                                                             | 실측 행 수 |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------- |
+| Intermediate | `int_orders_enriched`, `int_order_items_enriched`, `int_order_item_totals`, `int_payment_summary`, `int_order_fact_ready`, `int_subscription_payments_enriched`, `int_customer_history`, `int_affected_business_dates` | View 8개   |
+| Dimension    | `dim_customer` 96,097 / `dim_product` 32,951 / `dim_seller` 3,095 / `dim_date` 774                                                                     | Table 4개  |
+| Fact         | `fact_orders` 99,441 / `fact_order_items` 112,650 / `fact_payments` 103,886 / `fact_subscription_payments` 1                                            | Table 4개  |
+| Report       | `rpt_subscription_funnel_daily`, `rpt_subscription_payment_outcomes_daily`, `rpt_membership_tier_performance`                                          | View 3개   |
 
 관련 dbt Test는 `dbt/tests/`의 `dim_customer_*`, `fact_*`, `rpt_*`, `int_customer_history_no_conflicting_hash`다. 이 Test들도 확정된 Grain 계약 기준으로 다시 검토한다.
 
-기존 구현이 `warehouse.duckdb`를 채우고 있으므로 Phase 7 이후 단계는 당장 깨지지 않는다. 다만 이 Phase의 Definition of Done은 직접 확정한 Grain 계약을 기준으로 판단한다.
+### 기존 구현을 다루는 방식
+
+- `P6-01`~`P6-05`로 Grain 계약을 먼저 확정한다. 이때 기존 Model의 Grain을 근거로 삼지 않는다. 지금 그렇게 되어 있다는 사실은 그렇게 해야 한다는 근거가 아니다.
+- 계약 확정 후 Model을 하나씩 대조한다. 계약과 일치하면 유지하고, 어긋나면 수정하거나 폐기한다.
+- 폐기 결정한 Model은 `dbt/models/`에서 제거하고 관련 Test와 `warehouse.duckdb` Table도 함께 정리한다.
+- 계약에 있으나 구현이 없는 Model은 새로 만든다.
+
+기존 구현이 `warehouse.duckdb`를 채우고 있으므로 Phase 7 이후 단계는 당장 깨지지 않는다. 다만 이 Phase의 Definition of Done은 직접 확정한 Grain 계약만을 기준으로 판단한다.
 
 ## 범위 밖
 

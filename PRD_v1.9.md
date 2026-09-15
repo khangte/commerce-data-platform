@@ -1298,8 +1298,8 @@ marts
 
 ```text
 stg_customers_current
-stg_customer_subscriptions
-stg_customer_membership_tiers
+stg_customer_subscription_observations
+stg_customer_tier_observations
 stg_subscription_payments
 stg_products
 stg_sellers
@@ -1317,12 +1317,12 @@ Customer Mapping:
 | `customer_city`         | `city`                    |
 | `customer_state`        | `state`                   |
 | `customers.created_at` | `created_at`              |
-| `customer_subscriptions.subscription_status` | `stg_customer_subscriptions.subscription_status` |
-| `customer_subscriptions` 구독 시각 | `stg_customer_subscriptions`의 같은 이름 시각 |
-| `customer_subscriptions.created_at` | `stg_customer_subscriptions.created_at` |
-| `customer_subscriptions.updated_at` | `stg_customer_subscriptions.updated_at` |
-| `customer_membership_tiers.membership_tier` | `stg_customer_membership_tiers.membership_tier` |
-| `customer_membership_tiers.updated_at` | `stg_customer_membership_tiers.updated_at` |
+| `customer_subscriptions.subscription_status` | `stg_customer_subscription_observations.subscription_status` |
+| `customer_subscriptions` 구독 시각 | `stg_customer_subscription_observations`의 같은 이름 시각 |
+| `customer_subscriptions.created_at` | `stg_customer_subscription_observations.created_at` |
+| `customer_subscriptions.updated_at` | `stg_customer_subscription_observations.updated_at` |
+| `customer_membership_tiers.membership_tier` | `stg_customer_tier_observations.membership_tier` |
+| `customer_membership_tiers.updated_at` | `stg_customer_tier_observations.updated_at` |
 | `subscription_payments.payment_value` | `stg_subscription_payments.payment_value` |
 
 `stg_customers_current`는 불변 계정의 `source_customer_id` 1행과 해당 주문 주소 스냅샷을
