@@ -27,7 +27,7 @@ def test_manifest_serializes_verified_object_evidence_without_commit_secrets_or_
         logical_hash="b" * 64,
         row_count=2,
         created_at=datetime(2026, 9, 7, tzinfo=UTC),
-        schema_version=1,
+        schema_version=2,
     )
 
     payload = json.loads(manifest.to_bytes())
@@ -56,6 +56,6 @@ def test_manifest_rejects_any_object_state_other_than_verified() -> None:
             logical_hash="b" * 64,
             row_count=1,
             created_at=datetime(2026, 9, 7, tzinfo=UTC),
-            schema_version=1,
+            schema_version=2,
             object_state="COMMITTED",
         )

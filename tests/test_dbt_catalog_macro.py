@@ -28,8 +28,8 @@ def test_catalog_macro_handles_empty_catalog_and_rejects_unsupported_version(tmp
         connection.execute(
             """
             INSERT INTO control.bronze_files VALUES
-            ('orders', 'bronze/orders/committed.parquet', 1, 'batch-1', now(), 1, 'a'),
-            ('orders', 'bronze/orders/unsupported.parquet', 2, 'batch-2', now(), 1, 'b')
+            ('orders', 'bronze/orders/committed.parquet', 2, 'batch-1', now(), 1, 'a'),
+            ('orders', 'bronze/orders/unsupported.parquet', 1, 'batch-2', now(), 1, 'b')
             """
         )
     finally:
@@ -38,7 +38,7 @@ def test_catalog_macro_handles_empty_catalog_and_rejects_unsupported_version(tmp
     invalid_result = _run_validate_catalog(warehouse_path)
 
     assert invalid_result.returncode != 0
-    assert "SOURCE_CONTRACT_ERROR: unsupported schema_version(s)=2" in _combined_output(invalid_result)
+    assert "SOURCE_CONTRACT_ERROR: unsupported schema_version(s)=1" in _combined_output(invalid_result)
 
 
 def test_catalog_macro_renders_committed_object_as_explicit_parquet_list(tmp_path) -> None:
@@ -50,7 +50,7 @@ def test_catalog_macro_renders_committed_object_as_explicit_parquet_list(tmp_pat
         connection.execute(
             """
             INSERT INTO control.bronze_files VALUES
-            ('orders', 'bronze/orders/committed.parquet', 1, 'batch-1', now(), 1, 'a')
+            ('orders', 'bronze/orders/committed.parquet', 2, 'batch-1', now(), 1, 'a')
             """
         )
     finally:

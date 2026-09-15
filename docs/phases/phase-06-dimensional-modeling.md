@@ -3,7 +3,7 @@
 > 상태: Planned  
 > Milestone: 2 — Data Platform Core  
 > 선행 Phase: [Phase 5. Bronze Catalog + Staging](phase-05-bronze-catalog-and-staging.md)  
-> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.9](../../PRD_v1.9.md), [Mart Grain 계약](../reference/mart-grain.md)
+> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.10](../../PRD_v1.10.md), [Mart Grain 계약](../reference/mart-grain.md)
 > 참고: [데이터 변환 흐름](../reference/data-transformation-flow.md) — 계층별 변환의 근거
 
 ## 목표

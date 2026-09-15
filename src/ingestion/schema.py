@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-SUPPORTED_BRONZE_SCHEMA_VERSIONS = frozenset({1})
+SUPPORTED_BRONZE_SCHEMA_VERSIONS = frozenset({2})
 
 
 class SourceContractError(RuntimeError):

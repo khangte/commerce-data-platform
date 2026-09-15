@@ -122,6 +122,7 @@ CREATE TABLE IF NOT EXISTS order_items (
     order_item_id INTEGER NOT NULL,
     product_id VARCHAR(64) COLLATE "C" NOT NULL REFERENCES products (product_id),
     seller_id VARCHAR(64) COLLATE "C" NOT NULL REFERENCES sellers (seller_id),
+    shipping_limit_date TIMESTAMPTZ NOT NULL,
     price NUMERIC(14, 2) NOT NULL,
     freight_value NUMERIC(14, 2) NOT NULL,
     created_at TIMESTAMPTZ NOT NULL,

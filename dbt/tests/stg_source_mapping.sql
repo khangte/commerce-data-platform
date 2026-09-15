@@ -75,6 +75,7 @@ mapping_failures as (
         stg_order_items.order_item_id is null
         or stg_order_items.product_id is distinct from order_items.product_id
         or stg_order_items.seller_id is distinct from order_items.seller_id
+        or stg_order_items.shipping_limit_at is distinct from order_items.shipping_limit_date
         or stg_order_items.price is distinct from order_items.price
         or stg_order_items.freight_value is distinct from order_items.freight_value
 

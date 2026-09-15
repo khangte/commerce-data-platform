@@ -3,7 +3,7 @@
 > 상태: 구현 완료 · `orders` 최초 Bronze 적재 완료
 > Milestone: 2 — Data Platform Core  
 > 선행 Phase: [Phase 2. Deterministic Generator](phase-02-deterministic-generator.md)  
-> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.9](../../PRD_v1.9.md)
+> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.10](../../PRD_v1.10.md)
 
 ## 목표
 
@@ -218,7 +218,7 @@ Watermark CAS와 같은 Metadata Transaction에서 기록한다.
 - [x] `P3-22` 동시 Extract에서 Lock 실패 Run의 Source Read/Object 생성 차단
 - [x] `P3-23` Orphan 탐지와 안전한 Reconciliation 구현
 - [x] `P3-24` Metadata COMMITTED Object만 읽는 메타데이터 기반 Bronze 파일 목록 구현
-- [x] `P3-25` `schema_version=1` 및 지원 Version Contract 구현
+- [x] `P3-25` `schema_version=2` 및 지원 Version Contract 구현
 - [x] `P3-26` 미지원 Version을 `SOURCE_CONTRACT_ERROR`로 차단
 
 원천 데이터 동시성 잠금은 Generator와 Warehouse 사이의 원천 변경을 막고, 테이블별 수집 잠금은 Warehouse Run끼리 동일 Watermark를 갱신하는 것을 막는다.
@@ -231,7 +231,7 @@ Watermark CAS와 같은 Metadata Transaction에서 기록한다.
 Lease 실패 Run은 `FAILED`로 기록하고 Source Read·최종 Bronze 객체 생성을 하지 않는다.
 
 `sync_bronze_catalog()`은 `bronze_objects.status='COMMITTED'` Object만 DuckDB
-`control.bronze_files`로 교체 동기화한다. Version 1만 지원하며, 미지원 Version은
+`control.bronze_files`로 교체 동기화한다. v1.10 재기준화 후 Version 2만 지원하며, 미지원 Version은
 `SOURCE_CONTRACT_ERROR`로 DuckDB 쓰기 전에 차단한다.
 
 `find_orphan_candidates()`는 Bronze 최종 경로 Parquet와 VERIFIED Manifest가 있으나 Metadata
@@ -443,13 +443,13 @@ Phase 3에서는 Framework-independent Python Pipeline을 완성하고 Phase 4�
 | `src/ingestion/validation.py`                                    | 생성      | Source Schema·Type·Key·Batch Duplicate·Status Domain·Numeric·Broken Reference·Cursor 범위를 검사해 Valid/Reject를 분리하고 Schema·Cursor 계약 오류를 Batch Failure로 전환한다.                                                                                                     |
 | `src/ingestion/lease.py`                                         | 생성·수정 | Watermark 기반 테이블별 수집 잠금의 획득·30분 TTL·Fencing·Release와 여러 Table이 공유하는 원천 데이터 동시성 잠금 Context Manager를 추가하고, 5분 Heartbeat로 두 잠금을 자동 갱신하게 했다.                                                                                        |
 | `src/ingestion/catalog.py`                                       | 생성      | Metadata의 COMMITTED Bronze Object만 DuckDB `control.bronze_files`로 원자적으로 동기화한다.                                                                                                                                                                                        |
-| `src/ingestion/schema.py`                                        | 생성      | 지원 Bronze Schema Version 1을 정의하고 미지원 Version을 `SOURCE_CONTRACT_ERROR`로 차단한다.                                                                                                                                                                                       |
+| `src/ingestion/schema.py`                                        | 생성      | 지원 Bronze Schema Version 2를 정의하고 미지원 Version을 `SOURCE_CONTRACT_ERROR`로 차단한다.                                                                                                                                                                                       |
 | `src/ingestion/orphan.py`                                        | 생성·수정 | Manifest 유실 Object도 수동 처리 후보로 탐지하고, Manifest·Object SHA-256/크기/Row Count/Logical Hash·Schema·RUNNING Run·Watermark가 모두 일치하며 Quarantine가 없는 Orphan만 트랜잭션으로 재조정하게 했다.                                                                        |
 | `src/ingestion/quarantine.py`                                    | 생성      | `table_batch_id + 추출 순번` 결정 ID, `_detected_at`, Raw Payload·오류 Code Quarantine Parquet Writer와 5% Reject Threshold 정책을 추가했다.                                                                                                                                       |
 | `src/ingestion/corruption.py`                                    | 생성      | Extract 후 Validation 전 복제본에 NULL Key, Invalid Status, 음수값, Type, Broken Reference 5종 오류를 결정적으로 주입한다.                                                                                                                                                         |
 | `src/ingestion/manifest.py`                                      | 생성·수정 | Credential·Local 경로·Metadata Commit 상태 없이 Bronze와 Quarantine의 `VERIFIED` Object 증적을 기록하는 정규화 JSON Manifest를 추가했다.                                                                                                                                           |
 | `src/ingestion/service.py`                                       | 생성·수정 | 7개 Table 공통 수집 서비스를 추가해 검증·Quarantine·최종 Bronze 객체·Manifest·Metadata CAS를 연결하고, Heartbeat·Lease 충돌 FAILED 기록·공유 원천 데이터 동시성 잠금을 적용했다. Quarantine는 Bronze보다 먼저 게시하며 `ingest_orders()`도 공유 Lease를 받는 호환 래퍼로 유지했다. |
-| `src/rebaseline.py`                                              | 생성·수정 | 확인형 `--confirm` CLI로 Source·실행 메타데이터·Bronze Prefix·DuckDB Catalog를 재기준화한다. 구 `customer_memberships`를 제거하고 9개 Source를 다시 수집하며, 행이 없는 `subscription_payments`의 `SUCCESS_NO_DATA`를 정상 기준 결과로 처리한다. |
+| `src/rebaseline.py`                                              | 생성·수정 | 확인형 `--confirm` CLI로 Source·실행 메타데이터·Bronze Prefix·DuckDB Catalog를 재기준화한다. 모든 Source Table을 삭제·새 DDL로 재생성해 구 DDL을 제거하고, 9개 Source를 다시 수집하며 행이 없는 `subscription_payments`의 `SUCCESS_NO_DATA`를 정상 기준 결과로 처리한다. |
 | `src/ingestion/__main__.py`                                      | 생성      | `--dag-id`, `--logical-date`, `--tables`로 선택 Table을 원천 데이터 동시성 잠금 안에서 수동 적재하고 결과 JSON을 출력하는 CLI를 추가했다.                                                                                                                                          |
 | `scripts/inspect_bronze.py`                                      | 생성      | Source Table·Batch·Logical Date로 SeaweedFS Bronze Manifest, Parquet Schema·행 수·샘플 행을 조회하는 운영 보조 스크립트를 추가했다.                                                                                                                                                |
 | `compose.yaml`                                                   | 수정      | SeaweedFS 4.45 S3 API Service, 영속 Volume과 Master Healthcheck를 추가했다.                                                                                                                                                                                                        |
@@ -465,7 +465,7 @@ Phase 3에서는 Framework-independent Python Pipeline을 완성하고 Phase 4�
 | `tests/ingestion/test_corruption.py`                             | 생성      | 5종 In-memory Corruption의 Source 무오염, Valid/Reject·Error Code Count 분리를 검증한다.                                                                                                                                                                                           |
 | `tests/ingestion/test_table_bronze.py`                           | 생성·수정 | `orders` 외 Decimal Table도 공통 Bronze Writer와 실행 독립 Logical Hash를 사용하고, 재수신 Byte Hash가 Local Artifact Hash와 같은지 검증한다.                                                                                                                                      |
 | `tests/ingestion/test_catalog.py`                                | 생성      | COMMITTED Snapshot만 DuckDB Catalog에 남기고 미지원 Schema Version이 쓰기 전에 차단되는지 검증한다.                                                                                                                                                                                |
-| `tests/ingestion/test_schema.py`                                 | 생성      | Version 1 지원과 미지원 Version의 `SOURCE_CONTRACT_ERROR` 계약을 검증한다.                                                                                                                                                                                                         |
+| `tests/ingestion/test_schema.py`                                 | 생성      | Version 2 지원과 미지원 Version의 `SOURCE_CONTRACT_ERROR` 계약을 검증한다.                                                                                                                                                                                                         |
 | `tests/ingestion/test_lease.py`                                  | 생성      | Heartbeat가 원천 데이터 동시성 잠금과 테이블별 수집 잠금을 함께 갱신하고 갱신 실패를 수집 흐름에 전달하는지 검증한다.                                                                                                                                                              |
 | `tests/ingestion/test_orphan.py`                                 | 생성      | Manifest 유실 최종 경로 Parquet도 수동 처리 대상 Orphan 후보로 빠짐없이 탐지하는지 검증한다.                                                                                                                                                                                       |
 | `tests/ingestion/test_cli.py`                                    | 생성      | 수동 수집 CLI의 UTC Logical Date 검증, 선택 Table 실행, 공유 원천 데이터 동시성 잠금과 결과 JSON 출력을 검증한다.                                                                                                                                                                  |
@@ -496,7 +496,7 @@ Phase 3에서는 Framework-independent Python Pipeline을 완성하고 Phase 4�
 
 ### Membership Grain 재기준화 검증
 
-구 스키마 Bronze 혼용을 막기 위해 `2026-09-10`에 아래 명령을 실행했다. 기본 실행은 삭제 범위만
+구 스키마 Bronze 혼용과 v1.10 `order_items` DDL 불일치를 막기 위해 아래 명령을 실행한다. 기본 실행은 삭제 범위만
 JSON으로 출력하고, `--confirm`이 있을 때만 Source·Metadata·Object·Catalog를 삭제한다.
 
 ```bash
@@ -523,7 +523,7 @@ uv run python -m src.rebaseline --seeded-at 2026-09-03T00:00:00Z --confirm
 
 ## 구독·등급 전환 반영 완료
 
-기존 완료 기록은 `customer_memberships` 7개 Table 기준이다. PRD v1.9의 구독·등급 분리를
+기존 완료 기록은 `customer_memberships` 7개 Table 기준이다. PRD v1.10의 구독·등급 분리를
 Ingestion·Bronze 코드에 반영해 다음 구현을 완료했다.
 
 - [x] 7개 Table 프레임워크를 9개로 확장했다. `customer_memberships`가
@@ -537,6 +537,8 @@ Ingestion·Bronze 코드에 반영해 다음 구현을 완료했다.
 - [x] `tests/ingestion/test_tables.py`에 세 테이블의 계약 검증을 추가했다.
 - [x] 재기준화 실행과 9개 Source Table 수집·Catalog 재생성을 완료했다. 행이 없는
   `subscription_payments`는 Bronze Object 없이 정상 완료로 남는다.
+- [x] v1.10 `shipping_limit_date` 추가에 맞춰 Bronze Schema Version을 2로 올리고, 재기준화가
+  Source Table 삭제·DDL 재생성 후 v2 Object만 다시 수집하도록 변경했다.
 
 세부 순서는 [전환 계획](../architecture/02-subscription-membership-transition-plan.md) 5절
 5단계에 있다.

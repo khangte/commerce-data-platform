@@ -11,7 +11,7 @@ import pyarrow as pa
 
 from src.ingestion.schema import assert_supported_schema_version
 
-BRONZE_SCHEMA_VERSION = 1
+BRONZE_SCHEMA_VERSION = 2
 
 
 @dataclass(frozen=True)
@@ -272,6 +272,7 @@ ORDER_ITEMS_TABLE = TableConfig(
         _integer("order_item_id", nullable=False),
         _text("product_id", nullable=False),
         _text("seller_id", nullable=False),
+        _timestamp("shipping_limit_date", nullable=False),
         _decimal("price", nullable=False),
         _decimal("freight_value", nullable=False),
         _timestamp("created_at", nullable=False),

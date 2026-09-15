@@ -3,7 +3,7 @@
 > 상태: Done  
 > Milestone: 2 — Data Platform Core  
 > 선행 Phase: [Phase 4. Airflow Orchestration](phase-04-airflow-orchestration.md)  
-> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.9](../../PRD_v1.9.md)
+> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.10](../../PRD_v1.10.md)
 > 참고: [데이터 변환 흐름](../reference/data-transformation-flow.md) — 계층별 이름·타입·값 변환의 근거
 
 ## 목표
@@ -208,9 +208,10 @@ refunded  → REFUNDED
 | `dbt/macros/current_bronze_records.sql`        | Mutable Entity의 최신 Bronze Version을 `updated_at`, `_ingested_at`, `_batch_id` 순서로 하나만 선택하는 공통 Macro를 추가했다.                                                                  |
 | `dbt/macros/status_standardization.sql`        | 주문 8개·결제 4개 원천 상태를 대문자 표준값으로 바꾸고, 구독 상태·등급은 허용 목록을 검증하는 Macro를 추가했다.                                                                                                      |
 | `dbt/models/staging/*.sql`                     | Product, Seller, Order Item, Payment, Order와 고객 Current·관측, 구독 결제를 Staging View로 구현했다. 주문은 모든 `source_customer_id` 매핑을 유지해 분석 고객 Business Key 누락을 테스트로 차단한다.        |
+| `dbt/models/staging/stg_order_items.sql`       | `shipping_limit_date`를 `shipping_limit_at`으로 Alias해 Source 원본 이름은 Bronze에 유지하고 분석 Timestamp 의미는 Staging에서 드러내도록 했다. |
 | `dbt/models/staging/schema.yml`                | Staging Key, 상태 도메인, 필수값의 dbt 자동 테스트를 정의했다.                                                                                                                                    |
 | `dbt/tests/stg_*_unique.sql`                   | 주문 Line, 결제 Sequence, 고객 관측의 문서화된 복합 Grain 중복을 검증한다.                                                                                                                        |
-| `dbt/tests/stg_source_mapping.sql`             | Bronze Current 행과 Staging의 Prefix 제거, Timestamp Rename, 상태 표준화, 고객 키·기간 경계를 행 단위로 대조한다.                                                                                |
+| `dbt/tests/stg_source_mapping.sql`             | Bronze Current 행과 Staging의 Prefix 제거, Timestamp Rename(`shipping_limit_date → shipping_limit_at` 포함), 상태 표준화, 고객 키·기간 경계를 행 단위로 대조한다.                                                                                |
 | `dbt/README.md`                                | 루트 기준 dbt 실행 명령과 Catalog Macro의 입력 경계를 기록했다.                                                                                                                               |
 | `tests/test_dbt_catalog_macro.py`               | 빈 Catalog 처리, Commit된 명시적 Parquet 목록 생성, 미지원 Schema Version의 dbt 사전 차단을 독립 DuckDB로 검증한다.                                                                            |
 

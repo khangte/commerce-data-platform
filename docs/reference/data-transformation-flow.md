@@ -1,7 +1,7 @@
 # 데이터 변환 흐름: Source → Data Lake → Data Warehouse
 
 > 상태: Reference
-> 기준 문서: [PRD v1.9](../../PRD_v1.9.md), [Phase 3](../phases/phase-03-incremental-ingestion.md), [Phase 4](../phases/phase-04-airflow-orchestration.md), [Phase 5](../phases/phase-05-bronze-catalog-and-staging.md)
+> 기준 문서: [PRD v1.10](../../PRD_v1.10.md), [Phase 3](../phases/phase-03-incremental-ingestion.md), [Phase 4](../phases/phase-04-airflow-orchestration.md), [Phase 5](../phases/phase-05-bronze-catalog-and-staging.md)
 
 이 문서는 하나의 주문 레코드가 PostgreSQL 원천에서 DuckDB Mart에 도달할 때까지 이름, 타입, 값, Grain이 어느 지점에서 왜 바뀌는지를 정리한다. 각 변환의 근거와, 그 변환을 다른 지점에서 했을 때 무엇이 깨지는지를 함께 기록한다.
 
@@ -400,8 +400,8 @@ Staging까지의 이름·타입·값 변환을 다루고, Mart 설계는 다루�
 | 계층         | 위치                                                                                                     | 형태                                                                                                                                   |
 | ------------ | -------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
 | Source       | `commerce_source.orders`                                                                                 | `order_id='o1'`, `customer_id='c1'`, `order_status='delivered'`, `order_purchase_timestamp='2026-09-05T10:00:00Z'`                     |
-| Bronze       | `bronze/orders/ingestion_date=2026-09-08/batch_id=warehouse_pipeline_dag__20260908T000000Z/data.parquet` | 위와 동일한 컬럼명 + `_batch_id`, `_ingested_at`, `_schema_version=1`                                                                  |
-| Catalog      | `control.bronze_files`                                                                                   | `source_table='orders'`, `object_key='bronze/orders/...'`, `schema_version=1`                                                          |
+| Bronze       | `bronze/orders/ingestion_date=2026-09-08/batch_id=warehouse_pipeline_dag__20260908T000000Z/data.parquet` | 위와 동일한 컬럼명 + `_batch_id`, `_ingested_at`, `_schema_version=2`                                                                  |
+| Catalog      | `control.bronze_files`                                                                                   | `source_table='orders'`, `object_key='bronze/orders/...'`, `schema_version=2`                                                          |
 | Staging      | `staging.stg_orders`                                                                                     | `order_id='o1'`, `source_customer_id='c1'`, `customer_id='u1'`(Join), `order_status='DELIVERED'`, `purchase_at='2026-09-05T10:00:00Z'` |
 | Intermediate | `intermediate.*`                                                                                          | Staging 값을 목표 Grain으로 접고 파생 값을 계산한다                                                                                    |
 | Mart         | `marts.*`                                                                                                 | 확정된 Grain의 행으로 투영된다. Model과 컬럼은 [Mart Grain 계약](mart-grain.md) 참조                                                  |
@@ -429,4 +429,4 @@ Staging까지의 이름·타입·값 변환을 다루고, Mart 설계는 다루�
 - [Phase 5. Bronze Catalog + Staging](../phases/phase-05-bronze-catalog-and-staging.md) — Source에서 Staging까지의 Model 구현
 - [Phase 6. Dimensional Modeling](../phases/phase-06-dimensional-modeling.md) — Staging 이후의 Intermediate와 Mart
 - [Mart Grain 계약](mart-grain.md) — Mart의 Grain, Unique Key, Measure 계약, 이력 추적 구현
-- [PRD v1.9](../../PRD_v1.9.md) — Section 7.1 상태 Mapping, Section 14 dbt Model, Section 15 이력 추적 요구사항
+- [PRD v1.10](../../PRD_v1.10.md) — Section 7.1 상태 Mapping, Section 14 dbt Model, Section 15 이력 추적 요구사항
