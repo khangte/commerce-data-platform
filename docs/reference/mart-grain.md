@@ -1,7 +1,7 @@
 # Mart Grain 계약
 
 > 상태: Reference
-> 기준 문서: [PRD v1.9](../../PRD_v1.9.md), [데이터 변환 흐름](data-transformation-flow.md), [Phase 6](../phases/phase-06-dimensional-modeling.md)
+> 기준 문서: [PRD v1.11](../../PRD_v1.11.md), [데이터 변환 흐름](data-transformation-flow.md), [Phase 6](../phases/phase-06-dimensional-modeling.md)
 
 이 문서는 Warehouse Mart의 Grain, Unique Key, 컬럼, Measure 계약을 정의하는 단일 정본이다. `dbt/models/marts/*/schema.yml`은 이 문서에서 생성한다. 컬럼을 추가하거나 바꿀 때는 이 문서를 먼저 고치고 `schema.yml`을 다시 만든다.
 
@@ -62,37 +62,168 @@ Grain이 같은 두 Fact는 한 Table이어야 한다. 별도 Model로 쪼개면
 
 ## 2. Dimension
 
-| Model | Grain | Unique Key | Materialization |
-| ----- | ----- | ---------- | --------------- |
-|       |       |            |                 |
+| Model          | Grain              | Unique Key     | Materialization |
+| -------------- | ------------------ | -------------- | --------------- |
+| `dim_customer` | 고객 상태 버전 1행 | `customer_key` | incremental     |
+| `dim_date`     | 날짜 1일 1행       | `date_key`     | table           |
+| `dim_product`  | 상품 1개 1행       | `product_key`  | table           |
+| `dim_seller`   | 판매자 1명 1행     | `seller_key`   | table           |
 
-### 2.1 `<dim_name>`
+### 2.1 `dim_customer`
 
-- Grain:
-- Unique Key:
-- Materialization:
-- 출처:
+- Grain: 고객 상태 버전 1행
+- Primary Key: `customer_key`
+- Business Key: `customer_id`
+- Version Unique Key: (`customer_id`, `valid_from`)
+- SCD Type: Type 2
+- Materialization: incremental
+- 출처: `customers`, `customer_membership_tiers`
 
-| 컬럼 | 타입 | 종류 | Null | 정의 / Test |
-| ---- | ---- | ---- | ---- | ----------- |
-|      |      |      |      |             |
+| 컬럼              | 타입        | 종류                | Null | 정의 / Test                                                                                     |
+| ----------------- | ----------- | ------------------- | ---- | ----------------------------------------------------------------------------------------------- |
+| `customer_key`    | BIGINT      | Surrogate Key / PK  | N    | 고객 상태 버전을 식별하는 DW 내부 키 / `unique`, `not_null`                                     |
+| `customer_id`     | VARCHAR     | Business Key        | N    | 실제 고객 식별자. Olist `customer_unique_id` 매핑 / `not_null`                                  |
+| `membership_tier` | VARCHAR     | Dimension Attribute | N    | 고객의 거래 실적 등급. SCD2로 이력을 관리 / `not_null`, `accepted_values: BRONZE, SILVER, GOLD` |
+| `valid_from`      | TIMESTAMPTZ | SCD2 Metadata       | N    | 해당 고객 버전의 유효 시작 시각 / `not_null`                                                    |
+| `valid_to`        | TIMESTAMPTZ | SCD2 Metadata       | Y    | 해당 고객 버전의 유효 종료 시각. 현재 버전은 `NULL`                                             |
+| `is_current`      | BOOLEAN     | SCD2 Metadata       | N    | 현재 유효한 고객 버전 여부 / `not_null`                                                         |
+
+### 2.2 `dim_date`
+
+- Grain: 날짜 1일 1행
+- Primary Key: `date_key`
+- Business Key: `full_date`
+- Materialization: table
+- 생성 방식: 지정 기간의 날짜를 연속 생성
+
+| 컬럼           | 타입     | 종류                | Null | 정의 / Test                                          |
+| -------------- | -------- | ------------------- | ---- | ---------------------------------------------------- |
+| `date_key`     | INTEGER  | Surrogate Key / PK  | N    | 날짜 식별 키. `YYYYMMDD` 형식 / `unique`, `not_null` |
+| `full_date`    | DATE     | Business Key        | N    | 실제 날짜 값 / `unique`, `not_null`                  |
+| `year`         | SMALLINT | Dimension Attribute | N    | 연도                                                 |
+| `quarter`      | TINYINT  | Dimension Attribute | N    | 분기 번호 `1~4` / `accepted_values: 1,2,3,4`         |
+| `month`        | TINYINT  | Dimension Attribute | N    | 월 번호 `1~12`                                       |
+| `month_name`   | VARCHAR  | Dimension Attribute | N    | 월 표시명. 예: `January`, `September`                |
+| `day`          | TINYINT  | Dimension Attribute | N    | 월 기준 일자 `1~31`                                  |
+| `day_of_week`  | TINYINT  | Dimension Attribute | N    | 요일 번호. `1=Monday ~ 7=Sunday`                     |
+| `day_name`     | VARCHAR  | Dimension Attribute | N    | 요일 표시명. 예: `Monday`, `Tuesday`                 |
+| `week_of_year` | TINYINT  | Dimension Attribute | N    | 연도 기준 주차                                       |
+| `is_weekend`   | BOOLEAN  | Dimension Attribute | N    | 토요일 또는 일요일 여부                              |
+
+### 2.3 `dim_product`
+
+- Grain: 상품 1개 1행
+- Primary Key: `product_key`
+- Business Key: `product_id`
+- Materialization: table
+- 출처: `products`
+
+| 컬럼                    | 타입    | 종류                | Null | 정의 / Test                                   |
+| ----------------------- | ------- | ------------------- | ---- | --------------------------------------------- |
+| `product_key`           | BIGINT  | Surrogate Key / PK  | N    | DW 내부 상품 식별 키 / `unique`, `not_null`   |
+| `product_id`            | VARCHAR | Business Key        | N    | Olist 원본 상품 식별자 / `unique`, `not_null` |
+| `product_category_name` | VARCHAR | Dimension Attribute | Y    | 상품 카테고리명                               |
+| `product_weight_g`      | INTEGER | Dimension Attribute | Y    | 상품 무게(g)                                  |
+| `product_length_cm`     | INTEGER | Dimension Attribute | Y    | 상품 길이(cm)                                 |
+| `product_height_cm`     | INTEGER | Dimension Attribute | Y    | 상품 높이(cm)                                 |
+| `product_width_cm`      | INTEGER | Dimension Attribute | Y    | 상품 너비(cm)                                 |
+
+### 2.4 `dim_seller`
+
+- Grain: 판매자 1명 1행
+- Primary Key: `seller_key`
+- Business Key: `seller_id`
+- Materialization: table
+- 출처: `sellers`
+
+| 컬럼           | 타입    | 종류                | Null | 정의 / Test                                     |
+| -------------- | ------- | ------------------- | ---- | ----------------------------------------------- |
+| `seller_key`   | BIGINT  | Surrogate Key / PK  | N    | DW 내부 판매자 식별 키 / `unique`, `not_null`   |
+| `seller_id`    | VARCHAR | Business Key        | N    | Olist 원본 판매자 식별자 / `unique`, `not_null` |
+| `seller_city`  | VARCHAR | Dimension Attribute | N    | 판매자가 위치한 도시                            |
+| `seller_state` | VARCHAR | Dimension Attribute | N    | 판매자가 위치한 브라질 주(State) 코드           |
 
 ## 3. Fact
 
-| Model | Grain | Unique Key | Materialization |
-| ----- | ----- | ---------- | --------------- |
-|       |       |            |                 |
+| Model               | Grain                   | Unique Key                         | Materialization |
+| ------------------- | ----------------------- | ---------------------------------- | --------------- |
+| `fct_order`         | 주문 1건                | `order_id`                         | incremental     |
+| `fct_order_item`    | 주문 상품 항목 1건      | (`order_id`, `order_item_id`)      | incremental     |
+| `fct_order_payment` | 주문 내 결제 레코드 1건 | (`order_id`, `payment_sequential`) | incremental     |
 
-### 3.1 `<fact_name>`
+### 3.1 `fct_order`
 
-- Grain:
-- Unique Key:
-- Materialization:
-- 출처:
+- Grain: 주문 1건
+- Unique Key: `order_id`
+- Fact Type: Accumulating Snapshot
+- Materialization: incremental
+- 출처: `orders`
+- Dimension 참조: `dim_customer`, `dim_date`
 
-| 컬럼 | 타입 | 종류 | Null | 정의 / Test |
-| ---- | ---- | ---- | ---- | ----------- |
-|      |      |      |      |             |
+| 컬럼                    | 타입        | 종류                              | Null | 정의 / Test                                                                                                                          |
+| ----------------------- | ----------- | --------------------------------- | ---- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `order_id`              | VARCHAR     | Degenerate Dimension / Unique Key | N    | 주문 식별자. Olist 원본 `order_id` / `unique`, `not_null`                                                                            |
+| `customer_key`          | BIGINT      | Dimension FK                      | N    | 주문 당시 유효한 고객 버전의 `dim_customer.customer_key` / `not_null`, `relationships → dim_customer.customer_key`                   |
+| `purchase_date_key`     | INTEGER     | Dimension FK                      | N    | 주문 발생일에 해당하는 `dim_date.date_key` / `not_null`, `relationships → dim_date.date_key`                                         |
+| `source_customer_id`    | VARCHAR     | Degenerate Dimension              | N    | 원본 `customers.customer_id`, 주문-원본고객 추적용 / `not_null`                                                                      |
+| `customer_city`         | VARCHAR     | Fact Attribute                    | N    | 주문 당시 고객 도시 스냅샷 / `not_null`                                                                                              |
+| `customer_state`        | VARCHAR     | Fact Attribute                    | N    | 주문 당시 고객 주(State) 스냅샷 / `not_null`                                                                                         |
+| `order_status`          | VARCHAR     | Fact Attribute                    | N    | 주문의 표준 상태 / `not_null`, `accepted_values: CREATED, APPROVED, PROCESSING, INVOICED, SHIPPED, DELIVERED, CANCELED, UNAVAILABLE` |
+| `purchased_at`          | TIMESTAMPTZ | Event Timestamp                   | N    | 고객이 주문을 생성한 시각. 원본 `order_purchase_timestamp` / `not_null`                                                              |
+| `carrier_handoff_at`    | TIMESTAMPTZ | Event Timestamp                   | Y    | 주문이 물류사에 전달된 시각. 원본 `order_delivered_carrier_date`                                                                     |
+| `estimated_delivery_at` | TIMESTAMPTZ | Event Timestamp                   | N    | 주문 당시 예상 배송 완료 시각. 원본 `order_estimated_delivery_date` / `not_null`                                                     |
+| `delivered_at`          | TIMESTAMPTZ | Event Timestamp                   | Y    | 고객에게 실제 배송 완료된 시각. 원본 `order_delivered_customer_date`                                                                 |
+| `delivery_days`         | INTEGER     | Derived Measure                   | Y    | 주문 생성부터 실제 배송 완료까지 걸린 일수. `delivered_at - purchased_at`. 미배송 주문은 `NULL`                                      |
+| `order_count`           | SMALLINT    | Additive Measure                  | N    | 주문 건수 집계를 위한 상수 값 `1` / `not_null`, `accepted_values: 1`                                                                 |
+
+### 3.2 `fct_order_item`
+
+- Grain: 주문 상품 항목 1건
+- Unique Key: (`order_id`, `order_item_id`)
+- Fact Type: Transaction Fact
+- Materialization: incremental
+- 출처: `order_items`, `orders`
+- Dimension 참조: `dim_product`, `dim_seller`, `dim_date`
+
+| 컬럼                      | 타입          | 종류                             | Null | 정의 / Test                                                                                          |
+| ------------------------- | ------------- | -------------------------------- | ---- | ---------------------------------------------------------------------------------------------------- |
+| `order_id`                | VARCHAR       | Degenerate Dimension / Grain Key | N    | Olist 주문 식별자 / `not_null`                                                                       |
+| `order_item_id`           | INTEGER       | Degenerate Dimension / Grain Key | N    | 주문 내부 상품 항목 순번 / `not_null`                                                                |
+| `product_key`             | BIGINT        | Dimension FK                     | N    | 상품 Dimension 참조 키 / `not_null`, `relationships → dim_product.product_key`                       |
+| `seller_key`              | BIGINT        | Dimension FK                     | N    | 판매자 Dimension 참조 키 / `not_null`, `relationships → dim_seller.seller_key`                       |
+| `purchase_date_key`       | INTEGER       | Dimension FK                     | N    | 주문이 발생한 날짜 / `not_null`, `relationships → dim_date.date_key`                                 |
+| `shipping_limit_date_key` | INTEGER       | Dimension FK                     | N    | 판매자가 물류사에 상품을 전달해야 하는 기한의 날짜 / `not_null`, `relationships → dim_date.date_key` |
+| `shipping_limit_at`       | TIMESTAMPTZ   | Event Timestamp                  | N    | 원본 `shipping_limit_date`. 정확한 배송 준비 마감 시각                                               |
+| `price`                   | DECIMAL(14,2) | Additive Measure                 | N    | 해당 주문 상품의 판매 가격 / `not_null`, `>= 0`                                                      |
+| `freight_value`           | DECIMAL(14,2) | Additive Measure                 | N    | 해당 주문 상품에 배분된 배송비 / `not_null`, `>= 0`                                                  |
+| `item_count`              | SMALLINT      | Additive Measure                 | N    | 주문 상품 항목 수 집계를 위한 상수 `1` / `not_null`, `accepted_values: 1`                            |
+
+### 3.3 `fct_order_payment`
+
+- Grain: 주문 내 결제 레코드 1건
+- Unique Key: (`order_id`, `payment_sequential`)
+- Fact Type: Accumulating Snapshot
+- Materialization: incremental
+- 출처: `order_payments`, `orders`
+- Dimension 참조: `dim_customer`, `dim_date`
+
+| 컬럼                   | 타입          | 종류                             | Null | 정의 / Test                                                                                                      |
+| ---------------------- | ------------- | -------------------------------- | ---- | ---------------------------------------------------------------------------------------------------------------- |
+| `order_id`             | VARCHAR       | Degenerate Dimension / Grain Key | N    | 결제가 속한 주문 식별자 / `not_null`                                                                             |
+| `payment_sequential`   | INTEGER       | Grain Key                        | N    | 동일 주문 내 결제 레코드 순번 / `not_null`, `>= 1`                                                               |
+| `customer_key`         | BIGINT        | Dimension FK                     | N    | `order_payments.created_at` 시점에 유효한 고객 버전 키 / `not_null`, `relationships → dim_customer.customer_key` |
+| `initiated_date_key`   | INTEGER       | Dimension FK                     | Y    | `payment_initiated_at`의 날짜. 시각이 `NULL`이면 `NULL` / `relationships → dim_date.date_key`                    |
+| `completed_date_key`   | INTEGER       | Dimension FK                     | Y    | `payment_completed_at`의 날짜. 시각이 `NULL`이면 `NULL` / `relationships → dim_date.date_key`                    |
+| `failed_date_key`      | INTEGER       | Dimension FK                     | Y    | `payment_failed_at`의 날짜. 시각이 `NULL`이면 `NULL` / `relationships → dim_date.date_key`                       |
+| `refunded_date_key`    | INTEGER       | Dimension FK                     | Y    | `payment_refunded_at`의 날짜. 시각이 `NULL`이면 `NULL` / `relationships → dim_date.date_key`                     |
+| `payment_type`         | VARCHAR       | Fact Attribute                   | N    | 결제수단. 예: `credit_card`, `boleto`, `voucher`, `debit_card` / `not_null`                                      |
+| `payment_installments` | INTEGER       | Fact Attribute                   | Y    | 결제 할부 개월 수 / `>= 0`                                                                                       |
+| `payment_value`        | DECIMAL(14,2) | Additive Measure                 | N    | 해당 결제 레코드의 결제 금액 / `not_null`, `>= 0`                                                                |
+| `payment_status`       | VARCHAR       | Fact Attribute                   | N    | 프로젝트 정의 결제 상태 / `not_null`, `accepted_values: pending, completed, failed, refunded`                    |
+| `payment_initiated_at` | TIMESTAMPTZ   | Business Event Timestamp         | Y    | 결제 시도가 시작된 시각                                                                                          |
+| `payment_completed_at` | TIMESTAMPTZ   | Business Event Timestamp         | Y    | 결제가 성공적으로 완료된 시각                                                                                    |
+| `payment_failed_at`    | TIMESTAMPTZ   | Business Event Timestamp         | Y    | 결제가 실패한 시각                                                                                               |
+| `payment_refunded_at`  | TIMESTAMPTZ   | Business Event Timestamp         | Y    | 환불이 발생한 시각                                                                                               |
 
 ## 4. Report
 
@@ -179,14 +310,16 @@ Fact끼리는 서로 직접 Join하지 않는다.
 
 Grain 계약은 문서가 아니라 Test로 강제한다. 아래 표는 컬럼 표의 `정의 / Test` 열이 어떤 수단으로 구현되는지를 정한다.
 
-| 검증 대상            | 수단                                              |
-| -------------------- | ------------------------------------------------- |
-| 단일 컬럼 Unique Key | `schema.yml`의 `unique` Data Test                 |
-| 복합 Unique Key      | `dbt/tests/<model>_unique.sql` Singular Test      |
-| 참조 무결성          | `schema.yml`의 `relationships` 또는 Singular Test |
-| 값 목록              | `schema.yml`의 `accepted_values`                  |
-| Null 불가            | `schema.yml`의 `not_null`                         |
-| 계층 책임 분리       | `tests/test_fact_layer_contract.py`               |
+| 검증 대상            | 수단                                                                                                          |
+| -------------------- | ------------------------------------------------------------------------------------------------------------- |
+| 단일 컬럼 Unique Key | `schema.yml`의 `unique` Data Test                                                                             |
+| 복합 Unique Key      | `dbt/tests/<model>_unique.sql` Singular Test                                                                  |
+| 참조 무결성          | `schema.yml`의 `relationships` 또는 Singular Test                                                             |
+| 값 목록              | `schema.yml`의 `accepted_values`                                                                              |
+| Null 불가            | `schema.yml`의 `not_null`                                                                                     |
+| SCD2 복합 Unique Key | `(customer_id, valid_from)`을 검증하는 `dbt/tests/dim_customer_version_unique.sql` Singular Test              |
+| SCD2 유효 기간       | `dim_customer_scd2_no_overlapping_ranges.sql` 및 `dim_customer_exactly_one_current_version.sql` Singular Test |
+| 계층 책임 분리       | `tests/test_fact_layer_contract.py`                                                                           |
 
 `dbt build`가 전부 통과해야 Publish된다. Grain/Measure Test 실패는 Phase 7 품질 Gate에서 Publish를 차단한다.
 
@@ -217,7 +350,7 @@ models:
 ## 관련 문서
 
 - [데이터 변환 흐름](data-transformation-flow.md) — Source에서 Staging까지의 이름·타입·값 변환
-- [PRD v1.9](../../PRD_v1.9.md) — Section 14 dbt Model, Section 15 SCD2와 Temporal Join
+- [PRD v1.11](../../PRD_v1.11.md) — Section 14 dbt Model, Section 15 SCD2와 Temporal Join
 - [Phase 6. Dimensional Modeling](../phases/phase-06-dimensional-modeling.md) — Model 구현 순서와 Task
 - [Phase 7. Data Quality & Publish](../phases/phase-07-data-quality-publish.md) — Grain/Measure Test의 Publish Gate
 - [Phase 10. BI](../phases/phase-10-bi.md) — Report Model 소비와 Dashboard Metric 정의
