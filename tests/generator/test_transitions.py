@@ -32,6 +32,10 @@ def _payment_state() -> PaymentState:
         order_id="order-1",
         payment_sequential=1,
         payment_status="pending",
+        payment_initiated_at=datetime(2026, 9, 4, tzinfo=UTC),
+        payment_completed_at=None,
+        payment_failed_at=None,
+        payment_refunded_at=None,
         updated_at=datetime(2026, 9, 4, tzinfo=UTC),
     )
 
@@ -85,12 +89,44 @@ def test_payment_transition_allows_only_the_declared_source_transitions(
             order_id=state.order_id,
             payment_sequential=state.payment_sequential,
             payment_status="completed",
+            payment_initiated_at=state.payment_initiated_at,
+            payment_completed_at=state.updated_at,
+            payment_failed_at=None,
+            payment_refunded_at=None,
             updated_at=state.updated_at,
         )
 
     transition = plan_payment_transition(state, next_status, state.updated_at + timedelta(days=1))
 
     assert transition.next_status == next_status
+
+
+@pytest.mark.parametrize("next_status", ("completed", "failed", "refunded"))
+def test_payment_transition_preserves_a_distinct_business_event_time(next_status: str) -> None:
+    """결제 전이는 증분용 변경 시각과 사건 시각을 별도로 보관한다."""
+    state = _payment_state()
+    if next_status == "refunded":
+        state = PaymentState(
+            order_id=state.order_id,
+            payment_sequential=state.payment_sequential,
+            payment_status="completed",
+            payment_initiated_at=state.payment_initiated_at,
+            payment_completed_at=state.updated_at,
+            payment_failed_at=None,
+            payment_refunded_at=None,
+            updated_at=state.updated_at,
+        )
+    mutation_time = state.updated_at + timedelta(days=2)
+    business_event_time = state.updated_at + timedelta(days=1)
+
+    transition = plan_payment_transition(
+        state,
+        next_status,
+        mutation_time,
+        business_event_time=business_event_time,
+    )
+
+    assert transition.business_event_time == business_event_time
 
 
 def test_transition_rejects_same_or_earlier_mutation_time() -> None:

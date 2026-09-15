@@ -43,6 +43,10 @@ class PaymentState:
     order_id: str
     payment_sequential: int
     payment_status: str
+    payment_initiated_at: datetime | None
+    payment_completed_at: datetime | None
+    payment_failed_at: datetime | None
+    payment_refunded_at: datetime | None
     updated_at: datetime
 
 
@@ -68,6 +72,7 @@ class PaymentTransition:
     expected_updated_at: datetime
     next_status: str
     mutation_time: datetime
+    business_event_time: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -107,7 +112,8 @@ def fetch_payment_state(
     """Source에서 Payment 상태와 Mutation Version을 읽는다."""
     row = connection.execute(
         """
-        SELECT order_id, payment_sequential, payment_status, updated_at
+        SELECT order_id, payment_sequential, payment_status, payment_initiated_at,
+               payment_completed_at, payment_failed_at, payment_refunded_at, updated_at
         FROM order_payments
         WHERE order_id = %s AND payment_sequential = %s
         """,
@@ -119,7 +125,11 @@ def fetch_payment_state(
         order_id=row[0],
         payment_sequential=row[1],
         payment_status=row[2],
-        updated_at=row[3],
+        payment_initiated_at=row[3],
+        payment_completed_at=row[4],
+        payment_failed_at=row[5],
+        payment_refunded_at=row[6],
+        updated_at=row[7],
     )
 
 
@@ -147,11 +157,18 @@ def plan_order_transition(
 
 
 def plan_payment_transition(
-    current: PaymentState, next_status: str, mutation_time: datetime
+    current: PaymentState,
+    next_status: str,
+    mutation_time: datetime,
+    business_event_time: datetime | None = None,
 ) -> PaymentTransition:
     """현재 Payment 상태와 결정적 Mutation Time으로 허용 전이를 계획한다."""
     _assert_allowed_transition(PAYMENT_TRANSITIONS, current.payment_status, next_status, "Payment")
     _assert_increasing_mutation_time(current.updated_at, mutation_time)
+    if business_event_time is not None:
+        _assert_business_event_time(business_event_time, mutation_time)
+        if next_status not in {"completed", "failed", "refunded"}:
+            raise ValueError("business_event_time is only supported for Payment event status transitions")
     return PaymentTransition(
         order_id=current.order_id,
         payment_sequential=current.payment_sequential,
@@ -159,6 +176,7 @@ def plan_payment_transition(
         expected_updated_at=current.updated_at,
         next_status=next_status,
         mutation_time=mutation_time,
+        business_event_time=business_event_time,
     )
 
 
@@ -216,21 +234,39 @@ def persist_payment_transition(
     """외부 Transaction 안에서 Payment 상태 전이를 낙관적 Version 검사와 함께 저장한다."""
     current = _locked_payment_state(connection, transition.order_id, transition.payment_sequential)
     if current.payment_status == transition.next_status and current.updated_at == transition.mutation_time:
+        expected_event_at = transition.business_event_time or transition.mutation_time
+        if _payment_event_at(current, transition.next_status) != expected_event_at:
+            raise ValueError("Payment has different values at the same updated_at cursor")
         return TransitionResult(updated=0, skipped=1)
     _assert_expected_payment_version(current, transition)
     _assert_allowed_transition(
         PAYMENT_TRANSITIONS, current.payment_status, transition.next_status, "Payment"
     )
     _assert_increasing_mutation_time(current.updated_at, transition.mutation_time)
-    desired = replace(current, payment_status=transition.next_status, updated_at=transition.mutation_time)
+    event_at = transition.business_event_time or transition.mutation_time
+    if transition.next_status == "completed":
+        desired = replace(current, payment_completed_at=event_at)
+    elif transition.next_status == "failed":
+        desired = replace(current, payment_failed_at=event_at)
+    else:
+        desired = replace(current, payment_refunded_at=event_at)
+    desired = replace(
+        desired,
+        payment_status=transition.next_status,
+        updated_at=transition.mutation_time,
+    )
     connection.execute(
         """
         UPDATE order_payments
-        SET payment_status = %s, updated_at = %s
+        SET payment_status = %s, payment_completed_at = %s, payment_failed_at = %s,
+            payment_refunded_at = %s, updated_at = %s
         WHERE order_id = %s AND payment_sequential = %s
         """,
         (
             desired.payment_status,
+            desired.payment_completed_at,
+            desired.payment_failed_at,
+            desired.payment_refunded_at,
             desired.updated_at,
             desired.order_id,
             desired.payment_sequential,
@@ -269,7 +305,8 @@ def _locked_payment_state(
     """저장 시점의 현재 Payment 상태를 Row Lock과 함께 읽는다."""
     row = connection.execute(
         """
-        SELECT order_id, payment_sequential, payment_status, updated_at
+        SELECT order_id, payment_sequential, payment_status, payment_initiated_at,
+               payment_completed_at, payment_failed_at, payment_refunded_at, updated_at
         FROM order_payments
         WHERE order_id = %s AND payment_sequential = %s
         FOR UPDATE
@@ -282,7 +319,11 @@ def _locked_payment_state(
         order_id=row[0],
         payment_sequential=row[1],
         payment_status=row[2],
-        updated_at=row[3],
+        payment_initiated_at=row[3],
+        payment_completed_at=row[4],
+        payment_failed_at=row[5],
+        payment_refunded_at=row[6],
+        updated_at=row[7],
     )
 
 
@@ -348,6 +389,15 @@ def _assert_expected_payment_version(current: PaymentState, transition: PaymentT
         or current.updated_at != transition.expected_updated_at
     ):
         raise ValueError("Payment changed after transition planning")
+
+
+def _payment_event_at(current: PaymentState, status: str) -> datetime | None:
+    """결제 상태가 기록하는 해당 생명주기 사건 시각을 반환한다."""
+    return {
+        "completed": current.payment_completed_at,
+        "failed": current.payment_failed_at,
+        "refunded": current.payment_refunded_at,
+    }[status]
 
 
 def _assert_allowed_transition(

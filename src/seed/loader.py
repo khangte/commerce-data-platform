@@ -97,6 +97,10 @@ TARGET_COLUMNS = {
         "payment_installments",
         "payment_value",
         "payment_status",
+        "payment_initiated_at",
+        "payment_completed_at",
+        "payment_failed_at",
+        "payment_refunded_at",
         "created_at",
         "updated_at",
     ),
@@ -350,6 +354,10 @@ def build_seed_dataset(input_dir: Path, seeded_at: datetime) -> SeedDataset:
             "failed" if order_status[order_id] in {"canceled", "unavailable"} else "completed"
         )
     )
+    order_payments["payment_initiated_at"] = None
+    order_payments["payment_completed_at"] = None
+    order_payments["payment_failed_at"] = None
+    order_payments["payment_refunded_at"] = None
     order_payments["created_at"] = order_payments["order_id"].map(order_purchase_timestamp)
     order_payments["updated_at"] = seeded_at
 
@@ -417,6 +425,7 @@ def _table_content_hash(connection: psycopg.Connection, table_name: str) -> str:
 def _ensure_schema(settings: PostgresSettings) -> None:
     with settings.source_connection() as source_connection:
         apply_sql_file(source_connection, "sql/source/001_create_source_tables.sql")
+        apply_sql_file(source_connection, "sql/source/002_reorder_order_payments_columns.sql")
     with settings.pipeline_connection() as pipeline_connection:
         apply_sql_file(pipeline_connection, "sql/metadata/001_create_seed_metadata.sql")
 

@@ -1,7 +1,7 @@
 # 데이터 변환 흐름: Source → Data Lake → Data Warehouse
 
 > 상태: Reference
-> 기준 문서: [PRD v1.10](../../PRD_v1.10.md), [Phase 3](../phases/phase-03-incremental-ingestion.md), [Phase 4](../phases/phase-04-airflow-orchestration.md), [Phase 5](../phases/phase-05-bronze-catalog-and-staging.md)
+> 기준 문서: [PRD v1.11](../../PRD_v1.11.md), [Phase 3](../phases/phase-03-incremental-ingestion.md), [Phase 4](../phases/phase-04-airflow-orchestration.md), [Phase 5](../phases/phase-05-bronze-catalog-and-staging.md)
 
 이 문서는 하나의 주문 레코드가 PostgreSQL 원천에서 DuckDB Mart에 도달할 때까지 이름, 타입, 값, Grain이 어느 지점에서 왜 바뀌는지를 정리한다. 각 변환의 근거와, 그 변환을 다른 지점에서 했을 때 무엇이 깨지는지를 함께 기록한다.
 
@@ -195,6 +195,12 @@ PostgreSQL `orders`의 실제 정의다.
 두 컬럼은 `TIMESTAMPTZ`로 보존하고, Staging에서 실제 타입을 드러내는 `carrier_at`,
 `delivered_at`으로 이름을 바꾼다. `order_estimated_delivery_date`의 자정 값은 5.2.1에서 별도로
 검토하지만, 현재 원천 계약에서는 같은 방식으로 `TIMESTAMPTZ`를 유지한다.
+
+`order_payments.payment_initiated_at`, `payment_completed_at`, `payment_failed_at`,
+`payment_refunded_at`은 Olist CSV에 없는 Generator 확장 컬럼이다. 각각 결제 생성, 완료, 실패,
+환불의 비즈니스 시각을 기록한다. 원본 Olist 시드 행은 근거가 없어 네 컬럼 모두 `NULL`이다.
+증분 Cursor인 `updated_at`과 달리 결제 생명주기 분석에 사용하는 사건 시각이므로 Staging에서도
+이름과 타입을 그대로 보존한다.
 
 `_date`가 특히 위험하다. 이름을 믿은 분석가는 이렇게 쓴다.
 
@@ -429,4 +435,4 @@ Staging까지의 이름·타입·값 변환을 다루고, Mart 설계는 다루�
 - [Phase 5. Bronze Catalog + Staging](../phases/phase-05-bronze-catalog-and-staging.md) — Source에서 Staging까지의 Model 구현
 - [Phase 6. Dimensional Modeling](../phases/phase-06-dimensional-modeling.md) — Staging 이후의 Intermediate와 Mart
 - [Mart Grain 계약](mart-grain.md) — Mart의 Grain, Unique Key, Measure 계약, 이력 추적 구현
-- [PRD v1.10](../../PRD_v1.10.md) — Section 7.1 상태 Mapping, Section 14 dbt Model, Section 15 이력 추적 요구사항
+- [PRD v1.11](../../PRD_v1.11.md) — Section 7.1 상태 Mapping, Section 14 dbt Model, Section 15 이력 추적 요구사항

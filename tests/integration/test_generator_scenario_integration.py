@@ -114,6 +114,7 @@ def test_service_level_scenarios_keep_business_and_mutation_times_separate() -> 
         assert approved_order.order_approved_at == late_approval_time
         assert approved_order.updated_at == approval_mutation_time
         assert completed_payment.payment_status == "completed"
+        assert completed_payment.payment_completed_at == bundle.payments[0].created_at
         assert completed_payment.updated_at == delayed_payment.mutation_time
     finally:
         _delete_bundle(settings, bundle)

@@ -3,7 +3,7 @@
 > 상태: Done  
 > Milestone: 2 — Data Platform Core  
 > 선행 Phase: [Phase 4. Airflow Orchestration](phase-04-airflow-orchestration.md)  
-> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.10](../../PRD_v1.10.md)
+> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.11](../../PRD_v1.11.md)
 > 참고: [데이터 변환 흐름](../reference/data-transformation-flow.md) — 계층별 이름·타입·값 변환의 근거
 
 ## 목표

@@ -1,6 +1,6 @@
 # PRD: Commerce Analytics Data Platform
 
-> Version: 1.9
+> Version: 1.11
 >
 > Status: Implementation-Ready Baseline
 >
@@ -12,7 +12,39 @@
 
 ---
 
-## 0. v1.9 변경 요약
+## 0. v1.11 변경 요약
+
+v1.11은 주문 결제 생명주기 사건 시각을 Source부터 Staging까지 보존한다. Source Schema가
+바뀌므로 Seed 재적재와 Bronze Schema Version 증가가 필요하다.
+
+- `order_payments`에 `payment_initiated_at`, `payment_completed_at`, `payment_failed_at`,
+  `payment_refunded_at`을 추가한다. 각각 결제 생성, 완료, 실패, 환불의 비즈니스 사건 시각이다.
+- Olist CSV에는 사건 시각 근거가 없으므로 초기 Seed의 네 컬럼은 모두 `NULL`이다. Generator가
+  만든 결제와 상태 전이만 사건 시각을 기록한다.
+- `created_at`, `updated_at`은 기술 메타데이터로 유지한다. 특히 `updated_at`은 증분 Cursor와
+  낙관적 잠금에 사용하므로 결제 사건 시각으로 대체하지 않는다.
+- `order_payments`의 컬럼 순서는 결제 비즈니스 속성과 사건 시각을 먼저 두고, 기술 메타데이터
+  `created_at`, `updated_at`을 마지막에 둔다.
+- 기존 `order_payments`는 DDL 적용 시 행 수를 검증한 뒤 재구성해 이 컬럼 순서를 맞춘다. 새로 만든
+  테이블에는 재구성이 발생하지 않는다.
+
+## 0.1 v1.10 변경 요약
+
+v1.10은 `order_items.shipping_limit_date`를 Source Schema Allowlist에 되돌린다. Source
+Schema가 바뀌므로 Seed 재적재와 Bronze Schema Version 증가가 필요하다.
+
+- `shipping_limit_date`를 제외 컬럼 목록에서 제거한다. v1.3에서 제외한 근거는 "V1 KPI,
+  상태 전이, 품질검사에서 미사용"이었다. 배송 지연의 책임을 판매자 구간과 배송사 구간으로
+  나누는 분석이 V1 범위에 들어오면서 이 근거가 더는 성립하지 않는다. 기존 Delivery Measure는
+  `purchase_at` 이후 전체 소요만 재므로 어느 구간이 지연을 만들었는지 구분하지 못한다.
+- 제외 컬럼은 6개에서 5개로 줄고, AC-18의 기대값도 함께 5개가 된다.
+- Source `order_items`에 `shipping_limit_date TIMESTAMPTZ NOT NULL`을 추가한다. Raw CSV
+  112,650행 전부 값이 있고 모두 `order_purchase_timestamp` 이후이므로 `NOT NULL`로 둔다.
+- 컬럼 이름은 원천 그대로 둔다. Source와 Bronze는 Olist Raw 호환을 유지하고, Staging에서
+  실제 타입을 드러내는 `shipping_limit_at`으로 바꾼다. `_date` 접미사를 가진 기존 3개 컬럼과
+  같은 규칙이다.
+
+## 0.2 v1.9 변경 요약
 
 v1.9는 v1.8의 모든 계약을 그대로 유지한다. Model 계약이나 Source Schema를 바꾸지 않고,
 Grain 계약의 소유 문서만 옮긴다.
@@ -26,7 +58,7 @@ Grain 계약의 소유 문서만 옮긴다.
   `docs/architecture/00-data-transformation-flow.md`에서 `docs/reference/data-transformation-flow.md`로
   이동했다. `docs/architecture/`의 번호는 작성 순서를 뜻하므로 상시 참조 문서에는 붙이지 않는다.
 
-## 0.1 v1.8 변경 요약
+## 0.3 v1.8 변경 요약
 
 v1.8은 v1.7의 모든 계약을 유지하면서 사람 단위 멤버십을 구독 생명주기와 거래 실적 등급
 두 축으로 분리하고, 구독 자동결제를 Fact로 도입한다.
@@ -41,14 +73,14 @@ v1.8은 v1.7의 모든 계약을 유지하면서 사람 단위 멤버십을 구�
 - `next_billing_at`은 SCD2 속성 Hash에서 제외한다. 매월 갱신되지만 상태 변화가 아니다.
 - Source Table은 7개에서 9개가 된다. Seed 기준선은 모든 사람이 `NON_MEMBER`다.
 
-## 0.2 v1.7 변경 요약
+## 0.4 v1.7 변경 요약
 
 v1.7은 v1.6의 모든 계약을 유지하면서 Source 범위 제외 결정과 Delivery Measure 소속을 명문화한다.
 
 - `geolocation`, `reviews`, `product_category_name_translation`을 V1 제외로 확정한다. 세 CSV는 `data/raw/olist/`에 내려오지만 PostgreSQL Source Table과 Bronze 수집 대상이 아니다. 제외 근거는 5.1에 기록한다.
 - Delivery Measure는 `fact_orders`에 둔다. 배송 Timestamp가 주문 1건당 각 1개이므로 Delivery Grain은 주문 Grain과 같고, 1:1 `fact_delivery`로 분리하지 않는다. Measure 정의와 Non-additive 집계 규칙은 14.3에 기록한다.
 
-## 0.3 v1.6 변경 요약
+## 0.5 v1.6 변경 요약
 
 v1.6은 v1.5의 Source 원본 보존, 증분 수집, Bronze 불변성, SCD2, Late Arrival, 재처리 계약을 유지하면서 계정과 개인 멤버십의 분석 단위를 분리한다.
 
@@ -343,14 +375,13 @@ Seed Loader는 분석용 표준화를 수행하지 않는다.
 | sellers        | `created_at`, `updated_at`                     | 증분 수집                       |
 | orders         | `created_at`, `updated_at`                     | 생성/상태 변경 증분 수집        |
 | order_items    | `created_at`                                   | Append-only 증분 수집           |
-| order_payments | `payment_status`, `created_at`, `updated_at`   | Synthetic 결제 상태와 증분 수집 |
+| order_payments | `payment_status`, 결제 생명주기 시각 4개, `created_at`, `updated_at` | Synthetic 결제 상태·사건 시각과 증분 수집 |
 
 제외 컬럼:
 
 | Source Table | 제외 컬럼                    | 제외 이유                                  |
 | ------------ | ---------------------------- | ------------------------------------------ |
 | customers    | `customer_zip_code_prefix`   | V1 고객 지역 분석은 city/state 사용        |
-| order_items  | `shipping_limit_date`        | V1 KPI, 상태 전이, 품질검사에서 미사용     |
 | products     | `product_name_lenght`        | 상품명 없이 길이만 제공되어 분석 가치 낮음 |
 | products     | `product_description_lenght` | V1 Mart/Dashboard에서 미사용               |
 | products     | `product_photos_qty`         | V1 Mart/Dashboard에서 미사용               |
@@ -369,7 +400,7 @@ Seed Loader는 분석용 표준화를 수행하지 않는다.
 | orders           | `order_purchase_timestamp` → `created_at`, `--seeded-at` → `updated_at`                  |
 | order_items      | 연결 주문의 `order_purchase_timestamp` → `created_at`                                    |
 | products/sellers | `created_at = updated_at = --seeded-at`                                                  |
-| order_payments   | 연결 주문의 `order_purchase_timestamp` → `created_at`, `--seeded-at` → `updated_at`      |
+| order_payments   | 연결 주문의 `order_purchase_timestamp` → `created_at`, 결제 생명주기 시각 4개 → `NULL`, `--seeded-at` → `updated_at`      |
 
 Seed는 Olist 원본에 구독 이력이 없으므로 모든 사람을 `customer_subscriptions`에
 `subscription_status='NON_MEMBER'`와 구독 관련 시각 `NULL`로 기록한다. `membership_tier`는
@@ -558,15 +589,16 @@ unavailable
 
 #### order_items
 
-| Column          | Type          | Constraint            |
-| --------------- | ------------- | --------------------- |
-| `order_id`      | VARCHAR(64)   | PK, FK orders         |
-| `order_item_id` | INTEGER       | PK, `> 0`             |
-| `product_id`    | VARCHAR(64)   | NOT NULL, FK products |
-| `seller_id`     | VARCHAR(64)   | NOT NULL, FK sellers  |
-| `price`         | NUMERIC(14,2) | NOT NULL, `>= 0`      |
-| `freight_value` | NUMERIC(14,2) | NOT NULL, `>= 0`      |
-| `created_at`    | TIMESTAMPTZ   | NOT NULL              |
+| Column                | Type          | Constraint            |
+| --------------------- | ------------- | --------------------- |
+| `order_id`            | VARCHAR(64)   | PK, FK orders         |
+| `order_item_id`       | INTEGER       | PK, `> 0`             |
+| `product_id`          | VARCHAR(64)   | NOT NULL, FK products |
+| `seller_id`           | VARCHAR(64)   | NOT NULL, FK sellers  |
+| `shipping_limit_date` | TIMESTAMPTZ   | NOT NULL              |
+| `price`               | NUMERIC(14,2) | NOT NULL, `>= 0`      |
+| `freight_value`       | NUMERIC(14,2) | NOT NULL, `>= 0`      |
+| `created_at`          | TIMESTAMPTZ   | NOT NULL              |
 
 #### order_payments
 
@@ -578,6 +610,10 @@ unavailable
 | `payment_installments` | INTEGER       | NULL 또는 `>= 0`              |
 | `payment_value`        | NUMERIC(14,2) | NOT NULL, `>= 0`              |
 | `payment_status`       | VARCHAR(16)   | NOT NULL, 소문자 Domain CHECK |
+| `payment_initiated_at` | TIMESTAMPTZ   | NULL, `pending` 결제 생성의 비즈니스 시작 시각 |
+| `payment_completed_at` | TIMESTAMPTZ   | NULL, `completed` 전이의 비즈니스 완료 시각 |
+| `payment_failed_at`    | TIMESTAMPTZ   | NULL, `failed` 전이의 비즈니스 실패 시각 |
+| `payment_refunded_at`  | TIMESTAMPTZ   | NULL, `refunded` 전이의 비즈니스 환불 시각 |
 | `created_at`           | TIMESTAMPTZ   | NOT NULL                      |
 | `updated_at`           | TIMESTAMPTZ   | NOT NULL, `>= created_at`     |
 
@@ -973,7 +1009,9 @@ dbt Macro는 Catalog의 Object 목록으로 `read_parquet([...])`를 만든다. 
 
 ### 10.5 Bronze Schema Version
 
-초기 `schema_version = 1`.
+v1.9 기준 `schema_version = 1`에서 v1.10의 `order_items.shipping_limit_date` 추가로
+`schema_version = 2`가 됐다. v1 Object는 v2 Reader의 입력 대상이 아니므로 재기준화로
+모든 Bronze Object·Manifest·Catalog를 v2로 다시 만든다.
 
 - Source/Bronze Column 추가·삭제·Type/Nullability 변경 → Schema Version 증가
 - Manifest 자체 변경 → `manifest_version` 증가
@@ -1345,6 +1383,12 @@ Order Mapping:
 
 Order Status Mapping은 7.1을 단일 Macro/Seed Mapping Source로 재사용한다.
 
+Order Item Mapping:
+
+| Source                | Staging              |
+| --------------------- | -------------------- |
+| `shipping_limit_date` | `shipping_limit_at`  |
+
 Payment Mapping:
 
 | Source                 | Staging                 |
@@ -1682,7 +1726,7 @@ result_hash
 | AC-15 | Generator 재현               | 동일 Snapshot/Input Key Set/Hash 동일                                                      |
 | AC-16 | 새 Clone                     | Version/Health/Seed/E2E/dbt Test 성공                                                      |
 | AC-17 | Benchmark                    | Raw 5회/Median/Hash/환경 Metadata 존재                                                     |
-| AC-18 | Source Schema Allowlist      | 6개 제외 컬럼이 PostgreSQL/Bronze에 없고 나머지 선택 컬럼 이름/값 유지                     |
+| AC-18 | Source Schema Allowlist      | 5개 제외 컬럼이 PostgreSQL/Bronze에 없고 나머지 선택 컬럼 이름/값 유지                     |
 | AC-19 | Staging Naming               | Alias/상태 Mapping이 값 손실 없이 적용, Intermediate가 Raw Prefix 직접 참조하지 않음       |
 | AC-20 | 원천 변경 시각 Cursor Safety | 과거 Business Event를 새 `updated_at`으로 갱신하면 다음 Batch에서 정확히 1회 수집          |
 | AC-21 | Generator vs Warehouse       | Warehouse의 원천 데이터 동시성 잠금 중 Generator Source 변경 0, Parent/Child 관측 불일치 0 |

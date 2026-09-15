@@ -53,6 +53,10 @@ def test_new_order_bundle_is_stable_and_preserves_source_grains() -> None:
     assert [item.order_item_id for item in first.items] == list(range(1, len(first.items) + 1))
     assert [payment.payment_sequential for payment in first.payments] == [1]
     assert first.payments[0].payment_status == "pending"
+    assert first.payments[0].payment_initiated_at == _config().logical_date
+    assert first.payments[0].payment_completed_at is None
+    assert first.payments[0].payment_failed_at is None
+    assert first.payments[0].payment_refunded_at is None
     assert sum((item.price + item.freight_value for item in first.items), Decimal("0.00")) == sum(
         (payment.payment_value for payment in first.payments), Decimal("0.00")
     )

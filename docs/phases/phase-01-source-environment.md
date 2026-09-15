@@ -3,7 +3,7 @@
 > 상태: Done  
 > Milestone: 1 — Source Foundation  
 > 선행 Phase: [Phase 0. Bootstrap](phase-00-bootstrap.md)  
-> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.10](../../PRD_v1.10.md)
+> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.11](../../PRD_v1.11.md)
 
 ## 목표
 
@@ -165,11 +165,12 @@ Source Schema Allowlist
 | `.env.example`                                   | 수정      | PostgreSQL 포트, Database, 역할별 계정 환경 변수 계약을 추가했다.          |
 | `compose.yaml`                                   | 수정      | PostgreSQL 18.6 서비스, 영속 Volume, 초기화 SQL, Health Check를 추가했다.  |
 | `sql/bootstrap/01-create-databases-and-roles.sh` | 생성      | Source·Metadata·Airflow Database와 역할을 멱등적으로 생성하도록 추가했다.  |
-| `sql/source/001_create_source_tables.sql`        | 수정      | 불변 계정 `customers`, 사람 단위 `customer_subscriptions`·`customer_membership_tiers`, 구독 결제 `subscription_payments`를 포함한 9개 테이블과 `order_items.shipping_limit_date`를 정의하고, 구독 상태·거래 실적 등급·상태별 시각 제약과 Cursor Index를 반영했다. |
+| `sql/source/001_create_source_tables.sql`        | 수정      | 불변 계정 `customers`, 사람 단위 `customer_subscriptions`·`customer_membership_tiers`, 구독 결제 `subscription_payments`를 포함한 9개 테이블과 `order_items.shipping_limit_date`, 주문 결제 생성·완료·실패·환불 사건 시각을 정의하고, 구독 상태·거래 실적 등급·상태별 시각 제약과 Cursor Index를 반영했다. |
+| `sql/source/002_reorder_order_payments_columns.sql` | 생성    | 기존 `order_payments`를 행 수 검증 후 재구성해 결제 사건 시각 뒤에 `created_at`, `updated_at`을 배치하는 멱등 마이그레이션을 추가했다. |
 | `sql/metadata/001_create_seed_metadata.sql`      | 생성      | Seed 실행 이력과 Count/Hash/상태를 기록하는 `seed_runs` 테이블을 추가했다. |
 | `src/common/database.py`                         | 생성      | `.env` 기반 PostgreSQL 연결과 SQL 적용 공통 기능을 추가했다.               |
 | `src/seed/contracts.py`                          | 생성      | CSV 파일·헤더·기본 키 계약 검증과 Raw Checksum 계산을 추가했다.            |
-| `src/seed/loader.py`                             | 수정      | CSV 변환, 검증, 임시 Staging, Transactional UPSERT에 `customer_subscriptions` 구독 기준선, `customer_membership_tiers` 거래 실적 등급과 필수 `shipping_limit_date` Seed를 반영했다. |
+| `src/seed/loader.py`                             | 수정      | CSV 변환, 검증, 임시 Staging, Transactional UPSERT에 `customer_subscriptions` 구독 기준선, `customer_membership_tiers` 거래 실적 등급, 필수 `shipping_limit_date`와 원본에 근거가 없는 결제 생명주기 시각 4개의 `NULL` Seed 및 결제 컬럼 순서 마이그레이션 실행을 반영했다. |
 | `src/seed/__main__.py`                           | 생성      | `python -m src.seed` CLI와 `seeded_at` 입력 처리를 추가했다.               |
 | `src/__init__.py`, `src/seed/__init__.py`        | 생성·수정 | Seed 모듈을 Python Package로 구성했다.                                     |
 | `tests/seed/test_contracts.py`                   | 수정      | CSV 계약과 Timestamp/Checksum, 거래 실적 등급 경계·구독 기준선 Column 단위 테스트를 추가했다. |

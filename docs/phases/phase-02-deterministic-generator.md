@@ -6,7 +6,7 @@
 >
 > 선행 Phase: [Phase 1. Source Environment](phase-01-source-environment.md)
 >
-> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.10](../../PRD_v1.10.md)
+> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.11](../../PRD_v1.11.md)
 
 ## 목표
 
@@ -18,6 +18,7 @@
 - `customer_unique_id`는 동일 인물의 Business Key, `customer_id`는 주문 시점 Customer Record다.
 - 기존 가변 고객 구독·등급 행의 새 `updated_at`은 직전 값보다 반드시 크다. 계정 행은 생성 후 불변이다.
 - Late Arrival은 과거 Business Event Time과 현재 원천 변경 시각으로 표현한다.
+- 주문 결제의 생성·완료·실패·환불 사건 시각은 각 상태 전이의 비즈니스 시각이며, 증분 Cursor인 `updated_at`과 분리한다.
 - Order/Item/Payment 묶음은 하나의 Transaction으로 생성한다.
 - Warehouse가 원천 데이터 동시성 잠금을 보유하는 동안 Generator는 Source를 변경하지 않는다.
 - 한 수집 구간에서 동일 SCD2 추적 속성을 여러 번 바꿔 중간 Version을 소실시키지 않는다.
@@ -180,9 +181,10 @@ AC-20과 AC-21의 전체 E2E 판정은 Phase 3의 Ingestion과 결합해 완료�
 | `src/generator/metadata.py`                                   | 생성      | `generator_runs` Schema 준비와 RUNNING/완료 실행 이력 기록 기능을 추가했다.                                           |
 | `src/generator/customers.py`                                  | 수정      | 불변 Customer 계정, 사람 단위 구독 Record와 등급 Record를 각각 `customer_subscriptions`·`customer_membership_tiers`로 분리하고, 구독 상태 전이·등급의 단조 변경 저장과 시각 기반 만료 스캔을 추가했다. |
 | `src/generator/subscription_payments.py`                      | 생성      | 구독 자동결제 1건을 `subscription_payments`에 결정적으로 기록하고 `next_billing_at`을 1개월 뒤로 민다.                 |
-| `src/generator/orders.py`                                     | 수정      | Order·Item·Payment Bundle 저장 시 새 사람의 `customer_subscriptions` `NON_MEMBER` 행과 `customer_membership_tiers` `BRONZE` 행을 함께 보장하도록 변경했다.                               |
-| `src/generator/transitions.py`                                | 생성      | Order·Payment 허용 상태 전이, 기대 Version, 원천 변경 시각 검증을 추가했다.                                           |
-| `src/generator/scenarios.py`                                  | 생성      | Late Order·Delayed Payment·Late Update·Membership Change Scenario를 추가했다.                                         |
+| `src/generator/orders.py`                                     | 수정      | Order·Item·Payment Bundle 저장 시 새 사람의 `customer_subscriptions` `NON_MEMBER` 행과 `customer_membership_tiers` `BRONZE` 행을 함께 보장하고, 신규 `pending` 주문 결제의 시작 시각을 기록한다.                               |
+| `src/generator/transitions.py`                                | 생성      | Order·Payment 허용 상태 전이, 기대 Version, 원천 변경 시각 검증과 완료·실패·환불 결제의 비즈니스 사건 시각 기록을 추가했다.                                           |
+| `src/generator/scenarios.py`                                  | 생성      | Late Order·Delayed Payment·Late Update·Membership Change Scenario를 추가하고, Delayed Payment의 과거 완료 시각을 보존한다.                                         |
+| `dbt/models/staging/stg_payments.sql`, `dbt/tests/stg_source_mapping.sql` | 수정 | 결제 생명주기 사건 시각을 Bronze에서 Staging으로 보존하고 원천 매핑을 검증한다. |
 | `src/generator/lease.py`                                      | 생성      | Generator·Warehouse 원천 데이터 동시성 잠금의 획득·갱신·Fencing·해제를 추가했다.                                      |
 | `src/generator/service.py`                                    | 수정      | Seed Snapshot 검증, Lease 보호 Source 생성, 실행 결과 재사용과 거래 실적 등급·구독 상태 변경 Profile 실행을 추가했다.          |
 | `src/generator/__main__.py`                                   | 생성·수정 | Generator CLI 기반을 만들고, 기본 실행 적재·`--validate-only`·실행 가능 Profile 선택을 지원하도록 변경했다.           |
