@@ -6,7 +6,7 @@
 > [데이터 변환 흐름](../reference/data-transformation-flow.md),
 > [Phase 6. Dimensional Modeling](../phases/phase-06-dimensional-modeling.md),
 > [Phase 7. Data Quality & Publish](../phases/phase-07-data-quality-publish.md),
-> [PRD v1.10](../../PRD_v1.10.md)
+> [PRD v1.11](../../PRD_v1.11.md)
 
 ## 1. 목적과 결정 범위
 

@@ -95,6 +95,10 @@ class PaymentRecord:
     payment_installments: int | None
     payment_value: Decimal
     payment_status: str
+    payment_initiated_at: datetime | None
+    payment_completed_at: datetime | None
+    payment_failed_at: datetime | None
+    payment_refunded_at: datetime | None
     created_at: datetime
     updated_at: datetime
 
@@ -199,6 +203,10 @@ def new_order_bundle(
         payment_installments=None,
         payment_value=sum((item.price + item.freight_value for item in items), Decimal("0.00")),
         payment_status="pending",
+        payment_initiated_at=config.logical_date,
+        payment_completed_at=None,
+        payment_failed_at=None,
+        payment_refunded_at=None,
         created_at=config.logical_date,
         updated_at=config.logical_date,
     )
@@ -287,6 +295,10 @@ def _with_payment_installments(
         payment_installments=1 + _selector(config, "payment-installments", order_ordinal) % 12,
         payment_value=payment.payment_value,
         payment_status=payment.payment_status,
+        payment_initiated_at=payment.payment_initiated_at,
+        payment_completed_at=payment.payment_completed_at,
+        payment_failed_at=payment.payment_failed_at,
+        payment_refunded_at=payment.payment_refunded_at,
         created_at=payment.created_at,
         updated_at=payment.updated_at,
     )
@@ -372,7 +384,8 @@ def _persist_payments(
         existing = connection.execute(
             """
             SELECT order_id, payment_sequential, payment_type, payment_installments,
-                   payment_value, payment_status, created_at, updated_at
+                   payment_value, payment_status, payment_initiated_at, payment_completed_at,
+                   payment_failed_at, payment_refunded_at, created_at, updated_at
             FROM order_payments
             WHERE order_id = %s AND payment_sequential = %s
             FOR UPDATE
@@ -384,9 +397,10 @@ def _persist_payments(
                 """
                 INSERT INTO order_payments (
                     order_id, payment_sequential, payment_type, payment_installments,
-                    payment_value, payment_status, created_at, updated_at
+                    payment_value, payment_status, payment_initiated_at, payment_completed_at,
+                    payment_failed_at, payment_refunded_at, created_at, updated_at
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 desired,
             )
@@ -437,6 +451,10 @@ def _payment_parameters(payment: PaymentRecord) -> tuple[object, ...]:
         payment.payment_installments,
         payment.payment_value,
         payment.payment_status,
+        payment.payment_initiated_at,
+        payment.payment_completed_at,
+        payment.payment_failed_at,
+        payment.payment_refunded_at,
         payment.created_at,
         payment.updated_at,
     )

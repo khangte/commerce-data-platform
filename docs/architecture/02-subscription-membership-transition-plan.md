@@ -6,7 +6,7 @@
 > [구독 생명주기 요구사항](03-subscription-lifecycle-requirements.md),
 > [구독·등급 테이블 분리 비교](04-membership-table-split-comparison.md),
 > [Membership Grain 분리 기획안](01-membership-grain-separation.md),
-> [PRD v1.10](../../PRD_v1.10.md),
+> [PRD v1.11](../../PRD_v1.11.md),
 > [데이터 변환 흐름](../reference/data-transformation-flow.md),
 > [Phase 1](../phases/phase-01-source-environment.md),
 > [Phase 2](../phases/phase-02-deterministic-generator.md),
@@ -172,7 +172,7 @@ cancel_requested_at
 
 | 순서 | 대상             | 변경 내용                                                                                                                                                    | 상태   |
 | ---- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------ |
-| 1    | PRD·Phase 문서   | 용어, 상태 전이, Source Schema, 인수 조건과 BI 요구사항을 동기화한다. PRD v1.10에 반영했다.                                                                   | 완료   |
+| 1    | PRD·Phase 문서   | 용어, 상태 전이, Source Schema, 인수 조건과 BI 요구사항을 동기화한다. PRD v1.11에 반영했다.                                                                   | 완료   |
 | 2    | Source DDL       | `customer_memberships`를 `customer_subscriptions`와 `customer_membership_tiers`로 나누고 `subscription_payments`를 신설한다. v1.6 등급 이관 DO 블록을 삭제한다. | 완료   |
 | 3    | Seed             | 기존 등급 계산을 대문자 `membership_tier`에 적용하고 모든 Seed 고객을 `NON_MEMBER`로 초기화한다. 두 테이블에 나눠 적재한다.                                  | 완료   |
 | 4    | Generator        | 구독 상태 전이와 실적 등급 갱신을 분리하고, 시각 기반 만료 스캔과 자동결제를 만든다. 전이·시각 단조 증가·재가입 판별 테스트를 추가한다.                      | 완료   |

@@ -63,6 +63,10 @@ def test_delayed_payment_and_late_update_plan_current_mutation_time() -> None:
         order_id="order-1",
         payment_sequential=1,
         payment_status="pending",
+        payment_initiated_at=_config().logical_date,
+        payment_completed_at=None,
+        payment_failed_at=None,
+        payment_refunded_at=None,
         updated_at=_config().logical_date,
     )
     order = OrderState(
@@ -85,6 +89,7 @@ def test_delayed_payment_and_late_update_plan_current_mutation_time() -> None:
     )
 
     assert delayed_payment.next_status == "completed"
+    assert delayed_payment.business_event_time == _config().logical_date - timedelta(days=1)
     assert delayed_payment.mutation_time == payment_mutation_time
     assert late_update.business_event_time == order_business_event_time
     assert late_update.mutation_time == order_mutation_time

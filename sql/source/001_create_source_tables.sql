@@ -139,6 +139,10 @@ CREATE TABLE IF NOT EXISTS order_payments (
     payment_installments INTEGER,
     payment_value NUMERIC(14, 2) NOT NULL,
     payment_status VARCHAR(16) NOT NULL,
+    payment_initiated_at TIMESTAMPTZ,
+    payment_completed_at TIMESTAMPTZ,
+    payment_failed_at TIMESTAMPTZ,
+    payment_refunded_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL,
     PRIMARY KEY (order_id, payment_sequential),
@@ -150,6 +154,15 @@ CREATE TABLE IF NOT EXISTS order_payments (
         CHECK (payment_status IN ('pending', 'completed', 'failed', 'refunded')),
     CONSTRAINT order_payments_updated_at_check CHECK (updated_at >= created_at)
 );
+
+ALTER TABLE order_payments
+    ADD COLUMN IF NOT EXISTS payment_initiated_at TIMESTAMPTZ;
+ALTER TABLE order_payments
+    ADD COLUMN IF NOT EXISTS payment_completed_at TIMESTAMPTZ;
+ALTER TABLE order_payments
+    ADD COLUMN IF NOT EXISTS payment_failed_at TIMESTAMPTZ;
+ALTER TABLE order_payments
+    ADD COLUMN IF NOT EXISTS payment_refunded_at TIMESTAMPTZ;
 
 DROP INDEX IF EXISTS customers_updated_at_customer_id_idx;
 CREATE INDEX IF NOT EXISTS customers_created_at_customer_id_idx

@@ -45,11 +45,16 @@ def late_order_bundle(
 
 
 def delayed_payment_transition(
-    current: PaymentState, payment_created_at: datetime, mutation_time: datetime
+    current: PaymentState, payment_completed_at: datetime, mutation_time: datetime
 ) -> PaymentTransition:
-    """기존 Pending Payment를 나중에 Completed로 전이하는 지연 결제를 계획한다."""
-    _assert_past_business_event_time(payment_created_at, mutation_time)
-    return plan_payment_transition(current, "completed", mutation_time)
+    """과거 완료 시각을 현재 원천 변경 시각으로 반영하는 지연 결제를 계획한다."""
+    _assert_past_business_event_time(payment_completed_at, mutation_time)
+    return plan_payment_transition(
+        current,
+        "completed",
+        mutation_time,
+        business_event_time=payment_completed_at,
+    )
 
 
 def late_order_update_transition(

@@ -46,8 +46,11 @@ def test_order_and_payment_transitions_are_idempotent_and_version_safe() -> None
         generator_version=GENERATOR_VERSION,
     )
     customer = new_customer_record(config, 1)
+    failed_customer = new_customer_record(config, 2)
     with settings.source_connection() as connection:
-        bundle = new_order_bundle(config, customer, fetch_order_catalog(connection), 1)
+        catalog = fetch_order_catalog(connection)
+        bundle = new_order_bundle(config, customer, catalog, 1)
+        failed_bundle = new_order_bundle(config, failed_customer, catalog, 2)
 
     try:
         apply_order_bundle(settings, bundle)
@@ -81,12 +84,34 @@ def test_order_and_payment_transitions_are_idempotent_and_version_safe() -> None
         assert apply_payment_transition(settings, complete).updated == 1
         assert apply_payment_transition(settings, complete).skipped == 1
         with settings.source_connection() as connection:
-            assert (
-                fetch_payment_state(connection, bundle.order.order_id, 1).payment_status
-                == "completed"
-            )
+            completed_payment = fetch_payment_state(connection, bundle.order.order_id, 1)
+        assert completed_payment.payment_status == "completed"
+        assert completed_payment.payment_completed_at == complete.mutation_time
+
+        refund = plan_payment_transition(
+            completed_payment, "refunded", config.logical_date + timedelta(days=2)
+        )
+        assert apply_payment_transition(settings, refund).updated == 1
+        with settings.source_connection() as connection:
+            refunded_payment = fetch_payment_state(connection, bundle.order.order_id, 1)
+        assert refunded_payment.payment_status == "refunded"
+        assert refunded_payment.payment_completed_at == complete.mutation_time
+        assert refunded_payment.payment_refunded_at == refund.mutation_time
+
+        apply_order_bundle(settings, failed_bundle)
+        with settings.source_connection() as connection:
+            pending_failed_payment = fetch_payment_state(connection, failed_bundle.order.order_id, 1)
+        fail = plan_payment_transition(
+            pending_failed_payment, "failed", config.logical_date + timedelta(days=1)
+        )
+        assert apply_payment_transition(settings, fail).updated == 1
+        with settings.source_connection() as connection:
+            failed_payment = fetch_payment_state(connection, failed_bundle.order.order_id, 1)
+        assert failed_payment.payment_status == "failed"
+        assert failed_payment.payment_failed_at == fail.mutation_time
     finally:
         _delete_bundle(settings, bundle)
+        _delete_bundle(settings, failed_bundle)
 
 
 def _delete_bundle(settings: PostgresSettings, bundle: OrderBundle) -> None:

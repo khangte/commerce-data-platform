@@ -63,6 +63,10 @@ mapping_failures as (
         stg_payments.payment_sequence is null
         or stg_payments.installments is distinct from payments_source.payment_installments
         or stg_payments.payment_status is distinct from {{ standardized_payment_status('payments_source.payment_status') }}
+        or stg_payments.payment_initiated_at is distinct from payments_source.payment_initiated_at
+        or stg_payments.payment_completed_at is distinct from payments_source.payment_completed_at
+        or stg_payments.payment_failed_at is distinct from payments_source.payment_failed_at
+        or stg_payments.payment_refunded_at is distinct from payments_source.payment_refunded_at
 
     union all
 
