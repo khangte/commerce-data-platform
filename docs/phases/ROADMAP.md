@@ -794,8 +794,8 @@ stg_order_items
 stg_payments
 stg_orders
 stg_customers_current
-stg_customer_subscriptions
-stg_customer_membership_tiers
+stg_customer_subscription_observations
+stg_customer_tier_observations
 stg_subscription_payments
 ```
 

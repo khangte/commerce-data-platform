@@ -64,8 +64,8 @@ dbt source macro
 4. `stg_payments`
 5. `stg_orders`
 6. `stg_customers_current`
-7. `stg_customer_subscriptions`
-8. `stg_customer_membership_tiers`
+7. `stg_customer_subscription_observations`
+8. `stg_customer_tier_observations`
 9. `stg_subscription_payments`
 
 - [x] `P5-05` Product/Seller Naming과 Type 표준화
@@ -85,7 +85,7 @@ Customer Mapping:
 | `customer_state`        | `state`                   |
 | `customers.created_at`  | `created_at`              |
 
-구독 축은 `stg_customer_subscriptions`, 등급 축은 `stg_customer_membership_tiers`에서 각각 사람
+구독 축은 `stg_customer_subscription_observations`, 등급 축은 `stg_customer_tier_observations`에서 각각 사람
 키를 `customer_id`로 바꾸고 값을 대문자로 표준화한다. 두 Staging 모두 Current 선택을 하지
 않고 Bronze 누적 행을 `customer_id + updated_at + attribute_hash`로 중복 제거한다. 두 축을
 어떻게 결합해 이력으로 만들지는 Phase 6이 결정한다.
