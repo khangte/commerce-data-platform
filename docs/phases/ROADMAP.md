@@ -1,7 +1,7 @@
 # ROADMAP: Commerce Analytics Data Platform
 
 > 기준 PRD: PRD v1.9
-> 목적: Phase 0부터 Phase 9까지의 실제 개발 순서와 검증 기준 정의  
+> 목적: Phase 0부터 Phase 10까지의 실제 개발 순서와 검증 기준 정의  
 > 원칙: 전체 아키텍처와 핵심 계약은 PRD를 기준으로 유지하고, 구현은 Phase 단위로 완료·검증한 뒤 다음 단계로 진행한다.
 
 ---
@@ -17,11 +17,12 @@ ROADMAP은 전체 순서와 범위를 관리하고, 아래 문서는 Phase별 Ta
 | 2     | [Deterministic Generator](phase-02-deterministic-generator.md) | AC-15, AC-20/21 생성 측          |
 | 3     | [Incremental Ingestion](phase-03-incremental-ingestion.md)     | AC-02~06, 08, 20, 21, 23, 24     |
 | 4     | [Airflow Orchestration](phase-04-airflow-orchestration.md)     | E2E, Retry, 부분 성공 재사용     |
-| 5     | [dbt + DuckDB Modeling](phase-05-dbt-duckdb-modeling.md)       | AC-01, 09~12, 19, 22             |
-| 6     | [Data Quality & Publish](phase-06-data-quality-publish.md)     | AC-01, 08, 12, 13, 16            |
-| 7     | [Reliability Scenarios](phase-07-reliability.md)               | 실패/충돌/재처리 복구 Evidence   |
-| 8     | [Benchmark](phase-08-benchmark.md)                             | AC-17                            |
-| 9     | [BI](phase-09-bi.md)                                           | Mart-only Dashboard, Serving ADR |
+| 5     | [Bronze Catalog + Staging](phase-05-bronze-catalog-and-staging.md) | AC-19, AC-22                     |
+| 6     | [Dimensional Modeling](phase-06-dimensional-modeling.md)       | AC-01, 09~12                     |
+| 7     | [Data Quality & Publish](phase-07-data-quality-publish.md)     | AC-01, 08, 12, 13, 16            |
+| 8     | [Reliability Scenarios](phase-08-reliability.md)               | 실패/충돌/재처리 복구 Evidence   |
+| 9     | [Benchmark](phase-09-benchmark.md)                             | AC-17                            |
+| 10    | [BI](phase-10-bi.md)                                           | Mart-only Dashboard, Serving ADR |
 
 Phase 문서의 상태는 `Planned → In Progress → Done`으로 변경한다. `Done`은 체크박스 개수가 아니라 해당 문서의 Definition of Done과 Acceptance Gate가 모두 통과했음을 뜻한다.
 
@@ -53,22 +54,25 @@ Milestone 2. Data Platform Core
 ├── Phase 4. Airflow Orchestration
 │   └── 검증된 Pipeline Logic을 DAG로 오케스트레이션
 │
-├── Phase 5. dbt + DuckDB Modeling
-│   └── Staging, Intermediate, Dimension, Fact, SCD2 구축
+├── Phase 5. Bronze Catalog + Staging
+│   └── Committed Bronze Catalog와 Source→분석 Naming 변환
 │
-└── Phase 6. Data Quality & Publish
+├── Phase 6. Dimensional Modeling
+│   └── Grain 계약 확정, Intermediate, Dimension, Fact, Report 구축
+│
+└── Phase 7. Data Quality & Publish
     └── Ingestion/Warehouse 품질 검증과 안전한 Mart Publish
 
 
 Milestone 3. Portfolio Evidence
 │
-├── Phase 7. Reliability
+├── Phase 8. Reliability
 │   └── 실패, 충돌, Late Arrival, Backfill, 복구 시나리오 검증
 │
-├── Phase 8. Benchmark
+├── Phase 9. Benchmark
 │   └── 성능 Baseline, 병목 분석, 개선 전후 정량 비교
 │
-└── Phase 9. BI
+└── Phase 10. BI
     └── Metabase를 통한 최종 Data Mart 소비 가능성 검증
 ```
 
@@ -96,12 +100,12 @@ Git Commit
 Phase 0~2
 → Source와 테스트 데이터 환경 확보
 
-Phase 3~6
+Phase 3~7
 → 프로젝트의 핵심 Data Engineering 구현
 
-Phase 7~9
+Phase 8~10
 → 신뢰성·성능·활용 가능성을 포트폴리오 증거로 정리
-특히 프로젝트의 핵심 비중은 Phase 3, 5, 7, 8에 둔다.
+특히 프로젝트의 핵심 비중은 Phase 3, 6, 8, 9에 둔다.
 ```
 
 ---
@@ -756,11 +760,12 @@ FAILED Table
 
 ---
 
-## Phase 5. dbt + DuckDB Modeling
+## Phase 5. Bronze Catalog + Staging
 
 ### 목표
 
-Committed Bronze만 읽어 Staging → Intermediate → Dimension / Fact를 구축한다.
+Committed Bronze만 읽어 Staging까지 구축한다. Source Schema만 입력으로 받으므로 Grain 설계
+없이 완료할 수 있다.
 
 ---
 
@@ -789,7 +794,9 @@ stg_order_items
 stg_payments
 stg_orders
 stg_customers_current
-stg_customer_observations
+stg_customer_subscriptions
+stg_customer_membership_tiers
+stg_subscription_payments
 ```
 
 Source Naming은 Staging에서 처음 분석 Naming으로 변환한다.
@@ -810,41 +817,70 @@ product_category_name
 표준화 상태값도 Staging에서 처리한다.
 
 ```text
-approved / processing / invoiced
-→ APPROVED
+delivered
+→ DELIVERED
 
 shipped
 → SHIPPED
 ```
 
+Staging은 원천 Grain을 바꾸지 않는다.
+
+### Gate
+
+- AC-19 Staging Naming
+- AC-22 표준화 상태값
+
 ---
 
-## Phase 5C. Intermediate
+## Phase 6. Dimensional Modeling
+
+### 목표
+
+Staging을 입력으로 Grain을 바꾸는 Intermediate와, Grain을 확정하는 Mart를 구축한다.
+
+**선행 조건**: [Mart Grain 계약](../reference/mart-grain.md)이 확정돼 있어야 한다. 어떤
+Dimension과 Fact를 둘지, 각 Model의 한 행이 무엇을 나타낼지가 먼저 정해지지 않으면 이 Phase를
+시작하지 않는다.
+
+---
+
+## Phase 6A. Grain 설계 확정
+
+Model을 만들기 전에 Grain 문장을 먼저 쓴다.
 
 ```text
-int_orders_enriched
-int_order_items_enriched
-int_payment_summary
-int_customer_history
-int_affected_business_dates
+Dimension 후보와 Grain 문장
+Fact 후보와 Grain 문장, Unique Key
+Measure 목록과 Additive 여부
+이력 추적 대상과 Version 생성 규칙
 ```
 
 ---
 
-## Phase 5D~5E. Mart
+## Phase 6B. Intermediate
 
-Model 목록, Grain, Unique Key, Measure 계약은 [Mart Grain 계약](../reference/mart-grain.md)이
-정본이다. 구현 순서는 의존성이 적은 Model부터 시작하고, 사전 집계 Measure를 갖는 Model을
-마지막에 만든다.
+Staging Join, 사전 집계, 이력 구간 생성, Mart 투영 행 준비를 담당한다.
 
-서로 다른 Grain을 직접 Join해 Measure를 합산하지 않는다.
+집계·파생·시점 결합은 Intermediate에서 끝낸다.
 
 ---
 
-## Phase 5F~5G. 이력 추적과 시점 결합
+## Phase 6C~6E. Mart
+
+구현 순서는 의존성이 적은 Model부터 시작하고, 사전 집계 Measure를 갖는 Model을 마지막에
+만든다.
+
+서로 다른 Grain을 직접 Join해 Measure를 합산하지 않는다.
+
+Report Model은 Mart 위에서 파생되며 BI가 Mart만 읽도록 소비 계층을 제공한다.
+
+---
+
+## Phase 6F. Incremental과 이력 검증
 
 Synthetic 구독 상태 전이·등급 변경·Address 변경으로 검증한다. 사건은 발생 시점에 유효했던
-고객 Version을 참조해야 한다.
+Version을 참조해야 한다.
 
 검증:
 
@@ -854,19 +890,20 @@ Version 생성
 Overlap 없음
 Current 정확히 1개
 시점 결합 결과 Unknown 0
+Incremental/Full Refresh Logical Hash 일치
 ```
 
 ### Gate
 
-- AC-09 SCD2
-- AC-10 Temporal Join
+- AC-01 E2E Fact 도달
+- AC-09 이력 Version
+- AC-10 시점 결합
+- AC-11 Late Order 과거 Mart 갱신
 - AC-12 Referential Integrity
-- AC-19 Staging Naming
-- AC-22 표준화 상태값
 
 ---
 
-## Phase 6. Data Quality + Publish
+## Phase 7. Data Quality + Publish
 
 ### 목표
 
@@ -934,7 +971,7 @@ dbt Build/Test 실패
 
 # Milestone 3. Portfolio Evidence
 
-## Phase 7. Reliability Scenarios
+## Phase 8. Reliability Scenarios
 
 ### 목표
 
@@ -991,7 +1028,7 @@ docs/troubleshooting/
 
 ---
 
-## Phase 8. Benchmark
+## Phase 9. Benchmark
 
 ### 목표
 
@@ -1069,7 +1106,7 @@ Baseline 18.2s
 
 ---
 
-## Phase 9. BI
+## Phase 10. BI
 
 ### 목표
 
@@ -1158,16 +1195,16 @@ Airflow
 Phase 5
 Warehouse / dbt
     ↓
-Phase 6
+Phase 7
 Quality / Publish
     ↓
-Phase 7
+Phase 8
 Reliability
     ↓
-Phase 8
+Phase 9
 Benchmark
     ↓
-Phase 9
+Phase 10
 BI
 ```
 
@@ -1185,12 +1222,12 @@ Milestone 2 — Data Platform Core
 ├── Phase 3
 ├── Phase 4
 ├── Phase 5
-└── Phase 6
+└── Phase 7
 
 Milestone 3 — Portfolio Evidence
-├── Phase 7
 ├── Phase 8
-└── Phase 9
+├── Phase 9
+└── Phase 10
 ```
 
 투입 비중은 Phase 3, 5, 7, 8을 가장 높게 잡는다.
@@ -1202,10 +1239,10 @@ Phase 2       중간
 Phase 3       매우 높음
 Phase 4       높음
 Phase 5       매우 높음
-Phase 6       높음
-Phase 7       매우 높음
+Phase 7       높음
 Phase 8       매우 높음
-Phase 9       낮음~중간
+Phase 9       매우 높음
+Phase 10       낮음~중간
 ```
 
 ---

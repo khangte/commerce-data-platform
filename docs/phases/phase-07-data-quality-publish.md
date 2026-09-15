@@ -1,8 +1,8 @@
-# Phase 6. Data Quality & Publish
+# Phase 8. Data Quality & Publish
 
 > 상태: Planned  
 > Milestone: 2 — Data Platform Core  
-> 선행 Phase: [Phase 5. dbt + DuckDB Modeling](phase-05-dbt-duckdb-modeling.md)  
+> 선행 Phase: [Phase 7. Dimensional Modeling](phase-06-dimensional-modeling.md)  
 > 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.9](../../PRD_v1.9.md), [Mart Grain 계약](../reference/mart-grain.md)
 
 ## 목표
@@ -31,7 +31,7 @@ Phase 6의 Publish Workflow와 E2E 품질 Gate를 완료했다는 뜻은 아니�
 | `dbt/tests/fact_subscription_payments_missing_customer_key.sql` | 구독 결제 Fact의 고객 SCD2 Version 누락을 검증한다. |
 
 - [x] 구독 상태 전이·SCD2 구간 비중복·재가입·등급 규칙을 dbt Test로 검증한다.
-- [ ] Publish 경계, 실패 Build 격리와 마지막 성공 Mart 보존은 `P6-13` 이후 작업으로 남는다.
+- [ ] Publish 경계, 실패 Build 격리와 마지막 성공 Mart 보존은 `P7-13` 이후 작업으로 남는다.
 
 ## 선행 조건
 
@@ -43,23 +43,23 @@ Phase 6의 Publish Workflow와 E2E 품질 Gate를 완료했다는 뜻은 아니�
 
 ### 1. Ingestion Quality 통합
 
-- [ ] `P6-01` Ingestion Validation Rule Registry 정리
-- [ ] `P6-02` Row Error와 Batch Error 분류 검증
-- [ ] `P6-03` Freeze된 Parent Key 기준 Broken Reference 검증
-- [ ] `P6-04` Reject Rate 0/이하/초과 경계 테스트
-- [ ] `P6-05` Duplicate/NULL Key/Broken FK/Invalid Status/Negative Value Fixture
+- [ ] `P7-01` Ingestion Validation Rule Registry 정리
+- [ ] `P7-02` Row Error와 Batch Error 분류 검증
+- [ ] `P7-03` Freeze된 Parent Key 기준 Broken Reference 검증
+- [ ] `P7-04` Reject Rate 0/이하/초과 경계 테스트
+- [ ] `P7-05` Duplicate/NULL Key/Broken FK/Invalid Status/Negative Value Fixture
 
 검증 순서와 Error Code가 Phase 3 문서 및 PRD Section 11과 일치해야 한다.
 
 ### 2. Warehouse Quality
 
-- [ ] `P6-06` dbt Generic Test 구성: `unique`, `not_null`, `relationships`, `accepted_values`
-- [ ] `P6-07` 금액 Non-negative Custom Test
-- [ ] `P6-08` 주문 Timestamp 순서 Custom Test
-- [ ] `P6-09` SCD2 Overlap/Current Version Custom Test. `dim_customer`는 구독·등급 두 축을 병합한 Version이므로 두 축 변경이 겹치는 경우도 구간 비중복을 검증한다.
-- [ ] `P6-10` Fact FK Missing/Business Key Duplicate Test
-- [ ] `P6-11` 정상 E2E Unknown Key 0 Test
-- [ ] `P6-12` Fact Measure/Fan-out 회귀 Test
+- [ ] `P7-06` dbt Generic Test 구성: `unique`, `not_null`, `relationships`, `accepted_values`
+- [ ] `P7-07` 금액 Non-negative Custom Test
+- [ ] `P7-08` 주문 Timestamp 순서 Custom Test
+- [ ] `P7-09` SCD2 Overlap/Current Version Custom Test. `dim_customer`는 구독·등급 두 축을 병합한 Version이므로 두 축 변경이 겹치는 경우도 구간 비중복을 검증한다.
+- [ ] `P7-10` Fact FK Missing/Business Key Duplicate Test
+- [ ] `P7-11` 정상 E2E Unknown Key 0 Test
+- [ ] `P7-12` Fact Measure/Fan-out 회귀 Test
 
 필수 Custom Contract:
 
@@ -78,11 +78,11 @@ Normal E2E Unknown Key = 0
 
 ### 3. Publish Safety
 
-- [ ] `P6-13` Build 대상과 Published Mart의 물리적 경계 정의
-- [ ] `P6-14` Build → Test → Publish 전환 구현
-- [ ] `P6-15` Publish 전환을 단일 Transaction 또는 복구 가능한 단위로 처리
-- [ ] `P6-16` dbt Build/Test 실패 시 이전 Published Mart 유지
-- [ ] `P6-17` Publish Run ID, Invocation ID, Hash, 상태 기록
+- [ ] `P7-13` Build 대상과 Published Mart의 물리적 경계 정의
+- [ ] `P7-14` Build → Test → Publish 전환 구현
+- [ ] `P7-15` Publish 전환을 단일 Transaction 또는 복구 가능한 단위로 처리
+- [ ] `P7-16` dbt Build/Test 실패 시 이전 Published Mart 유지
+- [ ] `P7-17` Publish Run ID, Invocation ID, Hash, 상태 기록
 
 기본 의미:
 
@@ -100,10 +100,10 @@ DuckDB 제약을 관측한 뒤 Build Schema → Test → Swap 또는 별도 Ware
 
 ### 4. E2E 품질 Gate
 
-- [ ] `P6-18` Source→Bronze Catalog→Fact Count/Key 추적
-- [ ] `P6-19` 성공/빈/실패/재실행 Metadata 조회 SQL
-- [ ] `P6-20` 새 Clone에서 Seed→Generator→Ingestion→dbt Test 재현
-- [ ] `P6-21` Phase 0~6 통합 검증 명령을 README에 반영
+- [ ] `P7-18` Source→Bronze Catalog→Fact Count/Key 추적
+- [ ] `P7-19` 성공/빈/실패/재실행 Metadata 조회 SQL
+- [ ] `P7-20` 새 Clone에서 Seed→Generator→Ingestion→dbt Test 재현
+- [ ] `P7-21` Phase 0~6 통합 검증 명령을 README에 반영
 
 ## 범위 밖
 

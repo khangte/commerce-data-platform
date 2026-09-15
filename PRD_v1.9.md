@@ -18,7 +18,7 @@ v1.9는 v1.8의 모든 계약을 그대로 유지한다. Model 계약이나 Sour
 Grain 계약의 소유 문서만 옮긴다.
 
 - Mart Grain·Unique Key·Measure 계약의 단일 정본을 `docs/reference/mart-grain.md`로 분리한다.
-  같은 표가 PRD, Phase 5, 데이터 변환 흐름 문서 세 곳에 복제돼 Model 추가 시 누락이 발생했다.
+  같은 표가 PRD, Phase 문서, 데이터 변환 흐름 문서 세 곳에 복제돼 Model 추가 시 누락이 발생했다.
 - PRD 14.3은 Grain 정의와 PRD 수준의 불변 규칙만 남기고, Model별 Grain·Unique Key 목록과
   Measure 계산식은 정본 문서를 참조한다. 기존 14.4(Measure 계약)는 14.3으로 통합했고
   이전 14.5(Incremental)는 14.4가 됐다.
@@ -176,7 +176,7 @@ Kafka, Spark, Debezium CDC, Source Delete/Tombstone, Kubernetes, Terraform, AWS 
 | Storage Format    | PyArrow / Parquet     |                     25.0.1 |
 | Warehouse         | DuckDB                |                      1.5.5 |
 | Transformation    | dbt-core / dbt-duckdb |            1.12.3 / 1.11.0 |
-| BI                | Metabase              | 0.63.16.1 Phase 9 Baseline |
+| BI                | Metabase              | 0.63.16.1 Phase 10 Baseline |
 
 직접 Python Dependency는 `pyproject.toml`, 전체 Resolution은 `uv.lock`으로 고정한다. Docker Image에는 `latest` Tag를 사용하지 않는다.
 
@@ -1559,7 +1559,7 @@ UNKNOWN_ERROR
 
 ## 19. BI
 
-Phase 9 직전에 Metabase Patch와 DuckDB Driver를 재검증한다.
+Phase 10 직전에 Metabase Patch와 DuckDB Driver를 재검증한다.
 
 우선 마지막 성공 DuckDB Mart를 Read-only 조회하고 Lock/Driver 문제가 관측되면 PostgreSQL Serving DB로 Publish한다.
 
@@ -1820,7 +1820,7 @@ Validation
 | S3 원자 Rename 부재                              | 최종 Bronze 객체 Verify + 메타데이터 커밋 상태 기준 + Orphan Reconciliation                        |
 | Object-Metadata 분산 Commit                      | Checksum, VERIFIED Manifest, Metadata COMMITTED                                                    |
 | DuckDB Single-writer                             | `max_active_runs=1`, dbt 단일 Process                                                              |
-| Metabase 호환성                                  | Phase 9 Gate, Serving DB 대안                                                                      |
+| Metabase 호환성                                  | Phase 10 Gate, Serving DB 대안                                                                      |
 | 8GB RAM의 5M Scale                               | Page Write, 관측 후 조정                                                                           |
 | Reject 후 Watermark 전진                         | 영구 Quarantine, Reject Threshold                                                                  |
 | Seed에 실제 과거 Customer Attribute History 없음 | Baseline Snapshot으로만 취급                                                                       |
