@@ -2,7 +2,7 @@
 
 > 상태: Planned  
 > Milestone: 3 — Portfolio Evidence  
-> 선행 Phase: [Phase 10. Benchmark](phase-09-benchmark.md)  
+> 선행 Phase: [Phase 9. Benchmark](phase-09-benchmark.md)  
 > 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.9](../../PRD_v1.9.md)
 
 ## 목표
@@ -12,7 +12,7 @@ Metabase에서 검증 완료된 Mart만 사용해 Sales, Product, Customer Dashb
 ## 핵심 계약
 
 - Dashboard는 Source, Bronze, Staging을 직접 조회하지 않는다.
-- Phase 5에서 정의한 Fact Grain과 Measure 의미를 변경하지 않는다.
+- Phase 6에서 정의한 Fact Grain과 Measure 의미를 변경하지 않는다.
 - Metric 정의는 [Mart Grain 계약](../reference/mart-grain.md)의 Measure 계약을 따른다. 주문 금액과 실제 결제 금액을 같은 것으로 취급하지 않는다.
 - Metabase/DuckDB 연결이 불안정하면 PostgreSQL Serving DB 대안을 검증하고 ADR로 결정한다.
 - Dashboard 재현에 필요한 Query, Filter, Metric 정의를 문서화한다.
@@ -20,7 +20,7 @@ Metabase에서 검증 완료된 Mart만 사용해 Sales, Product, Customer Dashb
 ## 구독·등급 전환 Step 7 사전 지표
 
 Metabase Dashboard 구현 전에도 BI가 Source·Bronze가 아닌 Mart만 읽도록, 아래 `metrics`
-Schema View를 제공한다. 이는 Phase 9의 연결·Dashboard·스크린샷 완료를 뜻하지 않는다.
+Schema View를 제공한다. 이는 Phase 10의 연결·Dashboard·스크린샷 완료를 뜻하지 않는다.
 
 | View | 용도 |
 | ---- | ---- |
@@ -37,8 +37,8 @@ Version만 사용해야 하며, 두 관점을 같은 지표로 합치지 않는�
 
 ## 선행 조건
 
-- Phase 6의 Published Mart 품질 Gate가 통과한다.
-- Phase 8에서 사용할 Dataset과 Mart Result Hash가 고정됐다.
+- Phase 7의 Published Mart 품질 Gate가 통과한다.
+- Phase 9에서 사용할 Dataset과 Mart Result Hash가 고정됐다.
 - Metabase 0.63.16.1 Image와 Credential Template이 준비됐다.
 
 ## 구현 순서
@@ -142,7 +142,7 @@ Metabase
 | PRD  | ADR-012 Metabase Serving Strategy | 선택 근거와 검증 결과     |
 | FR   | FR-18 Metabase                    | 3개 Dashboard와 재현 문서 |
 
-Phase 9에는 별도 AC 번호가 없으므로 ROADMAP의 Connection/Dashboard Gate를 Release Gate로 사용한다.
+Phase 10에는 별도 AC 번호가 없으므로 ROADMAP의 Connection/Dashboard Gate를 Release Gate로 사용한다.
 
 ## 산출물
 

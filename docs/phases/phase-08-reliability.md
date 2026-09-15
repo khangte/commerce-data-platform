@@ -1,8 +1,8 @@
-# Phase 9. Reliability Scenarios
+# Phase 8. Reliability Scenarios
 
 > 상태: Planned  
 > Milestone: 3 — Portfolio Evidence  
-> 선행 Phase: [Phase 8. Data Quality & Publish](phase-07-data-quality-publish.md)  
+> 선행 Phase: [Phase 7. Data Quality & Publish](phase-07-data-quality-publish.md)  
 > 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.9](../../PRD_v1.9.md)
 
 ## 목표
@@ -26,7 +26,7 @@
 
 ## 선행 조건
 
-- Phase 0~6의 Acceptance Test가 통과한다.
+- Phase 0~7의 Acceptance Test가 통과한다.
 - 성공 기준 Snapshot과 Mart Logical Hash가 저장돼 있다.
 - 실패 주입이 정상 Source를 영구 오염시키지 않는 격리 경로를 사용한다.
 - Metadata/Manifest/Object 상태를 조회하는 검증 SQL과 CLI가 있다.
@@ -180,4 +180,4 @@ test: document reliability and recovery scenarios
 
 ## 다음 Phase 인계
 
-Phase 8은 Reliability Harness의 고정 Dataset, Scenario, Hash, 환경 Metadata 형식을 재사용해 성능 실험의 재현성을 확보한다.
+Phase 9는 Reliability Harness의 고정 Dataset, Scenario, Hash, 환경 Metadata 형식을 재사용해 성능 실험의 재현성을 확보한다.
