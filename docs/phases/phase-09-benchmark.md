@@ -1,8 +1,8 @@
-# Phase 10. Benchmark
+# Phase 9. Benchmark
 
 > 상태: Planned  
 > Milestone: 3 — Portfolio Evidence  
-> 선행 Phase: [Phase 9. Reliability Scenarios](phase-08-reliability.md)  
+> 선행 Phase: [Phase 8. Reliability Scenarios](phase-08-reliability.md)  
 > 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.9](../../PRD_v1.9.md)
 
 ## 목표
@@ -209,4 +209,4 @@ perf: add reproducible benchmark evidence
 
 ## 다음 Phase 인계
 
-Phase 9는 Benchmark가 검증한 Mart를 소비 대상으로 사용한다. BI 연결을 위해 Mart Grain이나 Metric 의미를 변경하지 않는다.
+Phase 10은 Benchmark가 검증한 Mart를 소비 대상으로 사용한다. BI 연결을 위해 Mart Grain이나 Metric 의미를 변경하지 않는다.

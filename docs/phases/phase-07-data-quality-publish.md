@@ -1,8 +1,8 @@
-# Phase 8. Data Quality & Publish
+# Phase 7. Data Quality & Publish
 
 > 상태: Planned  
 > Milestone: 2 — Data Platform Core  
-> 선행 Phase: [Phase 7. Dimensional Modeling](phase-06-dimensional-modeling.md)  
+> 선행 Phase: [Phase 6. Dimensional Modeling](phase-06-dimensional-modeling.md)  
 > 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.9](../../PRD_v1.9.md), [Mart Grain 계약](../reference/mart-grain.md)
 
 ## 목표
@@ -17,12 +17,12 @@ Ingestion과 Warehouse의 품질 책임을 명확히 분리하고, 품질 검증
 | Warehouse | Business Key, Relationship, Canonical 값, 시간 순서, SCD2, Fact Grain/Measure                         | Build/Test 실패                |
 | Publish   | 검증된 Build만 소비 경로로 승격                                                                       | 이전 성공 Mart 유지            |
 
-Phase 3과 5에서 각 계층의 기본 테스트를 구현하고, 이 Phase에서는 이를 실행 가능한 통합 Gate와 Publish 경계로 완성한다.
+Phase 3과 6에서 각 계층의 기본 테스트를 구현하고, 이 Phase에서는 이를 실행 가능한 통합 Gate와 Publish 경계로 완성한다.
 
 ## 구독·등급 전환 Step 7 반영 완료
 
-전환 계획 7단계의 Warehouse 품질 검증은 Phase 5 dbt 프로젝트에 먼저 반영했다. 이 작업은
-Phase 6의 Publish Workflow와 E2E 품질 Gate를 완료했다는 뜻은 아니다.
+전환 계획 7단계의 Warehouse 품질 검증은 Phase 6 dbt 프로젝트에 먼저 반영했다. 이 작업은
+Phase 7의 Publish Workflow와 E2E 품질 Gate를 완료했다는 뜻은 아니다.
 
 | 경로 | 변경 내용 |
 | ---- | --------- |
@@ -36,7 +36,7 @@ Phase 6의 Publish Workflow와 E2E 품질 Gate를 완료했다는 뜻은 아니�
 ## 선행 조건
 
 - Phase 3의 Quarantine과 Batch Failure 정책이 자동 테스트된다.
-- Phase 5의 dbt Model과 Model-level Test가 통과한다.
+- Phase 6의 Mart Model과 Model-level Test가 통과한다.
 - Warehouse Build를 격리할 Schema/File 경계가 결정됐다.
 
 ## 구현 순서
@@ -103,7 +103,7 @@ DuckDB 제약을 관측한 뒤 Build Schema → Test → Swap 또는 별도 Ware
 - [ ] `P7-18` Source→Bronze Catalog→Fact Count/Key 추적
 - [ ] `P7-19` 성공/빈/실패/재실행 Metadata 조회 SQL
 - [ ] `P7-20` 새 Clone에서 Seed→Generator→Ingestion→dbt Test 재현
-- [ ] `P7-21` Phase 0~6 통합 검증 명령을 README에 반영
+- [ ] `P7-21` Phase 0~7 통합 검증 명령을 README에 반영
 
 ## 범위 밖
 
@@ -188,4 +188,4 @@ feat: enforce data quality and safe mart publishing
 
 ## 다음 Phase 인계
 
-Phase 7은 새 기능 추가보다 Phase 0~6에서 구현한 실패·충돌·재처리 계약을 의도적으로 깨뜨리고, 탐지와 복구 과정을 Runbook으로 증명한다.
+Phase 8은 새 기능 추가보다 Phase 0~7에서 구현한 실패·충돌·재처리 계약을 의도적으로 깨뜨리고, 탐지와 복구 과정을 Runbook으로 증명한다.
