@@ -35,13 +35,23 @@ Phase 7의 Publish Workflow와 E2E 품질 Gate를 완료했다는 뜻은 아니�
 
 ## 선행 조건
 
+이 Phase는 Grain 계약을 필요로 하는 Task와 그렇지 않은 Task로 나뉜다. 골격 Task는 Phase 6 완료 전에 착수할 수 있다.
+
+### 골격 Task 선행 조건 (7-1)
+
 - Phase 3의 Quarantine과 Batch Failure 정책이 자동 테스트된다.
-- Phase 6의 Mart Model과 Model-level Test가 통과한다.
 - Warehouse Build를 격리할 Schema/File 경계가 결정됐다.
 
-## 구현 순서
+### 적용 Task 선행 조건 (7-2)
 
-### 1. Ingestion Quality 통합
+- Phase 6의 Mart Model과 Model-level Test가 통과한다.
+- [Mart Grain 계약](../reference/mart-grain.md)이 확정됐다.
+
+## 7-1. 골격: Grain 계약 없이 진행 가능
+
+Ingestion 계층 품질과 Publish 전환 메커니즘은 Mart 구성과 독립적이다. 어떤 Dimension과 Fact가 있는지 몰라도 "검증 통과한 Build만 승격한다"는 경계는 설계할 수 있다.
+
+### 7-1-1. Ingestion Quality 통합
 
 - [ ] `P7-01` Ingestion Validation Rule Registry 정리
 - [ ] `P7-02` Row Error와 Batch Error 분류 검증
@@ -51,32 +61,7 @@ Phase 7의 Publish Workflow와 E2E 품질 Gate를 완료했다는 뜻은 아니�
 
 검증 순서와 Error Code가 Phase 3 문서 및 PRD Section 11과 일치해야 한다.
 
-### 2. Warehouse Quality
-
-- [ ] `P7-06` dbt Generic Test 구성: `unique`, `not_null`, `relationships`, `accepted_values`
-- [ ] `P7-07` 금액 Non-negative Custom Test
-- [ ] `P7-08` 주문 Timestamp 순서 Custom Test
-- [ ] `P7-09` SCD2 Overlap/Current Version Custom Test. `dim_customer`는 구독·등급 두 축을 병합한 Version이므로 두 축 변경이 겹치는 경우도 구간 비중복을 검증한다.
-- [ ] `P7-10` Fact FK Missing/Business Key Duplicate Test
-- [ ] `P7-11` 정상 E2E Unknown Key 0 Test
-- [ ] `P7-12` Fact Measure/Fan-out 회귀 Test
-
-필수 Custom Contract:
-
-```text
-payment_value >= 0
-price >= 0
-freight_value >= 0
-delivered_at >= purchase_at
-approved_at >= purchase_at
-SCD2 overlap = 0
-Current Customer Version = 1
-Fact FK Missing = 0
-Fact Business Key Duplicate = 0
-Normal E2E Unknown Key = 0
-```
-
-### 3. Publish Safety
+### 7-1-2. Publish Safety
 
 - [ ] `P7-13` Build 대상과 Published Mart의 물리적 경계 정의
 - [ ] `P7-14` Build → Test → Publish 전환 구현
@@ -98,10 +83,46 @@ dbt Build/Test 실패
 
 DuckDB 제약을 관측한 뒤 Build Schema → Test → Swap 또는 별도 Warehouse File → 검증 → 교체 중 하나를 선택하고 ADR에 근거를 기록한다.
 
-### 4. E2E 품질 Gate
+**Publish 대상 Schema 목록은 Phase 6에서 Mart 구성이 확정된 뒤 채운다.** 전환 메커니즘 자체는 목록과 무관하게 먼저 구현하고, 목록은 설정으로 분리해 나중에 주입한다.
+
+### 7-1-3. Metadata 조회
+
+- [ ] `P7-19` 성공/빈/실패/재실행 Metadata 조회 SQL
+
+## 7-2. 적용: Phase 6 완료 후 진행
+
+Mart Model 이름과 Grain이 확정돼야 작성할 수 있는 Test와 검증이다.
+
+### 7-2-1. Warehouse Quality
+
+- [ ] `P7-06` dbt Generic Test 구성: `unique`, `not_null`, `relationships`, `accepted_values`
+- [ ] `P7-07` 금액 Non-negative Custom Test
+- [ ] `P7-08` 주문 Timestamp 순서 Custom Test
+- [ ] `P7-09` 이력 Version 구간 Overlap/Current Custom Test
+- [ ] `P7-10` Fact FK Missing/Business Key Duplicate Test
+- [ ] `P7-11` 정상 E2E Unknown Key 0 Test
+- [ ] `P7-12` Fact Measure/Fan-out 회귀 Test
+
+필수 Custom Contract:
+
+```text
+payment_value >= 0
+price >= 0
+freight_value >= 0
+delivered_at >= purchase_at
+approved_at >= purchase_at
+이력 Version 구간 overlap = 0
+Business Key별 Current Version = 1
+Fact FK Missing = 0
+Fact Business Key Duplicate = 0
+Normal E2E Unknown Key = 0
+```
+
+구체적인 Model 이름과 검증 대상 컬럼은 [Mart Grain 계약](../reference/mart-grain.md)에서 가져온다.
+
+### 7-2-2. E2E 품질 Gate
 
 - [ ] `P7-18` Source→Bronze Catalog→Fact Count/Key 추적
-- [ ] `P7-19` 성공/빈/실패/재실행 Metadata 조회 SQL
 - [ ] `P7-20` 새 Clone에서 Seed→Generator→Ingestion→dbt Test 재현
 - [ ] `P7-21` Phase 0~7 통합 검증 명령을 README에 반영
 

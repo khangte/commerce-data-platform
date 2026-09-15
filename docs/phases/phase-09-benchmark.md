@@ -21,10 +21,19 @@
 
 ## 선행 조건
 
-- Phase 8 Reliability Scenario와 E2E가 안정적으로 통과한다.
+이 Phase는 Grain 계약을 필요로 하는 실험과 그렇지 않은 실험으로 나뉜다. 골격 Task는 Phase 6 완료 전에 착수할 수 있다.
+
+### 골격 Task 선행 조건 (9-1)
+
+- Phase 8의 골격 Scenario가 안정적으로 통과한다.
 - Dataset을 결정적으로 생성하고 Scale을 식별할 수 있다.
 - Full/Incremental 결과의 Logical Hash를 계산할 수 있다.
 - Host/WSL/Docker Resource 정보를 기록할 수 있다.
+
+### 적용 Task 선행 조건 (9-2)
+
+- Phase 6, 7, 8의 모든 Task가 완료된다.
+- Mart까지 포함한 E2E Pipeline이 안정적으로 통과한다.
 
 ## Scale
 
@@ -34,9 +43,11 @@
 | M     |     1M | 기본 Portfolio Baseline               |
 | L     |     5M | Page Write/Memory/파일 크기 한계 관측 |
 
-## 구현 순서
+## 9-1. 골격: Grain 계약 없이 진행 가능
 
-### 1. Benchmark Harness
+Harness와 Ingestion·Storage 계층 실험은 Mart 구성과 독립적이다. 측정 대상이 Extract, 파일 형식, Scan 전략이라서 어떤 Dimension과 Fact가 있는지 몰라도 수행할 수 있다.
+
+### 9-1-1. Benchmark Harness
 
 - [ ] `P9-01` Benchmark Scenario/Run ID와 Config Schema 정의
 - [ ] `P9-02` Wall Time, CPU/Memory, I/O, Row Count 수집
@@ -68,7 +79,7 @@ random_seed
 query_or_command
 ```
 
-### 2. Experiment A — Full vs Incremental Extract
+### 9-1-2. Experiment A — Full vs Incremental Extract
 
 - [ ] `P9-07` 동일 최종 결과를 만드는 Full Extract Baseline
 - [ ] `P9-08` 변경률이 고정된 Incremental Extract 측정
@@ -76,25 +87,29 @@ query_or_command
 
 변경률과 Cursor 범위를 결과에 기록한다. 결과 Hash가 다르면 성능 수치를 채택하지 않는다.
 
-### 3. Experiment B — CSV vs Parquet
+### 9-1-3. Experiment B — CSV vs Parquet
 
 - [ ] `P9-10` 같은 Column/Row 범위의 CSV Read 측정
 - [ ] `P9-11` 같은 결과를 만드는 Parquet Read 측정
 - [ ] `P9-12` 파일 크기, Scan Bytes, Duration 비교
 
-### 4. Experiment C — Full Scan vs Filtered Scan
+### 9-1-4. Experiment C — Full Scan vs Filtered Scan
 
 - [ ] `P9-13` 전체 Dataset Scan Baseline
 - [ ] `P9-14` 동일 분석 결과 범위의 Predicate/Column Projection 적용
 - [ ] `P9-15` Scan Rows/Bytes와 Duration 비교
 
-### 5. Experiment D — Cold vs Warm
+### 9-1-5. Experiment D — Cold vs Warm
 
 - [ ] `P9-16` Cold Run 절차로 5회 측정
 - [ ] `P9-17` Warm Run 절차로 5회 측정
 - [ ] `P9-18` Cache 효과를 별도 결과로 해석
 
-### 6. Scale 확장과 개선 Loop
+## 9-2. 적용: Phase 6 완료 후 진행
+
+Mart까지 포함한 전체 Pipeline을 측정 대상으로 삼는 실험이다. Bottleneck 선정과 개선 대상에 Warehouse 계층이 포함된다.
+
+### 9-2-1. Scale 확장과 개선 Loop
 
 - [ ] `P9-19` S Scale에서 Harness 검증
 - [ ] `P9-20` M Scale 전체 주요 실험 수행

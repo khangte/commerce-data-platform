@@ -37,13 +37,24 @@ Version만 사용해야 하며, 두 관점을 같은 지표로 합치지 않는�
 
 ## 선행 조건
 
-- Phase 7의 Published Mart 품질 Gate가 통과한다.
-- Phase 9에서 사용할 Dataset과 Mart Result Hash가 고정됐다.
+이 Phase는 Grain 계약을 필요로 하는 Task와 그렇지 않은 Task로 나뉜다. 골격 Task는 Phase 6 완료 전에 착수할 수 있다.
+
+### 골격 Task 선행 조건 (10-1)
+
+- Phase 7의 골격 Task(Publish Safety)가 완료되어 Published Mart 경계가 존재한다.
 - Metabase 0.63.16.1 Image와 Credential Template이 준비됐다.
 
-## 구현 순서
+### 적용 Task 선행 조건 (10-2)
 
-### 1. Connection Gate
+- Phase 6, 7, 8, 9의 모든 Task가 완료된다.
+- [Mart Grain 계약](../reference/mart-grain.md)이 확정되고 Published Mart 품질 Gate가 통과한다.
+- Phase 9에서 사용할 Dataset과 Mart Result Hash가 고정됐다.
+
+## 10-1. 골격: Grain 계약 없이 진행 가능
+
+Metabase 연결과 권한 검증은 조회 대상 Model과 독립적이다. 어떤 Mart가 있는지 몰라도 Driver, Lock, Read-only 권한, 재기동 지속성은 검증할 수 있다.
+
+### 10-1-1. Connection Gate
 
 - [ ] `P10-01` Metabase Compose Service와 Health Check 구성
 - [ ] `P10-02` Metabase → DuckDB Driver 설치/Version/Lock 검증
@@ -71,7 +82,11 @@ Metabase
 
 대안을 선택할 경우 동기화 시점, 원자성, Serving Schema, 추가 운영 비용을 ADR에 기록한다.
 
-### 2. Semantic 정의
+## 10-2. 적용: Phase 6 완료 후 진행
+
+조회 대상 Model과 Metric 정의가 확정돼야 진행할 수 있는 Task다.
+
+### 10-2-1. Semantic 정의
 
 - [ ] `P10-06` Order/Customer/Product/Date Model 관계 설정
 - [ ] `P10-07` GMV, Orders, AOV 정의 등록
@@ -81,21 +96,21 @@ Metabase
 핵심 Metric의 계산식은 [Mart Grain 계약](../reference/mart-grain.md)의 Measure 계약에서
 가져온다. BI는 Measure를 재정의하지 않고 Mart가 제공하는 값을 그대로 집계한다.
 
-### 3. Sales Dashboard
+### 10-2-2. Sales Dashboard
 
 - [ ] `P10-10` Daily GMV
 - [ ] `P10-11` Daily Orders
 - [ ] `P10-12` AOV
 - [ ] Date/Order Status Filter와 합계 검증
 
-### 4. Product Dashboard
+### 10-2-3. Product Dashboard
 
 - [ ] `P10-13` Category GMV
 - [ ] `P10-14` Top Products
 - [ ] `P10-15` Sales Volume
 - [ ] Item Grain과 Order Grain 혼합으로 인한 Fan-out이 없는지 검증
 
-### 5. Customer Dashboard
+### 10-2-4. Customer Dashboard
 
 - [ ] `P10-16` New Customers
 - [ ] `P10-17` Repeat Customers
@@ -103,7 +118,7 @@ Metabase
 - [ ] `P10-19` Region 분석
 - [ ] 현재 속성과 주문 시점 속성의 사용 목적을 명시
 
-### 6. 재현성과 검증
+### 10-2-5. 재현성과 검증
 
 - [ ] `P10-20` Dashboard Export 또는 재생성 가능한 설정 보존
 - [ ] `P10-21` Dashboard별 Source Model/Query/Filter 문서화
