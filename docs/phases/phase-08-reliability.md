@@ -26,14 +26,25 @@
 
 ## 선행 조건
 
-- Phase 0~7의 Acceptance Test가 통과한다.
-- 성공 기준 Snapshot과 Mart Logical Hash가 저장돼 있다.
+이 Phase는 Grain 계약을 필요로 하는 Scenario와 그렇지 않은 Scenario로 나뉜다. 골격 Task는 Phase 6 완료 전에 착수할 수 있다.
+
+### 골격 Task 선행 조건 (8-1)
+
+- Phase 0~5의 Acceptance Test가 통과한다.
+- Phase 7의 골격 Task(Ingestion Quality, Publish Safety)가 완료된다.
 - 실패 주입이 정상 Source를 영구 오염시키지 않는 격리 경로를 사용한다.
 - Metadata/Manifest/Object 상태를 조회하는 검증 SQL과 CLI가 있다.
 
-## 구현 순서
+### 적용 Task 선행 조건 (8-2)
 
-### 1. Reliability Harness
+- Phase 6과 Phase 7의 모든 Task가 완료된다.
+- 성공 기준 Snapshot과 Mart Logical Hash가 저장돼 있다.
+
+## 8-1. 골격: Grain 계약 없이 진행 가능
+
+Harness와 Ingestion 계층 장애 Scenario는 Mart 구성과 독립적이다. 검증 대상이 Metadata, Object, Watermark라서 어떤 Dimension과 Fact가 있는지 몰라도 실행할 수 있다.
+
+### 8-1-1. Reliability Harness
 
 - [ ] `P8-01` 공통 Fixture, 기준 Snapshot, Result Hash 구성
 - [ ] `P8-02` 실패 지점별 Fault Injection Hook 구성
@@ -41,7 +52,9 @@
 - [ ] `P8-04` Scenario 결과의 Pass/Fail 판정과 Evidence 저장 형식 정의
 - [ ] `P8-05` Runbook/Troubleshooting Template 작성
 
-### 2. Ingestion과 Commit 장애
+`P8-03`의 Mart 상태 수집은 Schema 이름을 설정으로 받는다. 구체적 Model 목록은 Phase 6 확정 후 주입한다.
+
+### 8-1-2. Ingestion과 Commit 장애
 
 | ID     | 시나리오               | 핵심 검증                                        |
 | ------ | ---------------------- | ------------------------------------------------ |
@@ -61,37 +74,47 @@
 - [ ] `P8-11` R-06 Orphan Object 실행 및 문서화
 - [ ] `P8-12` R-07 Broken Manifest 실행 및 문서화
 
-### 3. 시간, 이력, 재처리
+### 8-1-3. 재처리와 외부 의존 장애
+
+| ID     | 시나리오                  | 핵심 검증                                        |
+| ------ | ------------------------- | ------------------------------------------------ |
+| `R-11` | Missing Schedule          | 누락 기간을 Replay/명시 Batch로 회복             |
+| `R-12` | Backfill Replay           | Source Read 없이 COMMITTED Bronze 재적용         |
+| `R-13` | Re-extract                | 명시 범위를 새 `reprocess_id`로 추출             |
+| `R-15` | Source Connection Failure | Object 생성/Watermark 전진 없이 재시도 가능 상태 |
+
+- [ ] `P8-16` R-11 Missing Schedule 실행 및 문서화
+- [ ] `P8-17` R-12 Backfill Replay 실행 및 문서화
+- [ ] `P8-18` R-13 Re-extract 실행 및 문서화
+- [ ] `P8-20` R-15 Source Connection Failure 실행 및 문서화
+
+Backfill 기본값은 Replay다. Re-extract는 Source 현재 상태가 과거 Snapshot과 같지 않을 수 있다는 한계를 결과에 명시한다.
+
+## 8-2. 적용: Phase 6 완료 후 진행
+
+검증 기준이 Fact 갱신이나 Dimension Version이라서 Mart 구성이 확정돼야 판정할 수 있는 Scenario다.
+
+### 8-2-1. 시간과 이력 장애
 
 | ID     | 시나리오             | 핵심 검증                                     |
 | ------ | -------------------- | --------------------------------------------- |
 | `R-08` | Late Order           | 새 Mutation Cursor로 1회 수집, 과거 Mart 갱신 |
 | `R-09` | Late Payment         | 연결 주문의 구매일이 영향 범위에 포함         |
-| `R-10` | Customer SCD2 Change | 구독 상태 또는 등급 변경으로 Version 구간과 주문 Temporal Join 갱신 |
-| `R-11` | Missing Schedule     | 누락 기간을 Replay/명시 Batch로 회복          |
-| `R-12` | Backfill Replay      | Source Read 없이 COMMITTED Bronze 재적용      |
-| `R-13` | Re-extract           | 명시 범위를 새 `reprocess_id`로 추출          |
+| `R-10` | Customer 이력 변경   | 구독 상태 또는 등급 변경으로 Version 구간과 사건 시점 결합 갱신 |
 
 - [ ] `P8-13` R-08 Late Order 실행 및 문서화
 - [ ] `P8-14` R-09 Late Payment 실행 및 문서화
-- [ ] `P8-15` R-10 Customer SCD2 Change 실행 및 문서화
-- [ ] `P8-16` R-11 Missing Schedule 실행 및 문서화
-- [ ] `P8-17` R-12 Backfill Replay 실행 및 문서화
-- [ ] `P8-18` R-13 Re-extract 실행 및 문서화
+- [ ] `P8-15` R-10 Customer 이력 변경 실행 및 문서화
 
-Backfill 기본값은 Replay다. Re-extract는 Source 현재 상태가 과거 Snapshot과 같지 않을 수 있다는 한계를 결과에 명시한다.
+### 8-2-2. Warehouse 장애
 
-### 4. Warehouse와 외부 의존 장애
-
-| ID     | 시나리오                  | 핵심 검증                                        |
-| ------ | ------------------------- | ------------------------------------------------ |
-| `R-14` | dbt Failure               | Bronze/Watermark와 마지막 성공 Mart 유지         |
-| `R-15` | Source Connection Failure | Object 생성/Watermark 전진 없이 재시도 가능 상태 |
+| ID     | 시나리오    | 핵심 검증                                |
+| ------ | ----------- | ---------------------------------------- |
+| `R-14` | dbt Failure | Bronze/Watermark와 마지막 성공 Mart 유지 |
 
 - [ ] `P8-19` R-14 dbt Failure 실행 및 문서화
-- [ ] `P8-20` R-15 Source Connection Failure 실행 및 문서화
 
-### 5. 시나리오별 문서화
+## 시나리오별 문서화
 
 - [ ] 각 운영 복구 절차를 `docs/runbooks/`에 작성
 - [ ] 원인 분석과 자주 발생하는 오류를 `docs/troubleshooting/`에 작성
