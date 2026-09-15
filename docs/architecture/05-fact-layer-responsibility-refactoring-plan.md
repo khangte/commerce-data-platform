@@ -4,8 +4,8 @@
 > 작성일: 2026-09-11
 > 관련 문서:
 > [데이터 변환 흐름](../reference/data-transformation-flow.md),
-> [Phase 5. dbt DuckDB Modeling](../phases/phase-05-dbt-duckdb-modeling.md),
-> [Phase 6. Data Quality & Publish](../phases/phase-06-data-quality-publish.md),
+> [Phase 6. Dimensional Modeling](../phases/phase-06-dimensional-modeling.md),
+> [Phase 7. Data Quality & Publish](../phases/phase-07-data-quality-publish.md),
 > [PRD v1.9](../../PRD_v1.9.md)
 
 ## 1. 목적과 결정 범위
@@ -167,7 +167,7 @@ SCD2 Version 수는 고객 수보다 커질 수 있다.
 ### Step 6. 문서와 Publish 연결
 
 - [x] 데이터 변환 흐름과 Phase 5 파일·폴더 요약에 새 Intermediate와 책임 경계를 반영했다.
-- [ ] Phase 6 Publish 과정에서 Build/Test 실패 시 기존 Published Mart를 보존하는 검증에 새
+- [ ] Phase 7 Publish 과정에서 Build/Test 실패 시 기존 Published Mart를 보존하는 검증에 새
   Intermediate·Fact 계약을 포함한다.
 
 ## 6. 완료 기준

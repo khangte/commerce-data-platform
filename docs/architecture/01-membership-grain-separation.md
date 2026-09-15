@@ -2,7 +2,7 @@
 
 > 상태: Implemented
 > 작성일: 2026-09-09
-> 관련 문서: [PRD v1.9](../../PRD_v1.9.md), [데이터 변환 흐름](../reference/data-transformation-flow.md), [Phase 5](../phases/phase-05-dbt-duckdb-modeling.md)
+> 관련 문서: [PRD v1.9](../../PRD_v1.9.md), [데이터 변환 흐름](../reference/data-transformation-flow.md), [Phase 6](../phases/phase-06-dimensional-modeling.md)
 
 > 후속 계획: [구독 상태와 멤버십 등급 전환 계획](02-subscription-membership-transition-plan.md)은
 > 현재 구현된 주문 실적 등급 모델에 구독 생명주기를 추가하기 위한 아직 미구현인 전환 계획이다.

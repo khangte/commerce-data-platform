@@ -1,8 +1,8 @@
-# Phase 9. BI
+# Phase 10. BI
 
 > 상태: Planned  
 > Milestone: 3 — Portfolio Evidence  
-> 선행 Phase: [Phase 8. Benchmark](phase-08-benchmark.md)  
+> 선행 Phase: [Phase 10. Benchmark](phase-09-benchmark.md)  
 > 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.9](../../PRD_v1.9.md)
 
 ## 목표
@@ -33,7 +33,7 @@ Schema View를 제공한다. 이는 Phase 9의 연결·Dashboard·스크린샷 �
 Version만 사용해야 하며, 두 관점을 같은 지표로 합치지 않는다.
 
 - [x] 전환 계획 7단계의 구독 퍼널·결제 실패·해지·재가입·등급별 지표 View를 구현했다.
-- [ ] Metabase Connection과 Sales/Product/Customer Dashboard는 Phase 9 구현 순서에서 진행한다.
+- [ ] Metabase Connection과 Sales/Product/Customer Dashboard는 Phase 10 구현 순서에서 진행한다.
 
 ## 선행 조건
 
@@ -45,11 +45,11 @@ Version만 사용해야 하며, 두 관점을 같은 지표로 합치지 않는�
 
 ### 1. Connection Gate
 
-- [ ] `P9-01` Metabase Compose Service와 Health Check 구성
-- [ ] `P9-02` Metabase → DuckDB Driver 설치/Version/Lock 검증
-- [ ] `P9-03` Read-only 권한과 Published Mart만 노출되는지 검증
-- [ ] `P9-04` 재기동 후 Connection/Dashboard 지속성 확인
-- [ ] `P9-05` 연결 방식과 제한을 ADR-012에 기록
+- [ ] `P10-01` Metabase Compose Service와 Health Check 구성
+- [ ] `P10-02` Metabase → DuckDB Driver 설치/Version/Lock 검증
+- [ ] `P10-03` Read-only 권한과 Published Mart만 노출되는지 검증
+- [ ] `P10-04` 재기동 후 Connection/Dashboard 지속성 확인
+- [ ] `P10-05` 연결 방식과 제한을 ADR-012에 기록
 
 기본 경로:
 
@@ -73,42 +73,42 @@ Metabase
 
 ### 2. Semantic 정의
 
-- [ ] `P9-06` Order/Customer/Product/Date Model 관계 설정
-- [ ] `P9-07` GMV, Orders, AOV 정의 등록
-- [ ] `P9-08` Category/Product/Customer Metric 정의 등록
-- [ ] `P9-09` UTC Date와 Filter 기본값 검증
+- [ ] `P10-06` Order/Customer/Product/Date Model 관계 설정
+- [ ] `P10-07` GMV, Orders, AOV 정의 등록
+- [ ] `P10-08` Category/Product/Customer Metric 정의 등록
+- [ ] `P10-09` UTC Date와 Filter 기본값 검증
 
 핵심 Metric의 계산식은 [Mart Grain 계약](../reference/mart-grain.md)의 Measure 계약에서
 가져온다. BI는 Measure를 재정의하지 않고 Mart가 제공하는 값을 그대로 집계한다.
 
 ### 3. Sales Dashboard
 
-- [ ] `P9-10` Daily GMV
-- [ ] `P9-11` Daily Orders
-- [ ] `P9-12` AOV
+- [ ] `P10-10` Daily GMV
+- [ ] `P10-11` Daily Orders
+- [ ] `P10-12` AOV
 - [ ] Date/Order Status Filter와 합계 검증
 
 ### 4. Product Dashboard
 
-- [ ] `P9-13` Category GMV
-- [ ] `P9-14` Top Products
-- [ ] `P9-15` Sales Volume
+- [ ] `P10-13` Category GMV
+- [ ] `P10-14` Top Products
+- [ ] `P10-15` Sales Volume
 - [ ] Item Grain과 Order Grain 혼합으로 인한 Fan-out이 없는지 검증
 
 ### 5. Customer Dashboard
 
-- [ ] `P9-16` New Customers
-- [ ] `P9-17` Repeat Customers
-- [ ] `P9-18` 구독 상태·거래 실적 등급 분포/추이
-- [ ] `P9-19` Region 분석
+- [ ] `P10-16` New Customers
+- [ ] `P10-17` Repeat Customers
+- [ ] `P10-18` 구독 상태·거래 실적 등급 분포/추이
+- [ ] `P10-19` Region 분석
 - [ ] 현재 속성과 주문 시점 속성의 사용 목적을 명시
 
 ### 6. 재현성과 검증
 
-- [ ] `P9-20` Dashboard Export 또는 재생성 가능한 설정 보존
-- [ ] `P9-21` Dashboard별 Source Model/Query/Filter 문서화
-- [ ] `P9-22` dbt 기준 Query와 Dashboard Total 대조
-- [ ] `P9-23` Screenshot과 Dataset/Run/Commit 식별자 기록
+- [ ] `P10-20` Dashboard Export 또는 재생성 가능한 설정 보존
+- [ ] `P10-21` Dashboard별 Source Model/Query/Filter 문서화
+- [ ] `P10-22` dbt 기준 Query와 Dashboard Total 대조
+- [ ] `P10-23` Screenshot과 Dataset/Run/Commit 식별자 기록
 
 ## 범위 밖
 
@@ -179,4 +179,4 @@ feat: publish marts through metabase dashboards
 
 ## 프로젝트 완료 인계
 
-Phase 9 완료 후 README의 Architecture, 실행 절차, Acceptance Test, Benchmark, Runbook, Dashboard Evidence 링크를 최종 점검한다. V2 후보인 CDC, Delete/Tombstone, Cloud PoC는 V1 완료 조건에 포함하지 않는다.
+Phase 10 완료 후 README의 Architecture, 실행 절차, Acceptance Test, Benchmark, Runbook, Dashboard Evidence 링크를 최종 점검한다. V2 후보인 CDC, Delete/Tombstone, Cloud PoC는 V1 완료 조건에 포함하지 않는다.

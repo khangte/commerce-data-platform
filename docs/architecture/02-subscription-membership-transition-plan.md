@@ -11,8 +11,8 @@
 > [Phase 1](../phases/phase-01-source-environment.md),
 > [Phase 2](../phases/phase-02-deterministic-generator.md),
 > [Phase 3](../phases/phase-03-incremental-ingestion.md),
-> [Phase 5](../phases/phase-05-dbt-duckdb-modeling.md),
-> [Phase 9](../phases/phase-09-bi.md)
+> [Phase 6](../phases/phase-06-dimensional-modeling.md),
+> [Phase 10](../phases/phase-10-bi.md)
 
 ## 1. 결정
 

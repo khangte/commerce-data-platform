@@ -88,7 +88,7 @@ docker compose config
 | ADR  | ADR-007 Version Pinning Policy         | Lockfile과 고정 Image Version |
 | AC   | AC-16 새 Clone의 Bootstrap 부분        | 새 Clone 재현 기록            |
 
-AC-16의 전체 E2E/dbt 검증은 Phase 6 이후 완료하며, 이 Phase에서는 환경 재현성만 검증한다.
+AC-16의 전체 E2E/dbt 검증은 Phase 7 이후 완료하며, 이 Phase에서는 환경 재현성만 검증한다.
 
 ## 산출물
 

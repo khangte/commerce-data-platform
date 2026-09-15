@@ -1,8 +1,8 @@
-# Phase 7. Reliability Scenarios
+# Phase 9. Reliability Scenarios
 
 > 상태: Planned  
 > Milestone: 3 — Portfolio Evidence  
-> 선행 Phase: [Phase 6. Data Quality & Publish](phase-06-data-quality-publish.md)  
+> 선행 Phase: [Phase 8. Data Quality & Publish](phase-07-data-quality-publish.md)  
 > 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.9](../../PRD_v1.9.md)
 
 ## 목표
@@ -35,11 +35,11 @@
 
 ### 1. Reliability Harness
 
-- [ ] `P7-01` 공통 Fixture, 기준 Snapshot, Result Hash 구성
-- [ ] `P7-02` 실패 지점별 Fault Injection Hook 구성
-- [ ] `P7-03` Metadata/Object/Mart 상태 수집기 구성
-- [ ] `P7-04` Scenario 결과의 Pass/Fail 판정과 Evidence 저장 형식 정의
-- [ ] `P7-05` Runbook/Troubleshooting Template 작성
+- [ ] `P8-01` 공통 Fixture, 기준 Snapshot, Result Hash 구성
+- [ ] `P8-02` 실패 지점별 Fault Injection Hook 구성
+- [ ] `P8-03` Metadata/Object/Mart 상태 수집기 구성
+- [ ] `P8-04` Scenario 결과의 Pass/Fail 판정과 Evidence 저장 형식 정의
+- [ ] `P8-05` Runbook/Troubleshooting Template 작성
 
 ### 2. Ingestion과 Commit 장애
 
@@ -53,13 +53,13 @@
 | `R-06` | Orphan Object          | 일치 Object만 Reconcile, 불일치는 거부           |
 | `R-07` | Broken Manifest        | Checksum/Range/Version 불일치 자동 Commit 금지   |
 
-- [ ] `P7-06` R-01 Duplicate Batch 실행 및 문서화
-- [ ] `P7-07` R-02 Upload Failure 실행 및 문서화
-- [ ] `P7-08` R-03 Metadata Failure 실행 및 문서화
-- [ ] `P7-09` R-04 Watermark CAS Conflict 실행 및 문서화
-- [ ] `P7-10` R-05 Expired Lease 실행 및 문서화
-- [ ] `P7-11` R-06 Orphan Object 실행 및 문서화
-- [ ] `P7-12` R-07 Broken Manifest 실행 및 문서화
+- [ ] `P8-06` R-01 Duplicate Batch 실행 및 문서화
+- [ ] `P8-07` R-02 Upload Failure 실행 및 문서화
+- [ ] `P8-08` R-03 Metadata Failure 실행 및 문서화
+- [ ] `P8-09` R-04 Watermark CAS Conflict 실행 및 문서화
+- [ ] `P8-10` R-05 Expired Lease 실행 및 문서화
+- [ ] `P8-11` R-06 Orphan Object 실행 및 문서화
+- [ ] `P8-12` R-07 Broken Manifest 실행 및 문서화
 
 ### 3. 시간, 이력, 재처리
 
@@ -72,12 +72,12 @@
 | `R-12` | Backfill Replay      | Source Read 없이 COMMITTED Bronze 재적용      |
 | `R-13` | Re-extract           | 명시 범위를 새 `reprocess_id`로 추출          |
 
-- [ ] `P7-13` R-08 Late Order 실행 및 문서화
-- [ ] `P7-14` R-09 Late Payment 실행 및 문서화
-- [ ] `P7-15` R-10 Customer SCD2 Change 실행 및 문서화
-- [ ] `P7-16` R-11 Missing Schedule 실행 및 문서화
-- [ ] `P7-17` R-12 Backfill Replay 실행 및 문서화
-- [ ] `P7-18` R-13 Re-extract 실행 및 문서화
+- [ ] `P8-13` R-08 Late Order 실행 및 문서화
+- [ ] `P8-14` R-09 Late Payment 실행 및 문서화
+- [ ] `P8-15` R-10 Customer SCD2 Change 실행 및 문서화
+- [ ] `P8-16` R-11 Missing Schedule 실행 및 문서화
+- [ ] `P8-17` R-12 Backfill Replay 실행 및 문서화
+- [ ] `P8-18` R-13 Re-extract 실행 및 문서화
 
 Backfill 기본값은 Replay다. Re-extract는 Source 현재 상태가 과거 Snapshot과 같지 않을 수 있다는 한계를 결과에 명시한다.
 
@@ -88,8 +88,8 @@ Backfill 기본값은 Replay다. Re-extract는 Source 현재 상태가 과거 Sn
 | `R-14` | dbt Failure               | Bronze/Watermark와 마지막 성공 Mart 유지         |
 | `R-15` | Source Connection Failure | Object 생성/Watermark 전진 없이 재시도 가능 상태 |
 
-- [ ] `P7-19` R-14 dbt Failure 실행 및 문서화
-- [ ] `P7-20` R-15 Source Connection Failure 실행 및 문서화
+- [ ] `P8-19` R-14 dbt Failure 실행 및 문서화
+- [ ] `P8-20` R-15 Source Connection Failure 실행 및 문서화
 
 ### 5. 시나리오별 문서화
 
@@ -152,7 +152,7 @@ AC-07은 동일 범위 Full Refresh와 Key별 값/Logical Hash가 같아야 한�
 
 | 경로                                  | 변경 내용                                                                                                       |
 | ------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `docs/phases/phase-07-reliability.md` | 프로젝트 내부 잠금·커밋 상태 기준 용어를 한국어 중심으로 정리하고, Batch Identity·Logical Hash 표기는 유지했다. |
+| `docs/phases/phase-08-reliability.md` | 프로젝트 내부 잠금·커밋 상태 기준 용어를 한국어 중심으로 정리하고, Batch Identity·Logical Hash 표기는 유지했다. |
 
 ## Definition of Done
 

@@ -1,8 +1,8 @@
-# Phase 8. Benchmark
+# Phase 10. Benchmark
 
 > 상태: Planned  
 > Milestone: 3 — Portfolio Evidence  
-> 선행 Phase: [Phase 7. Reliability Scenarios](phase-07-reliability.md)  
+> 선행 Phase: [Phase 9. Reliability Scenarios](phase-08-reliability.md)  
 > 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.9](../../PRD_v1.9.md)
 
 ## 목표
@@ -21,7 +21,7 @@
 
 ## 선행 조건
 
-- Phase 7 Reliability Scenario와 E2E가 안정적으로 통과한다.
+- Phase 8 Reliability Scenario와 E2E가 안정적으로 통과한다.
 - Dataset을 결정적으로 생성하고 Scale을 식별할 수 있다.
 - Full/Incremental 결과의 Logical Hash를 계산할 수 있다.
 - Host/WSL/Docker Resource 정보를 기록할 수 있다.
@@ -38,12 +38,12 @@
 
 ### 1. Benchmark Harness
 
-- [ ] `P8-01` Benchmark Scenario/Run ID와 Config Schema 정의
-- [ ] `P8-02` Wall Time, CPU/Memory, I/O, Row Count 수집
-- [ ] `P8-03` Raw Result 저장 형식과 Median 계산 구현
-- [ ] `P8-04` Result Hash와 정확성 Gate 연결
-- [ ] `P8-05` Cold/Warm Run 구분과 Cache Reset 절차 문서화
-- [ ] `P8-06` Dependency Lock/Image/Dataset 식별 정보 기록
+- [ ] `P9-01` Benchmark Scenario/Run ID와 Config Schema 정의
+- [ ] `P9-02` Wall Time, CPU/Memory, I/O, Row Count 수집
+- [ ] `P9-03` Raw Result 저장 형식과 Median 계산 구현
+- [ ] `P9-04` Result Hash와 정확성 Gate 연결
+- [ ] `P9-05` Cold/Warm Run 구분과 Cache Reset 절차 문서화
+- [ ] `P9-06` Dependency Lock/Image/Dataset 식별 정보 기록
 
 Run Metadata 최소 필드:
 
@@ -70,38 +70,38 @@ query_or_command
 
 ### 2. Experiment A — Full vs Incremental Extract
 
-- [ ] `P8-07` 동일 최종 결과를 만드는 Full Extract Baseline
-- [ ] `P8-08` 변경률이 고정된 Incremental Extract 측정
-- [ ] `P8-09` Rows Scanned/Changed, Bytes, Duration 비교
+- [ ] `P9-07` 동일 최종 결과를 만드는 Full Extract Baseline
+- [ ] `P9-08` 변경률이 고정된 Incremental Extract 측정
+- [ ] `P9-09` Rows Scanned/Changed, Bytes, Duration 비교
 
 변경률과 Cursor 범위를 결과에 기록한다. 결과 Hash가 다르면 성능 수치를 채택하지 않는다.
 
 ### 3. Experiment B — CSV vs Parquet
 
-- [ ] `P8-10` 같은 Column/Row 범위의 CSV Read 측정
-- [ ] `P8-11` 같은 결과를 만드는 Parquet Read 측정
-- [ ] `P8-12` 파일 크기, Scan Bytes, Duration 비교
+- [ ] `P9-10` 같은 Column/Row 범위의 CSV Read 측정
+- [ ] `P9-11` 같은 결과를 만드는 Parquet Read 측정
+- [ ] `P9-12` 파일 크기, Scan Bytes, Duration 비교
 
 ### 4. Experiment C — Full Scan vs Filtered Scan
 
-- [ ] `P8-13` 전체 Dataset Scan Baseline
-- [ ] `P8-14` 동일 분석 결과 범위의 Predicate/Column Projection 적용
-- [ ] `P8-15` Scan Rows/Bytes와 Duration 비교
+- [ ] `P9-13` 전체 Dataset Scan Baseline
+- [ ] `P9-14` 동일 분석 결과 범위의 Predicate/Column Projection 적용
+- [ ] `P9-15` Scan Rows/Bytes와 Duration 비교
 
 ### 5. Experiment D — Cold vs Warm
 
-- [ ] `P8-16` Cold Run 절차로 5회 측정
-- [ ] `P8-17` Warm Run 절차로 5회 측정
-- [ ] `P8-18` Cache 효과를 별도 결과로 해석
+- [ ] `P9-16` Cold Run 절차로 5회 측정
+- [ ] `P9-17` Warm Run 절차로 5회 측정
+- [ ] `P9-18` Cache 효과를 별도 결과로 해석
 
 ### 6. Scale 확장과 개선 Loop
 
-- [ ] `P8-19` S Scale에서 Harness 검증
-- [ ] `P8-20` M Scale 전체 주요 실험 수행
-- [ ] `P8-21` L Scale 실행 또는 자원 한계 Evidence 기록
-- [ ] `P8-22` 가장 큰 Bottleneck 하나 선정
-- [ ] `P8-23` 개선 적용 후 동일 조건 재측정
-- [ ] `P8-24` Baseline/개선 결과와 Trade-off 문서화
+- [ ] `P9-19` S Scale에서 Harness 검증
+- [ ] `P9-20` M Scale 전체 주요 실험 수행
+- [ ] `P9-21` L Scale 실행 또는 자원 한계 Evidence 기록
+- [ ] `P9-22` 가장 큰 Bottleneck 하나 선정
+- [ ] `P9-23` 개선 적용 후 동일 조건 재측정
+- [ ] `P9-24` Baseline/개선 결과와 Trade-off 문서화
 
 ```text
 Baseline
