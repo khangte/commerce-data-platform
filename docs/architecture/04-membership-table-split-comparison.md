@@ -3,10 +3,10 @@
 > 상태: Decided — B안 (Source만 분리)
 > 작성일: 2026-09-10
 > 관련 문서:
-> [구독 생명주기 요구사항](subscription-lifecycle-requirements.md),
-> [구독 상태와 멤버십 등급 전환 계획](subscription-membership-transition-plan.md),
-> [Membership Grain 분리 기획안](membership-grain-separation.md),
-> [데이터 변환 흐름](data-transformation-flow.md)
+> [구독 생명주기 요구사항](03-subscription-lifecycle-requirements.md),
+> [구독 상태와 멤버십 등급 전환 계획](02-subscription-membership-transition-plan.md),
+> [Membership Grain 분리 기획안](01-membership-grain-separation.md),
+> [데이터 변환 흐름](../reference/data-transformation-flow.md)
 
 ## 0. 이 문서의 목적
 
@@ -19,7 +19,7 @@ Table과 하나의 Dimension으로 관리할지, Source만 나눌지, Dimension�
 
 ### 1.1 Grain 분리 (확정, 선택지 아님)
 
-[구독 생명주기 요구사항](subscription-lifecycle-requirements.md)에서 확정한
+[구독 생명주기 요구사항](03-subscription-lifecycle-requirements.md)에서 확정한
 `subscription_payments` 분리는 **Grain이 달라서 생긴 분리**다.
 
 ```text
@@ -578,6 +578,6 @@ B안 9개와의 차이는 1개뿐이다.
 **Staging 모델과 Source 표면이 1개씩 는다.** Watermark, Bronze 경로, Arrow Schema, Catalog
 검증 대상이 각각 9개가 된다.
 
-결정 후 [전환 계획](subscription-membership-transition-plan.md) 3절 Source 모델, 4절 SCD2
-속성, 6절 제약과 [구독 생명주기 요구사항](subscription-lifecycle-requirements.md) 3절
+결정 후 [전환 계획](02-subscription-membership-transition-plan.md) 3절 Source 모델, 4절 SCD2
+속성, 6절 제약과 [구독 생명주기 요구사항](03-subscription-lifecycle-requirements.md) 3절
 Source 모델을 선택한 안에 맞춰 갱신한다.

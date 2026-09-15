@@ -3,10 +3,10 @@
 > 상태: In progress — Fact 책임 분리는 완료했고, Metrics 기준선 대조와 Publish 보존 검증이 남아 있다.
 > 작성일: 2026-09-11
 > 관련 문서:
-> [데이터 변환 흐름](00-data-transformation-flow.md),
+> [데이터 변환 흐름](../reference/data-transformation-flow.md),
 > [Phase 5. dbt DuckDB Modeling](../phases/phase-05-dbt-duckdb-modeling.md),
 > [Phase 6. Data Quality & Publish](../phases/phase-06-data-quality-publish.md),
-> [PRD v1.8](../../PRD_v1.8.md)
+> [PRD v1.9](../../PRD_v1.9.md)
 
 ## 1. 목적과 결정 범위
 

@@ -3,7 +3,7 @@
 > 상태: Planned  
 > Milestone: 2 — Data Platform Core  
 > 선행 Phase: [Phase 5. dbt + DuckDB Modeling](phase-05-dbt-duckdb-modeling.md)  
-> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.8](../../PRD_v1.8.md)
+> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.9](../../PRD_v1.9.md), [Mart Grain 계약](../reference/mart-grain.md)
 
 ## 목표
 

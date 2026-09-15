@@ -3,7 +3,7 @@
 > 상태: Done  
 > Milestone: 1 — Source Foundation  
 > 선행 Phase: [Phase 0. Bootstrap](phase-00-bootstrap.md)  
-> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.8](../../PRD_v1.8.md)
+> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.9](../../PRD_v1.9.md)
 
 ## 목표
 

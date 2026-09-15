@@ -3,23 +3,23 @@
 > 상태: Done  
 > Milestone: 2 — Data Platform Core  
 > 선행 Phase: [Phase 4. Airflow Orchestration](phase-04-airflow-orchestration.md)  
-> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.8](../../PRD_v1.8.md)
-> 참고: [데이터 변환 흐름](../architecture/00-data-transformation-flow.md) — 계층별 이름·타입·Grain 변환의 근거
+> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.9](../../PRD_v1.9.md)
+> 참고: [데이터 변환 흐름](../reference/data-transformation-flow.md) — 계층별 이름·타입·Grain 변환의 근거
 
 ## 목표
 
-Metadata에서 COMMITTED인 Bronze Object만 읽어 DuckDB에 Staging, Intermediate, Dimension, Fact를 구축한다. Source Naming은 Staging에서 분석 Naming으로 변환하고, 고객 SCD2와 주문 시점 Temporal Join을 정확히 구현한다.
+Metadata에서 COMMITTED인 Bronze Object만 읽어 DuckDB에 Staging, Intermediate, Mart를 구축한다. Source Naming은 Staging에서 분석 Naming으로 변환하고, 고객 이력 추적과 주문 시점 결합을 정확히 구현한다. Mart의 Grain·Measure 계약은 [Mart Grain 계약](../reference/mart-grain.md)을 따른다.
 
 ## 핵심 계약
 
 - S3 Prefix Glob이 아니라 `control.bronze_files`의 COMMITTED Object 목록만 읽는다.
 - Source Prefix 제거, Timestamp Rename, 상태 표준화는 Staging에서 처음 수행한다.
 - Intermediate/Mart는 Raw Source Prefix를 직접 참조하지 않는다.
-- Bronze 기술 컬럼 `_batch_id`, `_ingested_at`은 Staging에서 보존한다. Current 선택과 SCD2 정렬의 Tie-breaker가 이 컬럼을 사용한다.
+- Bronze 기술 컬럼 `_batch_id`, `_ingested_at`은 Staging에서 보존한다. Current 선택과 이력 관측 정렬의 Tie-breaker가 이 컬럼을 사용한다.
 - Mutable Entity는 `updated_at`, `_ingested_at`, `_batch_id` 순으로 Bronze Version 중 Current를 결정한다.
 - 모든 Mart는 문서화된 Grain과 `unique_key`를 가진다.
-- Item과 Payment를 각각 주문 Grain으로 Intermediate에서 집계·결합하고, `fact_orders`는 준비된 주문 Grain을 투영한다.
-- SCD2 구간은 `[valid_from, valid_to)`이고 고객별 Current Version은 정확히 하나다.
+- Grain이 다른 입력은 Intermediate에서 목표 Grain으로 먼저 접는다. Fact는 준비된 행을 투영만 한다.
+- 고객 이력은 시점별로 겹치지 않는 구간을 이루고, 고객별 Current Version은 정확히 하나다.
 - Incremental 결과는 동일 입력의 Full Refresh와 Logical Hash가 같아야 한다.
 
 ## 선행 조건
@@ -174,60 +174,12 @@ Late Arrival 영향 범위는 주문 구매일, 연결 주문 구매일, 고객 
 - [x] `P5-19` UTC 기준 `dim_date`
 - [x] `P5-20` SCD Type 2 `dim_customer`
 
-| Model          | Grain            | Unique Key     |
-| -------------- | ---------------- | -------------- |
-| `dim_customer` | 고객 Version 1행 | `customer_key` |
-| `dim_product`  | 상품 1행         | `product_id`   |
-| `dim_seller`   | 판매자 1행       | `seller_id`    |
-| `dim_date`     | UTC Date 1행     | `date_key`     |
+네 Dimension의 Grain·Unique Key, 추적 속성 목록, Version 구간 생성 규칙, Surrogate Key 계산식, Schema는 [Mart Grain 계약](../reference/mart-grain.md)이 정본이다.
 
-SCD2 추적 속성:
+구현 시 유의할 점은 다음과 같다.
 
-```text
-subscription_status
-membership_tier
-trial_ends_at
-benefit_ends_at
-payment_failed_at
-cancel_requested_at
-```
-
-`next_billing_at`은 매월 갱신되지만 상태 변화가 아니므로 추적 속성에서 제외한다.
-
-SCD2 규칙:
-
-- `(customer_id, updated_at, _ingested_at, _batch_id)` 순으로 관측을 정렬한다.
-- `customer_id + updated_at + tracked_attribute_hash` 관측을 Deduplicate한다.
-- 속성 Hash가 같으면 새 Version을 만들지 않는다.
-- 최초 Version의 `valid_from`은 `created_at`이다. Olist Seed에 과거 속성 이력이 없으므로 최초 Version을 Baseline Snapshot으로 간주한다.
-- 이후 변경 Version의 `valid_from`은 `updated_at`이다.
-- 다음 Version의 `valid_from`이 현재 Version의 `valid_to`다.
-- `customer_key = Hash(customer_id, valid_from, attribute_hash)`로 만든다.
-- 마지막 Version만 `valid_to=NULL`, `is_current=true`다.
-- 동일 고객/동일 `updated_at`의 서로 다른 Hash는 Contract Error다.
-
-최초 Version의 `valid_from`을 `updated_at`으로 잡으면 그 이전 구매 주문이 유효한 Customer Version을 찾지 못해 Unknown Customer Key가 발생한다. AC-12를 위반하므로 `created_at` 규칙은 필수다.
-
-`dim_customer` Schema:
-
-```text
-customer_key
-customer_id
-source_customer_unique_id
-subscription_status
-membership_tier
-trial_ends_at
-benefit_ends_at
-next_billing_at
-payment_failed_at
-cancel_requested_at
-rejoin_count
-rejoined_at
-attribute_hash
-valid_from
-valid_to
-is_current
-```
+- 최초 Version의 `valid_from`을 잘못 잡으면 그 이전에 발생한 주문이 유효한 Customer Version을 찾지 못해 Unknown Customer Key가 발생한다. AC-12를 위반하므로 Baseline Snapshot 규칙을 반드시 따른다.
+- 상태 변화가 아닌 운영 속성은 추적 속성에서 제외해야 Version 폭증이 생기지 않는다.
 
 ## Phase 5E. Fact와 Measure
 
@@ -239,56 +191,23 @@ is_current
 - [x] `P5-24` 모든 Fact의 `unique_key`와 Incremental 교체 구현
 - [x] `P5-34` `fact_orders`에 Delivery Measure 4개와 `NULL` 처리 규칙 구현
 
-| Model              | Grain             | Unique Key                     |
-| ------------------ | ----------------- | ------------------------------ |
-| `fact_order_items` | 주문 Line 1행     | `(order_id, order_item_id)`    |
-| `fact_payments`    | 결제 Sequence 1행 | `(order_id, payment_sequence)` |
-| `fact_orders`      | 주문 1행          | `order_id`                     |
+세 Fact의 Grain·Unique Key와 Measure 계산식은 [Mart Grain 계약](../reference/mart-grain.md) 3절·5절이 정본이다. 구현 시 지켜야 할 핵심 제약은 다음과 같다.
 
-`fact_order_items` Measure:
+- Item/Payment Raw Grain을 직접 다대다 Join한 뒤 합산하지 않는다. 각각을 주문 Grain으로 먼저 접는다.
+- 기본 Sales/GMV는 `order_status='DELIVERED'`의 `gross_order_value`이며, `payment_total`을 Revenue와 동일시하지 않는다.
+- 배송 Timestamp는 주문 1건당 각 1개이므로 Delivery Grain은 주문 Grain과 같다. 1:1 `fact_delivery`를 따로 만들지 않는다.
+- Delivery Measure 4개는 Non-additive다. 원천 Timestamp가 `NULL`인 주문은 해당 Measure도 `NULL`로 두며 `0`으로 채우지 않는다.
 
-```text
-item_price       = price
-freight_value    = freight_value
-line_gross_value = item_price + freight_value
-```
-
-`int_order_fact_ready`가 준비하고 `fact_orders`가 제공하는 Measure:
-
-```text
-item_subtotal     = SUM(item.price)
-freight_total     = SUM(item.freight_value)
-gross_order_value = item_subtotal + freight_total
-payment_total     = SUM(payment.payment_value)
-order_count       = 1
-```
-
-Item/Payment Raw Grain을 직접 다대다 Join한 뒤 합산하지 않는다. 기본 Sales/GMV는 `order_status='DELIVERED'`의 `gross_order_value`이며, `payment_total`을 Revenue와 동일시하지 않는다.
-
-`fact_orders` Delivery Measure:
-
-```text
-carrier_handoff_days = carrier_at   - purchase_at            (일)
-delivery_days        = delivered_at - purchase_at            (일)
-delivery_delay_days  = delivered_at - estimated_delivery_at  (일)
-is_late              = delivered_at > estimated_delivery_at
-```
-
-배송 Timestamp는 주문 1건당 각 1개이므로 Delivery Grain은 주문 Grain과 같다. 1:1 `fact_delivery`를 따로 만들지 않는다.
-
-Delivery Measure 4개는 Non-additive다. `SUM()` 대상이 아니라 평균·분위수·비율로만 집계한다. 원천 Timestamp가 `NULL`인 주문은 해당 Measure도 `NULL`로 두며 `0`으로 채우지 않는다. 정시 배송률과 평균 리드타임의 분모는 `delivered_at IS NOT NULL`인 주문이다.
-
-## Phase 5F. SCD2와 Temporal Join
+## Phase 5F. 이력 추적과 시점 결합
 
 - [x] `P5-25` Customer Observation에서 Version 구간 생성
 - [x] `P5-26` 구간 중첩/공백/Current Version 검증
 - [x] `P5-27` 주문 `purchase_at` 기준 Temporal Join
 - [x] `P5-28` 정상 E2E Unknown Customer Key 0 검증
 
-```sql
-order.purchase_at >= dim_customer.valid_from
-AND order.purchase_at < COALESCE(dim_customer.valid_to, TIMESTAMPTZ 'infinity')
-```
+Version 구간 생성 규칙과 Temporal Join 조건은 [Mart Grain 계약](../reference/mart-grain.md)이
+정본이다. Fact는 사건 발생 시점에 유효했던 Version을 참조해야 하며, 현재 Version을 참조하면
+과거 사실이 현재 값으로 잘못 집계된다.
 
 ## Phase 5G. Incremental과 Late Arrival
 
@@ -310,8 +229,8 @@ Version만 골라내므로, Fact를 매번 전체 재계산해도 결과는 항�
 쓰지 않는다.
 
 `P5-31`: `dbt build`(Incremental)와 `dbt build --full-refresh`(Full Refresh)를 연속 실행한 뒤
-`fact_orders`의 `(order_id, gross_order_value, payment_total)` 조합을 정렬해 만든 MD5 Logical
-Hash를 비교해 완전히 일치함을 확인했다.
+주문 Fact의 Key와 금액 Measure 조합을 정렬해 만든 MD5 Logical Hash를 비교해 완전히 일치함을
+확인했다.
 
 `P5-32`: `bronze_source()` Macro가 `control.bronze_files`(Catalog)에 있는 Object Key만
 `read_parquet()`으로 읽는다. Replay/Re-extract가 새 Bronze Object를 Commit하고
@@ -435,7 +354,7 @@ Watermark는 dbt 실패로 되돌리지 않는다. 컨테이너에서 `dbt` CLI�
 
 ## 구독·등급 전환 반영 완료
 
-PRD v1.8의 구독·등급 분리를 dbt 모델과 데이터 테스트에 반영했다. 이 완료 표시는 전환 계획
+PRD v1.9의 구독·등급 분리를 dbt 모델과 데이터 테스트에 반영했다. 이 완료 표시는 전환 계획
 6단계에 해당하며, 재기준화와 실제 Catalog `dbt build`는 `2026-09-10` 전환 계획 8단계에서
 완료했다. Phase 전체 Definition of Done은 별도 기준으로 관리한다.
 

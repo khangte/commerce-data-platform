@@ -3,9 +3,9 @@
 > 상태: Confirmed
 > 작성일: 2026-09-10
 > 관련 문서:
-> [구독 상태와 멤버십 등급 전환 계획](subscription-membership-transition-plan.md),
-> [구독·등급 테이블 통합과 분리 비교](membership-table-split-comparison.md),
-> [Membership Grain 분리 기획안](membership-grain-separation.md)
+> [구독 상태와 멤버십 등급 전환 계획](02-subscription-membership-transition-plan.md),
+> [구독·등급 테이블 통합과 분리 비교](04-membership-table-split-comparison.md),
+> [Membership Grain 분리 기획안](01-membership-grain-separation.md)
 
 ## 1. 확정 요구사항
 
@@ -39,7 +39,7 @@ next_billing_at을 SCD2 Hash에서 제외 →  12번의 결제가 Warehouse에�
 
 ## 3. Source 모델
 
-[테이블 분리 비교](membership-table-split-comparison.md)에서 **B안(Source만 분리)**을
+[테이블 분리 비교](04-membership-table-split-comparison.md)에서 **B안(Source만 분리)**을
 선택했다. 구독과 등급을 별도 Source Table로 두고 Warehouse에서 하나의 `dim_customer`로
 합친다. 기존 `customer_memberships`는 두 테이블로 대체된다.
 
@@ -278,7 +278,7 @@ Grain은 결제 1건이다. 결제 시각으로 `dim_customer`와 Temporal Join�
 
 ### 7.1 테이블 분리 결정
 
-[비교 문서](membership-table-split-comparison.md)에서 **B안(Source만 분리)**으로 확정했다.
+[비교 문서](04-membership-table-split-comparison.md)에서 **B안(Source만 분리)**으로 확정했다.
 결제 테이블 추가가 이 결정에 두 가지로 작용했다.
 
 **Source 표면 증가 비용을 낮췄다.** 결제 테이블로 통합안(A안)도 8개가 됐으므로, 분리안의
@@ -292,7 +292,7 @@ B안은 Temporal Join 1회를 유지하면서 CHECK 제약 오염을 구조적�
 
 ### 7.2 전환 계획에 반영할 항목
 
-[전환 계획](subscription-membership-transition-plan.md)에 아래를 추가한다.
+[전환 계획](02-subscription-membership-transition-plan.md)에 아래를 추가한다.
 
 | 절  | 추가·수정 내용                                                                  |
 | --- | ------------------------------------------------------------------------------- |

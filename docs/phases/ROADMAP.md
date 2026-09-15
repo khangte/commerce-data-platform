@@ -1,6 +1,6 @@
 # ROADMAP: Commerce Analytics Data Platform
 
-> 기준 PRD: PRD v1.8
+> 기준 PRD: PRD v1.9
 > 목적: Phase 0부터 Phase 9까지의 실제 개발 순서와 검증 기준 정의  
 > 원칙: 전체 아키텍처와 핵심 계약은 PRD를 기준으로 유지하고, 구현은 Phase 단위로 완료·검증한 뒤 다음 단계로 진행한다.
 
@@ -8,7 +8,7 @@
 
 ## Phase 실행 문서
 
-ROADMAP은 전체 순서와 범위를 관리하고, 아래 문서는 Phase별 Task, 산출물, 검증 Evidence, Definition of Done을 관리한다. 공통 Architecture와 데이터 계약의 Source of Truth는 [PRD v1.8](../../PRD_v1.8.md)다.
+ROADMAP은 전체 순서와 범위를 관리하고, 아래 문서는 Phase별 Task, 산출물, 검증 Evidence, Definition of Done을 관리한다. 공통 Architecture와 데이터 계약의 Source of Truth는 [PRD v1.9](../../PRD_v1.9.md)다.
 
 | Phase | 실행 문서                                                      | 주요 Gate                        |
 | ----- | -------------------------------------------------------------- | -------------------------------- |
@@ -111,7 +111,7 @@ Phase 7~9
 프로젝트 전체 코드를 한 번에 생성한 뒤 수정하는 방식은 사용하지 않는다.
 
 ```text
-PRD v1.8
+PRD v1.9
 전체 Architecture / Contract 확정
         ↓
 Phase 0 구현
@@ -831,80 +831,30 @@ int_affected_business_dates
 
 ---
 
-## Phase 5D. Dimension
+## Phase 5D~5E. Mart
 
-먼저 단순 Dimension:
+Model 목록, Grain, Unique Key, Measure 계약은 [Mart Grain 계약](../reference/mart-grain.md)이
+정본이다. 구현 순서는 의존성이 적은 Model부터 시작하고, 사전 집계 Measure를 갖는 Model을
+마지막에 만든다.
 
-```text
-dim_product
-dim_seller
-dim_date
-```
-
-이후:
-
-```text
-dim_customer
-```
-
-SCD Type 2 구현.
+서로 다른 Grain을 직접 Join해 Measure를 합산하지 않는다.
 
 ---
 
-## Phase 5E. Fact
+## Phase 5F~5G. 이력 추적과 시점 결합
 
-권장 순서:
-
-```text
-fact_order_items
-fact_payments
-fact_orders
-```
-
-`fact_orders`는 Aggregate Measure가 있으므로 마지막에 구현한다.
-
-Metric:
-
-```text
-item_subtotal
-freight_total
-gross_order_value
-payment_total
-order_count
-```
-
-서로 다른 Fact Grain을 직접 Join해 Measure를 합산하지 않는다.
-
----
-
-## Phase 5F. SCD2
-
-Synthetic 구독 상태 전이·등급 변경·Address 변경으로 검증한다. `dim_customer`는 구독 축과 등급 축을 병합한 SCD2 Version이다.
-
-```text
-BRONZE
-    ↓
-SILVER
-    ↓
-GOLD
-```
+Synthetic 구독 상태 전이·등급 변경·Address 변경으로 검증한다. 사건은 발생 시점에 유효했던
+고객 Version을 참조해야 한다.
 
 검증:
 
 ```text
 Version 생성
-valid_from
-valid_to
-is_current
+유효 구간 경계
 Overlap 없음
 Current 정확히 1개
+시점 결합 결과 Unknown 0
 ```
-
----
-
-## Phase 5G. Temporal Join
-
-주문 `purchase_at` 기준으로 당시 유효했던 Customer Dimension Version을 선택한다.
 
 ### Gate
 
@@ -1288,7 +1238,7 @@ P3-08 Watermark CAS 구현
 # 실제 시작 순서
 
 ```text
-1. PRD v1.8 Baseline Commit
+1. PRD v1.9 Baseline Commit
 2. AGENTS.md 확정
 3. Phase 0 구현
 4. Phase 0 DoD 검증

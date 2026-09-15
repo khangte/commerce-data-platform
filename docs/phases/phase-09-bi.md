@@ -3,7 +3,7 @@
 > 상태: Planned  
 > Milestone: 3 — Portfolio Evidence  
 > 선행 Phase: [Phase 8. Benchmark](phase-08-benchmark.md)  
-> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.8](../../PRD_v1.8.md)
+> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.9](../../PRD_v1.9.md)
 
 ## 목표
 
@@ -13,8 +13,7 @@ Metabase에서 검증 완료된 Mart만 사용해 Sales, Product, Customer Dashb
 
 - Dashboard는 Source, Bronze, Staging을 직접 조회하지 않는다.
 - Phase 5에서 정의한 Fact Grain과 Measure 의미를 변경하지 않는다.
-- 기본 GMV는 `DELIVERED` 주문의 `gross_order_value`를 사용한다.
-- `payment_total`을 Revenue와 동일시하지 않는다.
+- Metric 정의는 [Mart Grain 계약](../reference/mart-grain.md)의 Measure 계약을 따른다. 주문 금액과 실제 결제 금액을 같은 것으로 취급하지 않는다.
 - Metabase/DuckDB 연결이 불안정하면 PostgreSQL Serving DB 대안을 검증하고 ADR로 결정한다.
 - Dashboard 재현에 필요한 Query, Filter, Metric 정의를 문서화한다.
 
@@ -23,14 +22,15 @@ Metabase에서 검증 완료된 Mart만 사용해 Sales, Product, Customer Dashb
 Metabase Dashboard 구현 전에도 BI가 Source·Bronze가 아닌 Mart만 읽도록, 아래 `metrics`
 Schema View를 제공한다. 이는 Phase 9의 연결·Dashboard·스크린샷 완료를 뜻하지 않는다.
 
-| View | Grain | 용도 |
-| ---- | ----- | ---- |
-| `rpt_subscription_funnel_daily` | 구독 상태 진입일 1행 | 체험 시작, 활성화, 결제 실패, 해지 신청, 이탈, 재가입 퍼널 |
-| `rpt_subscription_payment_outcomes_daily` | 청구 시작일·결제 상태 1행 | 구독 결제 성공·실패 건수와 결제 금액 |
-| `rpt_membership_tier_performance` | 주문 시점 등급·구독 상태 1행 | 등급별 주문 수, GMV, Delivered AOV |
+| View | 용도 |
+| ---- | ---- |
+| `rpt_subscription_funnel_daily` | 체험 시작, 활성화, 결제 실패, 해지 신청, 이탈, 재가입 퍼널 |
+| `rpt_subscription_payment_outcomes_daily` | 구독 결제 성공·실패 건수와 결제 금액 |
+| `rpt_membership_tier_performance` | 등급별 주문 수, GMV, Delivered AOV |
 
-`rpt_membership_tier_performance`는 주문 시점 SCD2 속성을 사용한다. 현재 고객 분포는
-`dim_customer`의 `is_current = true`만 사용해야 하며, 두 관점을 같은 지표로 합치지 않는다.
+세 View의 Grain·Unique Key와 알려진 제약은 [Mart Grain 계약](../reference/mart-grain.md) 4절이
+정본이다. 세 View는 모두 사건 발생 시점의 고객 속성을 사용한다. 현재 고객 분포는 최신
+Version만 사용해야 하며, 두 관점을 같은 지표로 합치지 않는다.
 
 - [x] 전환 계획 7단계의 구독 퍼널·결제 실패·해지·재가입·등급별 지표 View를 구현했다.
 - [ ] Metabase Connection과 Sales/Product/Customer Dashboard는 Phase 9 구현 순서에서 진행한다.
@@ -78,13 +78,8 @@ Metabase
 - [ ] `P9-08` Category/Product/Customer Metric 정의 등록
 - [ ] `P9-09` UTC Date와 Filter 기본값 검증
 
-핵심 Metric:
-
-```text
-GMV    = SUM(gross_order_value), order_status = 'DELIVERED'
-Orders = SUM(order_count)
-AOV    = GMV / Delivered Orders
-```
+핵심 Metric의 계산식은 [Mart Grain 계약](../reference/mart-grain.md)의 Measure 계약에서
+가져온다. BI는 Measure를 재정의하지 않고 Mart가 제공하는 값을 그대로 집계한다.
 
 ### 3. Sales Dashboard
 
@@ -106,7 +101,7 @@ AOV    = GMV / Delivered Orders
 - [ ] `P9-17` Repeat Customers
 - [ ] `P9-18` 구독 상태·거래 실적 등급 분포/추이
 - [ ] `P9-19` Region 분석
-- [ ] 현재 속성과 주문 시점 SCD2 속성의 사용 목적을 명시
+- [ ] 현재 속성과 주문 시점 속성의 사용 목적을 명시
 
 ### 6. 재현성과 검증
 
@@ -137,7 +132,7 @@ AOV    = GMV / Delivered Orders
 | --------- | ---------------------------------- | --------------------------- |
 | Sales     | Daily GMV, Orders, AOV             | dbt 기준 Query와 Total 일치 |
 | Product   | Category GMV, Top Products, Volume | Grain Fan-out 0             |
-| Customer  | New/Repeat, Membership, Region     | 고객 정의와 SCD2 시점 명시  |
+| Customer  | New/Repeat, Membership, Region     | 고객 정의와 기준 시점 명시  |
 
 ## 요구사항 추적
 
