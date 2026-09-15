@@ -3,7 +3,7 @@
 > 상태: 구현 완료 · `orders` 최초 Bronze 적재 완료
 > Milestone: 2 — Data Platform Core  
 > 선행 Phase: [Phase 2. Deterministic Generator](phase-02-deterministic-generator.md)  
-> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.8](../../PRD_v1.8.md)
+> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.9](../../PRD_v1.9.md)
 
 ## 목표
 
@@ -523,7 +523,7 @@ uv run python -m src.rebaseline --seeded-at 2026-09-03T00:00:00Z --confirm
 
 ## 구독·등급 전환 반영 완료
 
-기존 완료 기록은 `customer_memberships` 7개 Table 기준이다. PRD v1.8의 구독·등급 분리를
+기존 완료 기록은 `customer_memberships` 7개 Table 기준이다. PRD v1.9의 구독·등급 분리를
 Ingestion·Bronze 코드에 반영해 다음 구현을 완료했다.
 
 - [x] 7개 Table 프레임워크를 9개로 확장했다. `customer_memberships`가
