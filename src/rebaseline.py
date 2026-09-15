@@ -186,14 +186,14 @@ def _reset_catalog_file(catalog_path: Path) -> None:
 
 
 def _reset_source(postgres: PostgresSettings, lease: SourceMutationLease) -> None:
-    """새 Source DDL을 적용한 뒤 구 Membership Table과 9개 Source 행을 한 Transaction으로 비운다."""
+    """Source Table을 삭제·재생성해 변경된 DDL과 기준 Seed를 일치시킨다."""
     assert_source_mutation_lease(postgres, lease)
     with postgres.source_connection() as connection:
-        apply_sql_file(connection, "sql/source/001_create_source_tables.sql")
         with connection.transaction():
-            for table_name in LEGACY_SOURCE_TABLES:
-                connection.execute(f"DROP TABLE IF EXISTS {table_name}")
-            connection.execute(f"TRUNCATE TABLE {', '.join(SOURCE_TABLES)}")
+            connection.execute(
+                f"DROP TABLE IF EXISTS {', '.join((*SOURCE_TABLES, *LEGACY_SOURCE_TABLES))} CASCADE"
+            )
+        apply_sql_file(connection, "sql/source/001_create_source_tables.sql")
 
 
 def _reset_pipeline_metadata(postgres: PostgresSettings) -> None:

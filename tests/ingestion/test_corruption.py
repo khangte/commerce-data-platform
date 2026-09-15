@@ -92,6 +92,7 @@ def _item(timestamp: datetime, item_id: int) -> SourceRecord:
         "order_item_id": item_id,
         "product_id": "product-0001",
         "seller_id": "seller-0001",
+        "shipping_limit_date": timestamp,
         "price": Decimal(10),
         "freight_value": Decimal(1),
         "created_at": timestamp,

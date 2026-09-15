@@ -79,6 +79,7 @@ class OrderItemRecord:
     order_item_id: int
     product_id: str
     seller_id: str
+    shipping_limit_date: datetime
     price: Decimal
     freight_value: Decimal
     created_at: datetime
@@ -259,6 +260,10 @@ def _new_item_record(
         order_item_id=item_ordinal,
         product_id=product.product_id,
         seller_id=seller.seller_id,
+        shipping_limit_date=config.logical_date
+        + timedelta(
+            days=4 + _selector(config, "item-shipping-limit", order_ordinal, item_ordinal) % 6
+        ),
         price=_amount(
             config, "item-price", order_ordinal, item_ordinal, minimum_cents=1_000, span=99_001
         ),
@@ -329,7 +334,8 @@ def _persist_items(
         desired = _item_parameters(item)
         existing = connection.execute(
             """
-            SELECT order_id, order_item_id, product_id, seller_id, price, freight_value, created_at
+            SELECT order_id, order_item_id, product_id, seller_id, shipping_limit_date,
+                   price, freight_value, created_at
             FROM order_items
             WHERE order_id = %s AND order_item_id = %s
             FOR UPDATE
@@ -340,9 +346,10 @@ def _persist_items(
             connection.execute(
                 """
                 INSERT INTO order_items (
-                    order_id, order_item_id, product_id, seller_id, price, freight_value, created_at
+                    order_id, order_item_id, product_id, seller_id, shipping_limit_date,
+                    price, freight_value, created_at
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 desired,
             )
@@ -414,6 +421,7 @@ def _item_parameters(item: OrderItemRecord) -> tuple[object, ...]:
         item.order_item_id,
         item.product_id,
         item.seller_id,
+        item.shipping_limit_date,
         item.price,
         item.freight_value,
         item.created_at,

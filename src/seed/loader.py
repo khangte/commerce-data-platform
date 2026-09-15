@@ -85,6 +85,7 @@ TARGET_COLUMNS = {
         "order_item_id",
         "product_id",
         "seller_id",
+        "shipping_limit_date",
         "price",
         "freight_value",
         "created_at",
@@ -330,6 +331,11 @@ def build_seed_dataset(input_dir: Path, seeded_at: datetime) -> SeedDataset:
     order_items["price"] = order_items["price"].map(lambda value: _required_decimal(value, "price"))
     order_items["freight_value"] = order_items["freight_value"].map(
         lambda value: _required_decimal(value, "freight_value")
+    )
+    order_items["shipping_limit_date"] = pd.Series(
+        _timestamps(order_items, "shipping_limit_date", required=True),
+        index=order_items.index,
+        dtype=object,
     )
     order_items["created_at"] = order_items["order_id"].map(order_purchase_timestamp)
 

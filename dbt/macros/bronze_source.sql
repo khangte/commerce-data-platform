@@ -17,7 +17,7 @@
         {%- set catalog_rows = run_query(catalog_query) -%}
         {%- set object_keys = [] -%}
         {%- for row in catalog_rows.rows -%}
-            {%- if row[1] != 1 -%}
+            {%- if row[1] != 2 -%}
                 {{ exceptions.raise_compiler_error(
                     'SOURCE_CONTRACT_ERROR: unsupported schema_version=' ~ row[1]
                     ~ ' for source_table=' ~ source_table
@@ -87,7 +87,8 @@
         ],
         'order_items': [
             ('order_id', 'varchar'), ('order_item_id', 'integer'), ('product_id', 'varchar'),
-            ('seller_id', 'varchar'), ('price', 'decimal(14, 2)'),
+            ('seller_id', 'varchar'), ('shipping_limit_date', 'timestamptz'),
+            ('price', 'decimal(14, 2)'),
             ('freight_value', 'decimal(14, 2)'), ('created_at', 'timestamptz')
         ],
         'order_payments': [
@@ -112,7 +113,7 @@
         {%- set invalid_versions_query -%}
             select distinct schema_version
             from control.bronze_files
-            where schema_version != 1
+            where schema_version != 2
             order by schema_version
         {%- endset -%}
         {%- set invalid_versions = run_query(invalid_versions_query) -%}

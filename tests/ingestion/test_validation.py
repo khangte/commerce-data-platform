@@ -114,6 +114,7 @@ def _item(timestamp: datetime, order_id: str, item_id: object, price: Decimal) -
         "order_item_id": item_id,
         "product_id": "product-0001",
         "seller_id": "seller-0001",
+        "shipping_limit_date": timestamp,
         "price": price,
         "freight_value": Decimal(1),
         "created_at": timestamp,

@@ -199,7 +199,7 @@ def _object(run: PipelineRun, watermark_after: CursorPosition) -> VerifiedBronze
         table_batch_id=table_batch_id,
         object_key=f"bronze/orders/batch_id={run.batch_id}/data.parquet",
         manifest_key=f"bronze/orders/batch_id={run.batch_id}/manifest.json",
-        schema_version=1,
+        schema_version=2,
         row_count=3,
         content_sha256="a" * 64,
         logical_hash=logical_hash(logical_rows),

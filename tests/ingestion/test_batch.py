@@ -49,7 +49,7 @@ def test_committed_batch_is_reusable_only_when_current_watermark_matches_its_upp
         identity=batch.table_batch("orders"),
         object_key="bronze/orders/data.parquet",
         manifest_key="bronze/orders/manifest.json",
-        schema_version=1,
+        schema_version=2,
         row_count=2,
         watermark_before=before,
         watermark_after=after,
@@ -58,7 +58,7 @@ def test_committed_batch_is_reusable_only_when_current_watermark_matches_its_upp
     assert_reusable_table_batch(
         existing,
         current_watermark=Watermark("orders", "orders", after, version=1),
-        schema_version=1,
+        schema_version=2,
     )
     with pytest.raises(BatchIdentityConflictError, match="range"):
         assert_reusable_table_batch(
@@ -69,11 +69,11 @@ def test_committed_batch_is_reusable_only_when_current_watermark_matches_its_upp
                 CursorPosition(after.timestamp + timedelta(seconds=1), ("order-3",)),
                 2,
             ),
-            schema_version=1,
+            schema_version=2,
         )
     with pytest.raises(BatchIdentityConflictError, match="schema"):
         assert_reusable_table_batch(
             existing,
             current_watermark=Watermark("orders", "orders", after, version=1),
-            schema_version=2,
+            schema_version=1,
         )
