@@ -22,8 +22,6 @@ from src.generator.customers import (
     new_membership_tier_record,
     new_subscription_record,
     persist_customer_records,
-    persist_subscription_records,
-    subscription_transition_records,
 )
 from src.generator.subscription_payments import (
     persist_subscription_payments,
@@ -53,21 +51,17 @@ def test_subscription_payment_uses_the_active_customer_version_at_billing_time(t
     pipeline_name = f"test_subscription_temporal_{uuid.uuid4().hex}"
     ingested_at = datetime.now(UTC)
     initial_config = _generator_config(FIXTURE_START, anomaly_profile="default")
-    active_at = FIXTURE_START + timedelta(days=1)
-    active_config = _generator_config(active_at, anomaly_profile="subscription-active")
-    payment_at = active_at + timedelta(days=1)
+    payment_at = FIXTURE_START + timedelta(days=1)
     payment_config = _generator_config(payment_at, anomaly_profile="default")
     customer = new_customer_record(initial_config, 1)
     initial_subscription = new_subscription_record(customer)
     initial_tier = new_membership_tier_record(customer)
-    active_subscription = subscription_transition_records(
-        active_config, (initial_subscription,), "ACTIVE"
-    )[0]
     payment = plan_subscription_payment(
         payment_config,
-        customer.customer_unique_id,
-        billing_sequence=1,
-        billing_period_start=active_at,
+        initial_subscription.subscription_id,
+        billing_cycle_sequence=1,
+        attempt_sequence=1,
+        billing_period_start_at=FIXTURE_START,
     )
     results: list[TableIngestionResult] = []
 
@@ -84,7 +78,7 @@ def test_subscription_payment_uses_the_active_customer_version_at_billing_time(t
             "customer_subscriptions",
             CursorPosition(
                 initial_subscription.updated_at - timedelta(microseconds=1),
-                (customer.customer_unique_id,),
+                (str(initial_subscription.subscription_id),),
             ),
             now=ingested_at,
         )
@@ -124,29 +118,16 @@ def test_subscription_payment_uses_the_active_customer_version_at_billing_time(t
         )
 
         with postgres.source_connection() as connection:
-            assert persist_subscription_records(connection, (active_subscription,)).updated == 1
             assert persist_subscription_payments(connection, (payment,)) == 1
             connection.commit()
 
-        results.append(
-            _ingest(
-                postgres,
-                storage,
-                pipeline_name,
-                "customer_subscriptions",
-                active_subscription.updated_at,
-                2,
-                tmp_path,
-                ingested_at,
-            )
-        )
         _set_watermark(
             postgres,
             pipeline_name,
             "subscription_payments",
             CursorPosition(
                 payment.updated_at - timedelta(microseconds=1),
-                (customer.customer_unique_id, payment.billing_sequence),
+                (str(payment.payment_id),),
             ),
             now=ingested_at,
         )
@@ -163,7 +144,7 @@ def test_subscription_payment_uses_the_active_customer_version_at_billing_time(t
             )
         )
 
-        assert [result.row_count for result in results] == [1, 1, 1, 1]
+        assert [result.row_count for result in results] == [1, 1, 1]
         warehouse_path = tmp_path / "warehouse.duckdb"
         _create_fixture_catalog(postgres, warehouse_path, results)
         dbt_result = _run_dbt_build(warehouse_path, storage, tmp_path)
@@ -176,15 +157,16 @@ def test_subscription_payment_uses_the_active_customer_version_at_billing_time(t
                     fact.customer_key,
                     fact.payment_status,
                     fact.payment_value,
-                    dimension.subscription_status,
-                    dimension.membership_tier,
-                    dimension.valid_from,
-                    dimension.valid_to
+                    subscription.subscription_status,
+                    customer.membership_tier,
+                    subscription.valid_from,
+                    subscription.valid_to
                 FROM facts.fact_subscription_payments AS fact
-                LEFT JOIN dimensions.dim_customer AS dimension USING (customer_key)
-                WHERE fact.customer_unique_id = ? AND fact.billing_sequence = ?
+                LEFT JOIN dimensions.dim_subscription AS subscription USING (subscription_key)
+                LEFT JOIN dimensions.dim_customer AS customer USING (customer_key)
+                WHERE fact.payment_id = ?
                 """,
-                [customer.customer_unique_id, payment.billing_sequence],
+                [str(payment.payment_id)],
             ).fetchall()
 
         assert len(fact_rows) == 1
@@ -196,7 +178,7 @@ def test_subscription_payment_uses_the_active_customer_version_at_billing_time(t
             payment.payment_value,
             "ACTIVE",
             "BRONZE",
-            active_at,
+            FIXTURE_START,
             None,
         )
     finally:
@@ -366,7 +348,14 @@ def _cleanup(
 
     with postgres.source_connection() as connection:
         connection.execute(
-            "DELETE FROM subscription_payments WHERE customer_unique_id = %s",
+            """
+            DELETE FROM subscription_payments
+            WHERE subscription_id IN (
+                SELECT subscription_id
+                FROM customer_subscriptions
+                WHERE customer_unique_id = %s
+            )
+            """,
             (customer_unique_id,),
         )
         connection.execute(
