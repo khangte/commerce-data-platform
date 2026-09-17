@@ -21,6 +21,7 @@ class SourceColumn:
     name: str
     type: pa.DataType
     nullable: bool = True
+    postgres_uuid: bool = False
 
     @property
     def field(self) -> pa.Field:
@@ -94,6 +95,16 @@ def _text(name: str, *, nullable: bool = True) -> SourceColumn:
     return SourceColumn(name, pa.string(), nullable)
 
 
+def _uuid(name: str, *, nullable: bool = True) -> SourceColumn:
+    """Postgres UUID Source Column 정의를 짧게 만든다.
+
+    Bronze Schema에서는 pa.string()으로 저장한다. UUID는 Collation 없는
+    바이트 비교로 이미 결정적이라 Cursor 식에 COLLATE "C"를 붙이지 않고,
+    psycopg가 반환하는 uuid.UUID 값은 Arrow 변환 전에 문자열로 정규화한다.
+    """
+    return SourceColumn(name, pa.string(), nullable, postgres_uuid=True)
+
+
 def _integer(name: str, *, nullable: bool = True) -> SourceColumn:
     """32-bit 정수 Source Column 정의를 짧게 만든다."""
     return SourceColumn(name, pa.int32(), nullable)
@@ -145,7 +156,7 @@ CUSTOMER_SUBSCRIPTIONS_TABLE = TableConfig(
     cursor_timestamp_column="updated_at",
     cursor_key_columns=("subscription_id",),
     source_columns=(
-        _text("subscription_id", nullable=False),
+        _uuid("subscription_id", nullable=False),
         _text("customer_unique_id", nullable=False),
         _text("subscription_status", nullable=False),
         _boolean("auto_renew_enabled", nullable=False),
@@ -193,8 +204,8 @@ SUBSCRIPTION_PAYMENTS_TABLE = TableConfig(
     cursor_timestamp_column="updated_at",
     cursor_key_columns=("payment_id",),
     source_columns=(
-        _text("payment_id", nullable=False),
-        _text("subscription_id", nullable=False),
+        _uuid("payment_id", nullable=False),
+        _uuid("subscription_id", nullable=False),
         _integer("billing_cycle_sequence", nullable=False),
         _integer("attempt_sequence", nullable=False),
         _text("payment_status", nullable=False),

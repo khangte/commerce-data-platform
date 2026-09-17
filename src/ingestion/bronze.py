@@ -308,7 +308,7 @@ def _hash_ordered_business_rows(
 def _source_record_row(record: SourceRecord, context: BronzeWriteContext) -> dict[str, object]:
     """일반 Source Record와 공통 기술 Column을 Bronze Arrow Row로 바꾼다."""
     return {
-        **record.values,
+        **record.arrow_compatible_values(),
         "_batch_id": context.batch_id,
         "_run_id": str(context.run_id),
         "_ingested_at": context.ingested_at,

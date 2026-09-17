@@ -45,6 +45,14 @@ class SourceRecord:
             keys=tuple(self.values[column] for column in self.config.cursor_key_columns),
         )
 
+    def arrow_compatible_values(self) -> dict[str, object]:
+        """psycopg가 반환한 uuid.UUID 값을 pyarrow string Array 변환 가능한 str로 바꾼다."""
+        result = dict(self.values)
+        for column in self.config.source_columns:
+            if column.postgres_uuid and result[column.name] is not None:
+                result[column.name] = str(result[column.name])
+        return result
+
 
 @dataclass(frozen=True)
 class SourcePage:
@@ -194,13 +202,18 @@ def _lower_bound_clause(
 
 
 def _cursor_expression(config: TableConfig) -> str:
-    """문자열 PK는 C Collation을 명시한 SQL Composite Cursor 식을 반환한다."""
+    """문자열 PK는 C Collation을 명시한 SQL Composite Cursor 식을 반환한다.
+
+    Postgres UUID Column은 Collation을 지원하지 않고 바이트 비교로 이미
+    결정적이므로 COLLATE를 붙이지 않는다.
+    """
     expressions = [config.cursor_timestamp_column]
-    fields = {field.name: field for field in config.source_schema}
-    for column in config.cursor_key_columns:
-        expression = column
-        if pa.types.is_string(fields[column].type):
-            expression = f'{column} COLLATE "C"'
+    columns = {column.name: column for column in config.source_columns}
+    for column_name in config.cursor_key_columns:
+        column = columns[column_name]
+        expression = column_name
+        if pa.types.is_string(column.type) and not column.postgres_uuid:
+            expression = f'{column_name} COLLATE "C"'
         expressions.append(expression)
     return f"({', '.join(expressions)})"
 
