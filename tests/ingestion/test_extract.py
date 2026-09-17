@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 from types import MappingProxyType
 
 import pyarrow as pa
@@ -57,6 +58,19 @@ def test_source_record_normalizes_uuid_value_to_str_for_arrow_compatibility() ->
     assert normalized["subscription_id"] == str(raw_uuid)
     # 정규화된 값은 실제로 pyarrow string Array를 만들 수 있어야 한다.
     pa.array([normalized["subscription_id"]], type=pa.string())
+
+
+def test_source_record_normalizes_uuid_cursor_key_to_str() -> None:
+    """UUID PK Cursor도 Metadata JSONB에 저장 가능한 문자열이어야 한다."""
+    raw_uuid = uuid.UUID("22222222-2222-2222-2222-222222222222")
+    record = SourceRecord(
+        config=UUID_CURSOR_TABLE,
+        values=MappingProxyType(
+            {"subscription_id": raw_uuid, "updated_at": datetime(2026, 9, 17, tzinfo=UTC)}
+        ),
+    )
+
+    assert record.cursor.keys == (str(raw_uuid),)
 
 
 def test_source_record_leaves_non_uuid_values_unchanged() -> None:

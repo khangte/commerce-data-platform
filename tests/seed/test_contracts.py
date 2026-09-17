@@ -58,13 +58,19 @@ def test_membership_tier_uses_delivered_order_thresholds(
 def test_subscription_seed_columns_hold_status_baseline() -> None:
     """Seed가 구독 축 기준선에 필요한 모든 Column을 적재한다."""
     assert TARGET_COLUMNS["customer_subscriptions"] == (
+        "subscription_id",
         "customer_unique_id",
         "subscription_status",
-        "trial_ends_at",
-        "benefit_ends_at",
-        "next_billing_at",
+        "auto_renew_enabled",
+        "subscription_started_at",
+        "current_period_started_at",
+        "current_period_ends_at",
+        "billing_due_at",
+        "next_payment_attempt_at",
         "payment_failed_at",
         "cancel_requested_at",
+        "ended_at",
+        "status_changed_at",
         "created_at",
         "updated_at",
     )

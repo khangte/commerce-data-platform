@@ -5,12 +5,13 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from types import MappingProxyType
+from uuid import UUID
 
 import pytest
 
 from src.ingestion.extract import SourcePage, SourceRecord
 from src.ingestion.metadata import CursorPosition
-from src.ingestion.tables import ORDER_ITEMS_TABLE, ORDERS_TABLE
+from src.ingestion.tables import CUSTOMER_SUBSCRIPTIONS_TABLE, ORDER_ITEMS_TABLE, ORDERS_TABLE
 from src.ingestion.validation import (
     SourceContractError,
     ValidationPipeline,
@@ -88,6 +89,44 @@ def test_schema_validation_rejects_missing_or_extra_source_columns() -> None:
     values.pop("updated_at")
 
     assert _schema_and_type_errors(ORDERS_TABLE, values) == ["SCHEMA_MISMATCH"]
+
+
+def test_schema_validation_accepts_boolean_subscription_attribute() -> None:
+    """구독 자동갱신 Boolean은 Bronze Source Type과 호환되어야 한다."""
+    values = {
+        column.name: None if column.nullable else _required_subscription_value(column.name)
+        for column in CUSTOMER_SUBSCRIPTIONS_TABLE.source_columns
+    }
+    values["auto_renew_enabled"] = True
+
+    assert _schema_and_type_errors(CUSTOMER_SUBSCRIPTIONS_TABLE, values) == []
+
+
+def test_schema_validation_accepts_postgresql_uuid_subscription_key() -> None:
+    """psycopg UUID는 Bronze 문자열화 전에 유효한 원본 Source 값으로 인정한다."""
+    values = {
+        column.name: None if column.nullable else _required_subscription_value(column.name)
+        for column in CUSTOMER_SUBSCRIPTIONS_TABLE.source_columns
+    }
+    values["subscription_id"] = UUID("00000000-0000-0000-0000-000000000001")
+
+    assert _schema_and_type_errors(CUSTOMER_SUBSCRIPTIONS_TABLE, values) == []
+
+
+def _required_subscription_value(column_name: str) -> object:
+    """Boolean Type 검증에 필요한 구독 필수 Column의 최소 유효값을 반환한다."""
+    timestamp = datetime(2026, 9, 17, tzinfo=UTC)
+    values = {
+        "subscription_id": "00000000-0000-0000-0000-000000000001",
+        "customer_unique_id": "customer-0001",
+        "subscription_status": "ACTIVE",
+        "auto_renew_enabled": True,
+        "subscription_started_at": timestamp,
+        "status_changed_at": timestamp,
+        "created_at": timestamp,
+        "updated_at": timestamp,
+    }
+    return values[column_name]
 
 
 def _order(timestamp: datetime, order_id: str, status: str) -> SourceRecord:

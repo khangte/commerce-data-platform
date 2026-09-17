@@ -18,7 +18,7 @@ def test_catalog_replaces_entries_with_committed_metadata_snapshot(monkeypatch, 
         BronzeCatalogEntry(
             "orders",
             "bronze/orders/data.parquet",
-            1,
+            3,
             "batch",
             datetime(2026, 9, 7, tzinfo=UTC),
             2,
@@ -38,7 +38,7 @@ def test_catalog_replaces_entries_with_committed_metadata_snapshot(monkeypatch, 
     finally:
         connection.close()
     assert result == entries
-    assert rows == [("orders", "bronze/orders/data.parquet", 1, 2)]
+    assert rows == [("orders", "bronze/orders/data.parquet", 3, 2)]
 
 
 def test_catalog_stops_before_duckdb_write_for_unsupported_schema_version(monkeypatch, tmp_path) -> None:
@@ -50,7 +50,7 @@ def test_catalog_stops_before_duckdb_write_for_unsupported_schema_version(monkey
             BronzeCatalogEntry(
                 "orders",
                 "bronze/orders/data.parquet",
-                2,
+                1,
                 "batch",
                 datetime(2026, 9, 7, tzinfo=UTC),
                 2,

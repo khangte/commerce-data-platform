@@ -20,7 +20,7 @@ customers_source as (
 ),
 subscriptions_source as (
     select *
-    from {{ current_bronze_records('customer_subscriptions', ['customer_unique_id']) }}
+    from {{ current_bronze_records('customer_subscriptions', ['subscription_id']) }}
 ),
 tiers_source as (
     select *
@@ -28,7 +28,7 @@ tiers_source as (
 ),
 subscription_payments_source as (
     select *
-    from {{ current_bronze_records('subscription_payments', ['customer_unique_id', 'billing_sequence']) }}
+    from {{ current_bronze_records('subscription_payments', ['payment_id']) }}
 ),
 mapping_failures as (
     select 'products' as source_table, products_source.product_id as business_key
@@ -100,17 +100,19 @@ mapping_failures as (
 
     select
         'customer_subscriptions' as source_table,
-        subscriptions_source.customer_unique_id as business_key
+        subscriptions_source.subscription_id as business_key
     from subscriptions_source
     left join {{ ref('stg_customer_subscription_observations') }} as stg_subscription_obs
-        on subscriptions_source.customer_unique_id = stg_subscription_obs.customer_id
+        on subscriptions_source.subscription_id = stg_subscription_obs.subscription_id
         and subscriptions_source.updated_at = stg_subscription_obs.updated_at
     where
         stg_subscription_obs.customer_id is null
         or stg_subscription_obs.subscription_status is distinct from
             {{ standardized_subscription_status('subscriptions_source.subscription_status') }}
-        or stg_subscription_obs.trial_ends_at is distinct from subscriptions_source.trial_ends_at
-        or stg_subscription_obs.benefit_ends_at is distinct from subscriptions_source.benefit_ends_at
+        or stg_subscription_obs.auto_renew_enabled is distinct from subscriptions_source.auto_renew_enabled
+        or stg_subscription_obs.subscription_started_at is distinct from subscriptions_source.subscription_started_at
+        or stg_subscription_obs.current_period_started_at is distinct from subscriptions_source.current_period_started_at
+        or stg_subscription_obs.current_period_ends_at is distinct from subscriptions_source.current_period_ends_at
         or stg_subscription_obs.payment_failed_at
             is distinct from subscriptions_source.payment_failed_at
         or stg_subscription_obs.cancel_requested_at
@@ -136,22 +138,24 @@ mapping_failures as (
 
     select
         'subscription_payments' as source_table,
-        subscription_payments_source.customer_unique_id
-            || ':' || subscription_payments_source.billing_sequence as business_key
+        subscription_payments_source.payment_id as business_key
     from subscription_payments_source
     left join {{ ref('stg_subscription_payments') }} as stg_subscription_payments
-        on subscription_payments_source.customer_unique_id = stg_subscription_payments.customer_id
-        and subscription_payments_source.billing_sequence = stg_subscription_payments.billing_sequence
+        on subscription_payments_source.payment_id = stg_subscription_payments.payment_id
     where
         stg_subscription_payments.customer_id is null
         or stg_subscription_payments.payment_status
             is distinct from subscription_payments_source.payment_status
         or stg_subscription_payments.payment_value
             is distinct from subscription_payments_source.payment_value
-        or stg_subscription_payments.billing_period_start
-            is distinct from subscription_payments_source.billing_period_start
-        or stg_subscription_payments.billing_period_end
-            is distinct from subscription_payments_source.billing_period_end
+        or stg_subscription_payments.subscription_id is distinct from subscription_payments_source.subscription_id
+        or stg_subscription_payments.billing_cycle_sequence is distinct from subscription_payments_source.billing_cycle_sequence
+        or stg_subscription_payments.attempt_sequence is distinct from subscription_payments_source.attempt_sequence
+        or stg_subscription_payments.payment_at is distinct from subscription_payments_source.payment_at
+        or stg_subscription_payments.billing_period_start_at
+            is distinct from subscription_payments_source.billing_period_start_at
+        or stg_subscription_payments.billing_period_end_at
+            is distinct from subscription_payments_source.billing_period_end_at
         or stg_subscription_payments.created_at is distinct from subscription_payments_source.created_at
         or stg_subscription_payments.updated_at is distinct from subscription_payments_source.updated_at
 

@@ -101,7 +101,10 @@
         'order_payments': [
             ('order_id', 'varchar'), ('payment_sequential', 'integer'), ('payment_type', 'varchar'),
             ('payment_installments', 'integer'), ('payment_value', 'decimal(14, 2)'),
-            ('payment_status', 'varchar'), ('created_at', 'timestamptz'), ('updated_at', 'timestamptz')
+            ('payment_status', 'varchar'), ('payment_initiated_at', 'timestamptz'),
+            ('payment_completed_at', 'timestamptz'), ('payment_failed_at', 'timestamptz'),
+            ('payment_refunded_at', 'timestamptz'), ('created_at', 'timestamptz'),
+            ('updated_at', 'timestamptz')
         ]
     } -%}
     {%- set technical_columns = [

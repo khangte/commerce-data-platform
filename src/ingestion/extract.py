@@ -42,7 +42,7 @@ class SourceRecord:
             raise TypeError("Source cursor timestamp must be a datetime")
         return CursorPosition(
             timestamp=timestamp,
-            keys=tuple(self.values[column] for column in self.config.cursor_key_columns),
+            keys=_cursor_key_values(self.config, self.values),
         )
 
     def arrow_compatible_values(self) -> dict[str, object]:
@@ -155,7 +155,23 @@ def _fetch_upper_bound(
     ).fetchone()
     if row is None:
         return None
-    return CursorPosition(row[0], tuple(row[1:]))
+    return CursorPosition(
+        row[0], _cursor_key_values(config, dict(zip(config.cursor_key_columns, row[1:])))
+    )
+
+
+def _cursor_key_values(config: TableConfig, values: Mapping[str, object]) -> tuple[str | int, ...]:
+    """UUID PK를 Metadata Cursor에 저장 가능한 문자열로 정규화해 반환한다."""
+    columns = {column.name: column for column in config.source_columns}
+    normalized: list[str | int] = []
+    for column_name in config.cursor_key_columns:
+        value = values[column_name]
+        if columns[column_name].postgres_uuid and value is not None:
+            value = str(value)
+        if isinstance(value, bool) or not isinstance(value, (str, int)):
+            raise TypeError("Source cursor keys must be strings or integers")
+        normalized.append(value)
+    return tuple(normalized)
 
 
 def _fetch_page(

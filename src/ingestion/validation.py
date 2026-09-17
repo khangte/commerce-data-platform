@@ -6,12 +6,13 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
+from uuid import UUID
 
 import pyarrow as pa
 
 from src.ingestion.extract import SourcePage, SourceRecord
 from src.ingestion.metadata import CursorPosition
-from src.ingestion.tables import TableConfig
+from src.ingestion.tables import SourceColumn, TableConfig
 
 
 @dataclass(frozen=True)
@@ -97,7 +98,7 @@ def _schema_and_type_errors(config: TableConfig, values: Mapping[str, object]) -
             if not column.nullable:
                 errors.append("REQUIRED_NULL")
             continue
-        if not _matches_arrow_type(value, column.type):
+        if not _matches_source_column_type(value, column):
             errors.append("TYPE_MISMATCH")
     return errors
 
@@ -122,11 +123,18 @@ def _matches_arrow_type(value: object, type: pa.DataType) -> bool:
         return isinstance(value, str)
     if pa.types.is_integer(type):
         return isinstance(value, int) and not isinstance(value, bool)
+    if pa.types.is_boolean(type):
+        return isinstance(value, bool)
     if pa.types.is_decimal(type):
         return isinstance(value, Decimal)
     if pa.types.is_timestamp(type):
         return isinstance(value, datetime) and value.tzinfo is not None
     raise TypeError(f"Unsupported validation Arrow type: {type}")
+
+
+def _matches_source_column_type(value: object, column: SourceColumn) -> bool:
+    """PostgreSQL UUID 원본 값과 Bronze 문자열 Schema의 호환성을 함께 판정한다."""
+    return (column.postgres_uuid and isinstance(value, UUID)) or _matches_arrow_type(value, column.type)
 
 
 def _cursor_in_range(cursor: CursorPosition, lower: CursorPosition, upper: CursorPosition) -> bool:

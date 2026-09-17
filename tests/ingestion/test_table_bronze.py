@@ -65,6 +65,10 @@ def _payment(timestamp: datetime) -> SourceRecord:
         "payment_installments": 1,
         "payment_value": Decimal("12.34"),
         "payment_status": "completed",
+        "payment_initiated_at": timestamp,
+        "payment_completed_at": timestamp,
+        "payment_failed_at": None,
+        "payment_refunded_at": None,
         "created_at": timestamp,
         "updated_at": timestamp,
     }

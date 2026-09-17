@@ -3,7 +3,7 @@
 > 상태: 구현 완료 · `orders` 최초 Bronze 적재 완료
 > Milestone: 2 — Data Platform Core  
 > 선행 Phase: [Phase 2. Deterministic Generator](phase-02-deterministic-generator.md)  
-> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.11](../../PRD_v1.11.md)
+> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.12](../../PRD_v1.12.md)
 
 ## 목표
 
@@ -437,6 +437,7 @@ Phase 3에서는 Framework-independent Python Pipeline을 완성하고 Phase 4�
 | `src/ingestion/bronze.py`                                        | 생성·수정 | 기존 `orders` Writer와 함께 7개 Table의 명시적 Arrow Schema·기술 Column·Zstandard Local Parquet Writer를 추가하고, 재수신 Parquet Byte에서도 PK 기준 Logical Hash를 다시 계산하게 했다.                                                                                            |
 | `src/ingestion/storage.py`                                       | 생성      | SeaweedFS Path-style S3 Client, Bucket 준비, 최종 Bronze 객체의 조건부 PUT·HEAD·Parquet 검증을 추가했다.                                                                                                                                                                           |
 | `src/ingestion/tables.py`                                        | 수정      | 7개 Source Table의 전체 PK Tie-breaker, 증분 Cursor, Raw-compatible Arrow Schema와 공통 Bronze 기술 Column 계약을 추가했다. `customers`는 생성 시각 Cursor, `customer_memberships`는 변경 시각 Cursor를 사용한다. |
+| `src/ingestion/extract.py`, `src/ingestion/validation.py`        | 수정      | UUID PK를 Metadata Cursor 문자열로 정규화하고, PostgreSQL UUID·Boolean 원본값을 Bronze 변환 전 유효한 Source Type으로 검증하도록 보완했다. |
 | `src/ingestion/extract.py`                                       | 생성·수정 | 등록된 Table Config만 사용해 동일 Read-only Snapshot, 고정 Upper Bound, Composite Keyset Page를 읽고 Corruption 복제본도 원 Cursor로 검증할 수 있게 했다.                                                                                                                          |
 | `src/ingestion/references.py`                                    | 생성      | Child Page의 Orders·Products·Sellers Parent Key를 같은 Snapshot Connection에서 검사하며 공통 수집 서비스가 결과를 Reject로 연결한다.                                                                                                                                               |
 | `src/ingestion/batch.py`                                         | 생성      | DAG·UTC Logical Date 기반 7개 Table Batch Identity와 Commit 범위·Schema 재사용/Conflict 판정을 추가했다.                                                                                                                                                                           |
@@ -530,15 +531,16 @@ Ingestion·Bronze 코드에 반영해 다음 구현을 완료했다.
   `customer_subscriptions`와 `customer_membership_tiers`로 나뉘고 `subscription_payments`가
   새로 생긴다.
 - [x] `src/ingestion/tables.py`의 Cursor·PK·Arrow Schema에 세 테이블을 추가했다.
-  `subscription_payments`의 PK는 `(customer_unique_id, billing_sequence)`, Cursor는
-  `(updated_at, customer_unique_id, billing_sequence)`다.
+  `customer_subscriptions`의 PK는 `subscription_id`이고, `subscription_payments`의 PK는
+  `payment_id`다. 결제의 계약 내 청구 회차·시도 조합은
+  `(subscription_id, billing_cycle_sequence, attempt_sequence)`으로 별도 보장한다.
 - [x] DAG와 `src/rebaseline.py`의 Source Table 순회를 9개로 넓혔다. 공통 Bronze Writer,
   Batch, Service는 `TABLE_CONFIGS`를 사용하므로 새 계약을 자동으로 적용한다.
 - [x] `tests/ingestion/test_tables.py`에 세 테이블의 계약 검증을 추가했다.
 - [x] 재기준화 실행과 9개 Source Table 수집·Catalog 재생성을 완료했다. 행이 없는
   `subscription_payments`는 Bronze Object 없이 정상 완료로 남는다.
-- [x] v1.10 `shipping_limit_date` 추가에 맞춰 Bronze Schema Version을 2로 올리고, 재기준화가
-  Source Table 삭제·DDL 재생성 후 v2 Object만 다시 수집하도록 변경했다.
+- [x] v1.12 계약·청구 회차 컬럼에 맞춰 Bronze Schema Version을 3으로 올리고, 재기준화가
+  Source Table 삭제·DDL 재생성 후 v3 Object만 다시 수집하도록 변경했다.
 
 세부 순서는 [전환 계획](../architecture/02-subscription-membership-transition-plan.md) 5절
 5단계에 있다.

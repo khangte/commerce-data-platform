@@ -50,7 +50,7 @@ def test_catalog_macro_renders_committed_object_as_explicit_parquet_list(tmp_pat
         connection.execute(
             """
             INSERT INTO control.bronze_files VALUES
-            ('orders', 'bronze/orders/committed.parquet', 2, 'batch-1', now(), 1, 'a')
+            ('orders', 'bronze/orders/committed.parquet', 3, 'batch-1', now(), 1, 'a')
             """
         )
     finally:
