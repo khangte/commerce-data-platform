@@ -24,11 +24,36 @@ models:
         data_tests: [not_null]
 
   - name: fact_subscription_payments
-    description: 고객별 청구 순번 Grain의 구독 결제 Fact다. 복합 PK는 tests/fact_subscription_payments_unique.sql이 검증한다.
+    description: 계약별 구독 결제 시도 Grain의 Fact다. 청구 회차·시도 조합은 Singular Test가 검증한다.
     columns:
-      - name: customer_unique_id
+      - name: payment_id
+        data_tests: [not_null, unique]
+      - name: subscription_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_subscription')
+                field: subscription_key
+      - name: customer_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_customer')
+                field: customer_key
+      - name: payment_date_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_date')
+                field: date_key
+      - name: subscription_id
         data_tests: [not_null]
-      - name: billing_sequence
+      - name: billing_cycle_sequence
+        data_tests: [not_null]
+      - name: attempt_sequence
         data_tests: [not_null]
       - name: payment_status
         data_tests:

@@ -6,9 +6,9 @@ with lifecycle_versions as (
         subscription_status,
         lag(subscription_status) over (
             partition by customer_id
-            order by valid_from, customer_key
+            order by valid_from, subscription_key
         ) as previous_subscription_status
-    from {{ ref('dim_customer') }}
+    from {{ ref('dim_subscription') }}
 ),
 subscription_events as (
     select
@@ -23,11 +23,11 @@ select
     event_date_key,
     sum(
         case
-            when subscription_status = 'TRIAL'
-                and coalesce(previous_subscription_status, 'NON_MEMBER') in ('NON_MEMBER', 'CHURNED')
+            when subscription_status = 'ACTIVE'
+                and previous_subscription_status is null
             then 1 else 0
         end
-    ) as trial_started_count,
+    ) as contract_started_count,
     sum(case when subscription_status = 'ACTIVE' then 1 else 0 end) as activated_count,
     sum(case when subscription_status = 'PAYMENT_FAILED' then 1 else 0 end) as payment_failed_count,
     sum(case when subscription_status = 'CANCEL_REQUESTED' then 1 else 0 end) as cancel_requested_count,

@@ -2,10 +2,30 @@ version: 2
 
 models:
   - name: dim_customer
-    description: 사람 단위 구독 상태와 거래 실적 등급의 SCD2 Version Dimension이다.
+    description: 사람 단위 거래 실적 등급의 SCD2 Version Dimension이다.
     columns:
       - name: customer_key
         data_tests: [not_null, unique]
+      - name: customer_id
+        data_tests: [not_null]
+      - name: membership_tier
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [BRONZE, SILVER, GOLD]
+      - name: valid_from
+        data_tests: [not_null]
+      - name: is_current
+        data_tests: [not_null]
+
+  - name: dim_subscription
+    description: 계약 단위 구독 상태의 SCD2 Version Dimension이다.
+    columns:
+      - name: subscription_key
+        data_tests: [not_null, unique]
+      - name: subscription_id
+        data_tests: [not_null]
       - name: customer_id
         data_tests: [not_null]
       - name: subscription_status
@@ -13,13 +33,9 @@ models:
           - not_null
           - accepted_values:
               arguments:
-                values: [NON_MEMBER, TRIAL, ACTIVE, PAYMENT_FAILED, CANCEL_REQUESTED, CHURNED]
-      - name: membership_tier
-        data_tests:
-          - not_null
-          - accepted_values:
-              arguments:
-                values: [BRONZE, SILVER, GOLD]
+                values: [ACTIVE, PAYMENT_FAILED, CANCEL_REQUESTED, CHURNED]
+      - name: auto_renew_enabled
+        data_tests: [not_null]
       - name: valid_from
         data_tests: [not_null]
       - name: is_current

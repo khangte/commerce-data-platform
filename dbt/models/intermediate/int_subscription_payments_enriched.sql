@@ -1,15 +1,30 @@
--- 구독 결제를 결제 시점의 고객 SCD2 Version과 결합해 Fact 입력을 준비한다.
+-- 결제 시점에 유효한 계약·고객 Version과 날짜 키를 결합해 Fact 입력을 준비한다.
 select
-    dim_customer.customer_key,
-    stg_subscription_payments.customer_id as customer_unique_id,
-    stg_subscription_payments.billing_sequence,
-    stg_subscription_payments.payment_status,
-    stg_subscription_payments.payment_value,
-    stg_subscription_payments.billing_period_start,
-    stg_subscription_payments.billing_period_end
-from {{ ref('stg_subscription_payments') }} as stg_subscription_payments
-left join {{ ref('dim_customer') }} as dim_customer
-    on stg_subscription_payments.customer_id = dim_customer.customer_id
-    and stg_subscription_payments.billing_period_start >= dim_customer.valid_from
-    and stg_subscription_payments.billing_period_start
-        < coalesce(dim_customer.valid_to, timestamptz 'infinity')
+    payments.payment_id,
+    subscription.subscription_key,
+    customer.customer_key,
+    cast(strftime(date_trunc('day', payments.payment_at), '%Y%m%d') as integer) as payment_date_key,
+    payments.subscription_id,
+    payments.billing_cycle_sequence,
+    payments.attempt_sequence,
+    payments.provider_payment_id,
+    payments.payment_status,
+    payments.payment_method_type,
+    payments.payment_provider,
+    payments.failure_code,
+    payments.currency_code,
+    payments.payment_at,
+    payments.billing_period_start_at,
+    payments.billing_period_end_at,
+    payments.payment_value,
+    case when payments.payment_status = 'completed' then payments.payment_value end as completed_payment_value,
+    cast(1 as smallint) as attempt_count
+from {{ ref('stg_subscription_payments') }} as payments
+inner join {{ ref('dim_subscription') }} as subscription
+    on payments.subscription_id = subscription.subscription_id
+    and payments.payment_at >= subscription.valid_from
+    and payments.payment_at < coalesce(subscription.valid_to, timestamptz 'infinity')
+inner join {{ ref('dim_customer') }} as customer
+    on payments.customer_id = customer.customer_id
+    and payments.payment_at >= customer.valid_from
+    and payments.payment_at < coalesce(customer.valid_to, timestamptz 'infinity')

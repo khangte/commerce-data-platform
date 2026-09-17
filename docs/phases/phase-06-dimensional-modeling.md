@@ -3,7 +3,7 @@
 > 상태: Planned  
 > Milestone: 2 — Data Platform Core  
 > 선행 Phase: [Phase 5. Bronze Catalog + Staging](phase-05-bronze-catalog-and-staging.md)  
-> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.11](../../PRD_v1.11.md), [Mart Grain 계약](../reference/mart-grain.md)
+> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.12](../../PRD_v1.12.md), [Mart Grain 계약](../reference/mart-grain.md)
 > 참고: [데이터 변환 흐름](../reference/data-transformation-flow.md) — 계층별 변환의 근거
 
 ## 목표
@@ -187,7 +187,23 @@ Phase 5와 Phase 6을 분리하기 전에 만든 Intermediate/Mart Model이 이�
 
 | 경로 | 변경 내용 |
 | ---- | --------- |
-|      |           |
+| `dbt/models/intermediate/int_customer_history.sql` | 고객 SCD2 입력을 거래 실적 등급 축만으로 축소했다. |
+| `dbt/models/intermediate/int_subscription_history.sql` | 계약별 상태 관측을 SCD2 유효 구간으로 변환했다. |
+| `dbt/models/marts/dimensions/dim_customer.sql` | 구독 상태·재가입 파생 컬럼을 제거하고 등급 Version만 투영하도록 축소했다. |
+| `dbt/models/marts/dimensions/dim_subscription.sql`, `dim_date.sql` | `subscription_id` Business Key와 결정적 Version Key를 가진 계약 SCD2 Dimension을 추가하고, 계약 결제일까지 날짜 Dimension 범위를 확장했다. |
+| `dbt/models/intermediate/int_subscription_payments_enriched.sql` | 결제 시점의 계약·고객 Version과 날짜 Key를 결합해 Fact 입력을 준비하도록 수정했다. |
+| `dbt/models/marts/facts/fact_subscription_payments.sql` | `payment_id` Grain의 계약별 구독 결제 시도 Fact를 구현했다. |
+| `dbt/models/marts/*/schema.yml`, `dbt/tests/dim_subscription_*`, `dbt/tests/fct_subscription_payment_*` | 계약 SCD2, 열린 계약, 청구 회차·시도, 성공 금액, 실패 코드 계약을 Schema 및 Singular Test로 강제했다. |
+
+### v1.12 구독 Mart 전환
+
+- [x] `P6-08` 계약 상태 관측의 SCD2 유효 구간 생성을 구현했다.
+- [x] `P6-12` `dim_subscription` 계약 SCD2 Dimension을 구현했다.
+- [x] `P6-14` `fct_subscription_payment` 결제 시도 Fact를 구현했다.
+- [x] `P6-16` 결제 시점 기준 계약·고객 Version 결합을 Intermediate에서 구현했다.
+- [x] `P6-17` Mart Grain·SCD2·Measure 계약 Singular Test 8개를 추가했다.
+- [x] 고객 SCD2에서 구독 축과 재가입 파생 값을 제거하고 거래 실적 등급만 유지했다.
+- [x] v1.12 Bronze 재기록 뒤 `dbt build --full-refresh`를 실행해 Model·Test 131개가 통과했다.
 
 ## Definition of Done
 

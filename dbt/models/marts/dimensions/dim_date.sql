@@ -1,8 +1,17 @@
-with bounds as (
-    select
-        min(date_trunc('day', purchase_at)) as min_date,
-        max(date_trunc('day', purchase_at)) as max_date
+with event_dates as (
+    select purchase_at as event_at
     from {{ ref('stg_orders') }}
+
+    union all
+
+    select payment_at as event_at
+    from {{ ref('stg_subscription_payments') }}
+),
+bounds as (
+    select
+        min(date_trunc('day', event_at)) as min_date,
+        max(date_trunc('day', event_at)) as max_date
+    from event_dates
 ),
 date_spine as (
     select unnest(generate_series(bounds.min_date, bounds.max_date, interval 1 day)) as calendar_date

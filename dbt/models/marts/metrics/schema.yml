@@ -8,9 +8,9 @@ models:
         data_tests: [not_null, unique]
 
   - name: rpt_subscription_payment_outcomes_daily
-    description: 청구 기간 시작일·성공 또는 실패 상태별 구독 결제 집계다.
+    description: 결제일·성공 또는 실패 상태별 구독 결제 집계다.
     columns:
-      - name: billing_date_key
+      - name: payment_date_key
         data_tests: [not_null]
       - name: payment_status
         data_tests:
@@ -20,9 +20,7 @@ models:
                 values: [completed, failed]
 
   - name: rpt_membership_tier_performance
-    description: 주문 시점 구독 상태·거래 실적 등급별 주문 성과 집계다.
+    description: 주문 시점 거래 실적 등급별 주문 성과 집계다.
     columns:
       - name: membership_tier
-        data_tests: [not_null]
-      - name: subscription_status
         data_tests: [not_null]

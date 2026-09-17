@@ -1,19 +1,23 @@
--- 구독 결제 1건이 1행이다. 주문 결제인 fact_payments와 별개 Fact다.
--- 결제 시각으로 dim_customer와 Temporal Join하므로 결제 당시의 구독 상태와 등급을 함께 분석한다.
-
-{{
-    config(
-        unique_key=['customer_unique_id', 'billing_sequence'],
-        incremental_strategy='delete+insert'
-    )
-}}
+{{ config(unique_key='payment_id', incremental_strategy='delete+insert') }}
 
 select
+    payment_id,
+    subscription_key,
     customer_key,
-    customer_unique_id,
-    billing_sequence,
+    payment_date_key,
+    subscription_id,
+    billing_cycle_sequence,
+    attempt_sequence,
+    provider_payment_id,
     payment_status,
+    payment_method_type,
+    payment_provider,
+    failure_code,
+    currency_code,
+    payment_at,
+    billing_period_start_at,
+    billing_period_end_at,
     payment_value,
-    billing_period_start,
-    billing_period_end
+    completed_payment_value,
+    attempt_count
 from {{ ref('int_subscription_payments_enriched') }}
