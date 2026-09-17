@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from uuid import UUID
 
 import pytest
 
@@ -28,55 +29,50 @@ def _config(seed: int = 42) -> GeneratorConfig:
 
 
 def test_plan_is_deterministic_for_the_same_inputs() -> None:
-    """같은 결정성 입력은 같은 결제 상태와 금액을 만든다."""
+    """같은 계약·청구 회차·시도 입력은 같은 결제 계획을 만든다."""
+    subscription_id = UUID("00000000-0000-0000-0000-000000000001")
     start = datetime(2026, 9, 1, tzinfo=UTC)
-    first = plan_subscription_payment(_config(), "person-1", 1, start)
-    second = plan_subscription_payment(_config(), "person-1", 1, start)
+    first = plan_subscription_payment(_config(), subscription_id, 1, 1, start)
+    second = plan_subscription_payment(_config(), subscription_id, 1, 1, start)
 
     assert first == second
     assert first.payment_value == MONTHLY_SUBSCRIPTION_FEE
-    assert first.billing_period_end == start + timedelta(days=30)
+    assert first.billing_period_end_at == start + timedelta(days=30)
+    assert first.payment_at == _config().logical_date
     assert first.payment_status in {"completed", "failed"}
 
 
-def test_plan_varies_by_billing_sequence() -> None:
-    """결제 순번이 다르면 성공·실패 판정 입력이 달라진다."""
+def test_plan_varies_by_attempt_sequence() -> None:
+    """재시도 순번은 성공·실패 판정의 결정성 입력에 포함된다."""
+    subscription_id = UUID("00000000-0000-0000-0000-000000000001")
     start = datetime(2026, 9, 1, tzinfo=UTC)
     statuses = {
-        plan_subscription_payment(_config(), "person-1", sequence, start).payment_status
-        for sequence in range(1, 40)
+        plan_subscription_payment(_config(), subscription_id, 1, attempt, start).payment_status
+        for attempt in range(1, 40)
     }
 
     assert statuses == {"completed", "failed"}
 
 
-def test_record_rejects_a_non_positive_billing_sequence() -> None:
-    """billing_sequence는 1부터 시작해야 한다."""
+def test_record_rejects_a_non_positive_attempt_sequence() -> None:
+    """청구 회차와 결제 시도 순번은 모두 1부터 시작한다."""
     start = datetime(2026, 9, 1, tzinfo=UTC)
-    with pytest.raises(ValueError, match="billing_sequence must start at one"):
+    with pytest.raises(ValueError, match="sequences must start at one"):
         SubscriptionPaymentRecord(
-            customer_unique_id="person-1",
-            billing_sequence=0,
+            payment_id=UUID("00000000-0000-0000-0000-000000000001"),
+            subscription_id=UUID("00000000-0000-0000-0000-000000000002"),
+            billing_cycle_sequence=1,
+            attempt_sequence=0,
             payment_status="completed",
+            payment_at=start,
             payment_value=Decimal("29.90"),
-            billing_period_start=start,
-            billing_period_end=start + timedelta(days=30),
-            created_at=start,
-            updated_at=start,
-        )
-
-
-def test_record_rejects_an_unknown_payment_status() -> None:
-    """구독 결제 상태 도메인은 completed와 failed 둘로만 좁힌다."""
-    start = datetime(2026, 9, 1, tzinfo=UTC)
-    with pytest.raises(ValueError, match="Unsupported payment_status"):
-        SubscriptionPaymentRecord(
-            customer_unique_id="person-1",
-            billing_sequence=1,
-            payment_status="refunded",
-            payment_value=Decimal("29.90"),
-            billing_period_start=start,
-            billing_period_end=start + timedelta(days=30),
+            currency_code="BRL",
+            billing_period_start_at=start,
+            billing_period_end_at=start + timedelta(days=30),
+            payment_method_type=None,
+            payment_provider=None,
+            provider_payment_id=None,
+            failure_code=None,
             created_at=start,
             updated_at=start,
         )

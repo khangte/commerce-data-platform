@@ -7,39 +7,65 @@ CREATE TABLE IF NOT EXISTS customers (
 );
 
 CREATE TABLE IF NOT EXISTS customer_subscriptions (
-    customer_unique_id VARCHAR(64) COLLATE "C" PRIMARY KEY,
-    subscription_status VARCHAR(32) NOT NULL DEFAULT 'NON_MEMBER',
-    trial_ends_at TIMESTAMPTZ,
-    benefit_ends_at TIMESTAMPTZ,
-    next_billing_at TIMESTAMPTZ,
+    subscription_id UUID PRIMARY KEY,
+    customer_unique_id VARCHAR(64) COLLATE "C" NOT NULL,
+    subscription_status VARCHAR(32) NOT NULL,
+    auto_renew_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    subscription_started_at TIMESTAMPTZ NOT NULL,
+    current_period_started_at TIMESTAMPTZ,
+    current_period_ends_at TIMESTAMPTZ,
+    billing_due_at TIMESTAMPTZ,
+    next_payment_attempt_at TIMESTAMPTZ,
     payment_failed_at TIMESTAMPTZ,
     cancel_requested_at TIMESTAMPTZ,
+    ended_at TIMESTAMPTZ,
+    status_changed_at TIMESTAMPTZ NOT NULL,
     created_at TIMESTAMPTZ NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL,
     CONSTRAINT customer_subscriptions_status_check CHECK (
         subscription_status IN (
-            'NON_MEMBER', 'TRIAL', 'ACTIVE', 'PAYMENT_FAILED', 'CANCEL_REQUESTED', 'CHURNED'
+            'ACTIVE', 'PAYMENT_FAILED', 'CANCEL_REQUESTED', 'CHURNED'
         )
     ),
-    CONSTRAINT customer_subscriptions_trial_check
-        CHECK (subscription_status <> 'TRIAL' OR trial_ends_at IS NOT NULL),
+    CONSTRAINT customer_subscriptions_period_check CHECK (
+        current_period_started_at IS NULL
+        OR current_period_ends_at IS NULL
+        OR current_period_ends_at > current_period_started_at
+    ),
+    CONSTRAINT customer_subscriptions_active_check CHECK (
+        subscription_status <> 'ACTIVE'
+        OR (
+            current_period_started_at IS NOT NULL
+            AND current_period_ends_at IS NOT NULL
+            AND billing_due_at IS NOT NULL
+            AND next_payment_attempt_at IS NOT NULL
+        )
+    ),
     CONSTRAINT customer_subscriptions_payment_failed_check CHECK (
         subscription_status <> 'PAYMENT_FAILED'
-        OR (payment_failed_at IS NOT NULL AND benefit_ends_at IS NOT NULL)
+        OR payment_failed_at IS NOT NULL
     ),
     CONSTRAINT customer_subscriptions_cancel_requested_check CHECK (
         subscription_status <> 'CANCEL_REQUESTED'
         OR (
+            NOT auto_renew_enabled
+            AND
             cancel_requested_at IS NOT NULL
-            AND benefit_ends_at IS NOT NULL
-            AND benefit_ends_at > updated_at
+            AND next_payment_attempt_at IS NULL
         )
     ),
     CONSTRAINT customer_subscriptions_churned_check CHECK (
         subscription_status <> 'CHURNED'
-        OR (benefit_ends_at IS NOT NULL AND benefit_ends_at <= updated_at)
+        OR (
+            NOT auto_renew_enabled
+            AND ended_at IS NOT NULL
+            AND billing_due_at IS NULL
+            AND next_payment_attempt_at IS NULL
+        )
     ),
-    CONSTRAINT customer_subscriptions_updated_at_check CHECK (updated_at >= created_at)
+    CONSTRAINT customer_subscriptions_updated_at_check CHECK (updated_at >= created_at),
+    CONSTRAINT customer_subscriptions_status_changed_at_check
+        CHECK (status_changed_at >= subscription_started_at AND status_changed_at <= updated_at)
 );
 
 CREATE TABLE IF NOT EXISTS customer_membership_tiers (
@@ -53,22 +79,33 @@ CREATE TABLE IF NOT EXISTS customer_membership_tiers (
 );
 
 CREATE TABLE IF NOT EXISTS subscription_payments (
-    customer_unique_id VARCHAR(64) COLLATE "C" NOT NULL
-        REFERENCES customer_subscriptions (customer_unique_id),
-    billing_sequence INTEGER NOT NULL,
+    payment_id UUID PRIMARY KEY,
+    subscription_id UUID NOT NULL REFERENCES customer_subscriptions (subscription_id),
+    billing_cycle_sequence INTEGER NOT NULL,
+    attempt_sequence INTEGER NOT NULL,
     payment_status VARCHAR(16) NOT NULL,
+    payment_at TIMESTAMPTZ NOT NULL,
     payment_value NUMERIC(14, 2) NOT NULL,
-    billing_period_start TIMESTAMPTZ NOT NULL,
-    billing_period_end TIMESTAMPTZ NOT NULL,
+    currency_code CHAR(3) NOT NULL,
+    billing_period_start_at TIMESTAMPTZ NOT NULL,
+    billing_period_end_at TIMESTAMPTZ NOT NULL,
+    payment_method_type VARCHAR(32),
+    payment_provider VARCHAR(32),
+    provider_payment_id VARCHAR(128),
+    failure_code VARCHAR(64),
     created_at TIMESTAMPTZ NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL,
-    PRIMARY KEY (customer_unique_id, billing_sequence),
-    CONSTRAINT subscription_payments_sequence_check CHECK (billing_sequence > 0),
+    CONSTRAINT subscription_payments_cycle_attempt_unique
+        UNIQUE (subscription_id, billing_cycle_sequence, attempt_sequence),
+    CONSTRAINT subscription_payments_sequence_check
+        CHECK (billing_cycle_sequence > 0 AND attempt_sequence > 0),
     CONSTRAINT subscription_payments_status_check
         CHECK (payment_status IN ('completed', 'failed')),
     CONSTRAINT subscription_payments_value_check CHECK (payment_value >= 0),
     CONSTRAINT subscription_payments_period_check
-        CHECK (billing_period_end > billing_period_start),
+        CHECK (billing_period_end_at > billing_period_start_at),
+    CONSTRAINT subscription_payments_failure_code_check
+        CHECK (payment_status <> 'completed' OR failure_code IS NULL),
     CONSTRAINT subscription_payments_updated_at_check CHECK (updated_at >= created_at)
 );
 
@@ -167,12 +204,54 @@ ALTER TABLE order_payments
 DROP INDEX IF EXISTS customers_updated_at_customer_id_idx;
 CREATE INDEX IF NOT EXISTS customers_created_at_customer_id_idx
     ON customers (created_at, customer_id COLLATE "C");
-CREATE INDEX IF NOT EXISTS customer_subscriptions_updated_at_customer_unique_id_idx
-    ON customer_subscriptions (updated_at, customer_unique_id COLLATE "C");
+CREATE INDEX IF NOT EXISTS customer_subscriptions_updated_at_subscription_id_idx
+    ON customer_subscriptions (updated_at, subscription_id);
+CREATE UNIQUE INDEX IF NOT EXISTS customer_subscriptions_one_open_contract_idx
+    ON customer_subscriptions (customer_unique_id COLLATE "C")
+    WHERE subscription_status IN ('ACTIVE', 'PAYMENT_FAILED', 'CANCEL_REQUESTED');
 CREATE INDEX IF NOT EXISTS customer_membership_tiers_updated_at_customer_unique_id_idx
     ON customer_membership_tiers (updated_at, customer_unique_id COLLATE "C");
-CREATE INDEX IF NOT EXISTS subscription_payments_updated_at_customer_unique_id_billing_sequence_idx
-    ON subscription_payments (updated_at, customer_unique_id COLLATE "C", billing_sequence);
+CREATE INDEX IF NOT EXISTS subscription_payments_updated_at_payment_id_idx
+    ON subscription_payments (updated_at, payment_id);
+CREATE UNIQUE INDEX IF NOT EXISTS subscription_payments_provider_payment_unique_idx
+    ON subscription_payments (payment_provider, provider_payment_id)
+    WHERE payment_provider IS NOT NULL AND provider_payment_id IS NOT NULL;
+
+COMMENT ON TABLE customer_subscriptions IS
+    '고객별 구독 계약과 현재 자동갱신 운영 상태를 보관한다.';
+COMMENT ON COLUMN customer_subscriptions.subscription_id IS '구독 계약의 불변 식별자다.';
+COMMENT ON COLUMN customer_subscriptions.customer_unique_id IS '구독 계약을 보유한 고객의 사람 단위 식별자다.';
+COMMENT ON COLUMN customer_subscriptions.subscription_status IS '구독 계약의 현재 상태다.';
+COMMENT ON COLUMN customer_subscriptions.auto_renew_enabled IS '정기 결제 자동갱신 허용 여부다.';
+COMMENT ON COLUMN customer_subscriptions.subscription_started_at IS '구독 계약이 시작된 업무 시각이다.';
+COMMENT ON COLUMN customer_subscriptions.current_period_started_at IS '현재 혜택 제공 기간의 시작 시각이다.';
+COMMENT ON COLUMN customer_subscriptions.current_period_ends_at IS '현재 혜택 제공 기간의 종료 예정 시각이다.';
+COMMENT ON COLUMN customer_subscriptions.billing_due_at IS '현재 청구 회차의 원래 정기 청구 기한이다.';
+COMMENT ON COLUMN customer_subscriptions.next_payment_attempt_at IS '자동갱신 또는 실패 재시도로 다음 결제를 시도할 예정 시각이다.';
+COMMENT ON COLUMN customer_subscriptions.payment_failed_at IS '최근 결제 실패가 확정된 업무 시각이다.';
+COMMENT ON COLUMN customer_subscriptions.cancel_requested_at IS '자동갱신 중지 또는 해지를 요청한 업무 시각이다.';
+COMMENT ON COLUMN customer_subscriptions.ended_at IS '구독 혜택이 실제로 종료된 업무 시각이다.';
+COMMENT ON COLUMN customer_subscriptions.status_changed_at IS '현재 구독 상태로 전이한 업무 시각이다.';
+COMMENT ON COLUMN customer_subscriptions.created_at IS '원천 구독 계약 레코드 생성 시각이다.';
+COMMENT ON COLUMN customer_subscriptions.updated_at IS '원천 구독 계약 레코드의 마지막 변경 및 증분 Cursor 시각이다.';
+COMMENT ON TABLE subscription_payments IS
+    '구독 계약별 청구 회차와 재시도 순번의 결제 시도 이력을 추가 방식으로 보관한다.';
+COMMENT ON COLUMN subscription_payments.payment_id IS '결제 시도의 불변 식별자다.';
+COMMENT ON COLUMN subscription_payments.subscription_id IS '결제 시도의 대상 구독 계약 식별자다.';
+COMMENT ON COLUMN subscription_payments.billing_cycle_sequence IS '구독 계약 안에서 첫 청구부터 증가하는 청구 회차다.';
+COMMENT ON COLUMN subscription_payments.attempt_sequence IS '같은 청구 회차 안에서 첫 시도부터 증가하는 재시도 순번이다.';
+COMMENT ON COLUMN subscription_payments.payment_status IS '결제 시도의 최종 결과 상태다.';
+COMMENT ON COLUMN subscription_payments.payment_at IS '결제를 시도하고 결과가 확정된 업무 시각이다.';
+COMMENT ON COLUMN subscription_payments.payment_value IS '결제 시도에서 청구한 금액이다.';
+COMMENT ON COLUMN subscription_payments.currency_code IS '결제 금액의 ISO 4217 통화 코드다.';
+COMMENT ON COLUMN subscription_payments.billing_period_start_at IS '결제로 적용하려는 혜택 기간의 시작 시각이다.';
+COMMENT ON COLUMN subscription_payments.billing_period_end_at IS '결제로 적용하려는 혜택 기간의 종료 시각이다.';
+COMMENT ON COLUMN subscription_payments.payment_method_type IS '결제수단의 분류값이다.';
+COMMENT ON COLUMN subscription_payments.payment_provider IS '결제대행사 식별값이다.';
+COMMENT ON COLUMN subscription_payments.provider_payment_id IS '결제대행사가 부여한 거래 식별값이다.';
+COMMENT ON COLUMN subscription_payments.failure_code IS '실패 결제의 원인 코드다.';
+COMMENT ON COLUMN subscription_payments.created_at IS '원천 결제 레코드를 생성한 시각이다.';
+COMMENT ON COLUMN subscription_payments.updated_at IS '원천 결제 레코드의 마지막 변경 및 증분 Cursor 시각이다.';
 CREATE INDEX IF NOT EXISTS products_updated_at_product_id_idx
     ON products (updated_at, product_id COLLATE "C");
 CREATE INDEX IF NOT EXISTS sellers_updated_at_seller_id_idx

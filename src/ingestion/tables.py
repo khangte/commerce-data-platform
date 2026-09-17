@@ -11,7 +11,7 @@ import pyarrow as pa
 
 from src.ingestion.schema import assert_supported_schema_version
 
-BRONZE_SCHEMA_VERSION = 2
+BRONZE_SCHEMA_VERSION = 3
 
 
 @dataclass(frozen=True)
@@ -99,6 +99,11 @@ def _integer(name: str, *, nullable: bool = True) -> SourceColumn:
     return SourceColumn(name, pa.int32(), nullable)
 
 
+def _boolean(name: str, *, nullable: bool = True) -> SourceColumn:
+    """Boolean Source Column 정의를 짧게 만든다."""
+    return SourceColumn(name, pa.bool_(), nullable)
+
+
 def _timestamp(name: str, *, nullable: bool = True) -> SourceColumn:
     """UTC microsecond Timestamp Source Column 정의를 짧게 만든다."""
     return SourceColumn(name, pa.timestamp("us", tz="UTC"), nullable)
@@ -136,25 +141,29 @@ CUSTOMERS_TABLE = TableConfig(
 
 CUSTOMER_SUBSCRIPTIONS_TABLE = TableConfig(
     source_table="customer_subscriptions",
-    primary_key_columns=("customer_unique_id",),
+    primary_key_columns=("subscription_id",),
     cursor_timestamp_column="updated_at",
-    cursor_key_columns=("customer_unique_id",),
+    cursor_key_columns=("subscription_id",),
     source_columns=(
+        _text("subscription_id", nullable=False),
         _text("customer_unique_id", nullable=False),
         _text("subscription_status", nullable=False),
-        _timestamp("trial_ends_at"),
-        _timestamp("benefit_ends_at"),
-        _timestamp("next_billing_at"),
+        _boolean("auto_renew_enabled", nullable=False),
+        _timestamp("subscription_started_at", nullable=False),
+        _timestamp("current_period_started_at"),
+        _timestamp("current_period_ends_at"),
+        _timestamp("billing_due_at"),
+        _timestamp("next_payment_attempt_at"),
         _timestamp("payment_failed_at"),
         _timestamp("cancel_requested_at"),
+        _timestamp("ended_at"),
+        _timestamp("status_changed_at", nullable=False),
         _timestamp("created_at", nullable=False),
         _timestamp("updated_at", nullable=False),
     ),
     status_domains={
         "subscription_status": frozenset(
             {
-                "NON_MEMBER",
-                "TRIAL",
                 "ACTIVE",
                 "PAYMENT_FAILED",
                 "CANCEL_REQUESTED",
@@ -180,21 +189,33 @@ CUSTOMER_MEMBERSHIP_TIERS_TABLE = TableConfig(
 
 SUBSCRIPTION_PAYMENTS_TABLE = TableConfig(
     source_table="subscription_payments",
-    primary_key_columns=("customer_unique_id", "billing_sequence"),
+    primary_key_columns=("payment_id",),
     cursor_timestamp_column="updated_at",
-    cursor_key_columns=("customer_unique_id", "billing_sequence"),
+    cursor_key_columns=("payment_id",),
     source_columns=(
-        _text("customer_unique_id", nullable=False),
-        _integer("billing_sequence", nullable=False),
+        _text("payment_id", nullable=False),
+        _text("subscription_id", nullable=False),
+        _integer("billing_cycle_sequence", nullable=False),
+        _integer("attempt_sequence", nullable=False),
         _text("payment_status", nullable=False),
+        _timestamp("payment_at", nullable=False),
         _decimal("payment_value", nullable=False),
-        _timestamp("billing_period_start", nullable=False),
-        _timestamp("billing_period_end", nullable=False),
+        _text("currency_code", nullable=False),
+        _timestamp("billing_period_start_at", nullable=False),
+        _timestamp("billing_period_end_at", nullable=False),
+        _text("payment_method_type"),
+        _text("payment_provider"),
+        _text("provider_payment_id"),
+        _text("failure_code"),
         _timestamp("created_at", nullable=False),
         _timestamp("updated_at", nullable=False),
     ),
     status_domains={"payment_status": frozenset({"completed", "failed"})},
-    numeric_minimums={"billing_sequence": 1, "payment_value": Decimal(0)},
+    numeric_minimums={
+        "billing_cycle_sequence": 1,
+        "attempt_sequence": 1,
+        "payment_value": Decimal(0),
+    },
     append_only=True,
 )
 

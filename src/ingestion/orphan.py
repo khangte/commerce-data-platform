@@ -10,7 +10,7 @@ from psycopg.types.json import Jsonb
 
 from src.common.database import PostgresSettings
 from src.ingestion.bronze import table_logical_hash_bytes
-from src.ingestion.manifest import parse_bronze_manifest_payload
+from src.ingestion.manifest import _utc_datetime_from_manifest, parse_bronze_manifest_payload
 from src.ingestion.schema import assert_supported_schema_version
 from src.ingestion.storage import (
     BRONZE_PREFIX,
@@ -208,7 +208,7 @@ def _load_manifest(storage: SeaweedFSSettings, candidate: OrphanCandidate) -> di
 
 def _quarantine_object_exists(storage: SeaweedFSSettings, manifest: dict[str, object]) -> bool:
     """Bronze보다 먼저 게시되는 같은 Batch의 Quarantine Parquet 존재 여부를 확인한다."""
-    logical_date = _utc_datetime(manifest["logical_date"])
+    logical_date = _utc_datetime_from_manifest(manifest["logical_date"])
     object_key = (
         f"{QUARANTINE_PREFIX}/{manifest['source_table']}/"
         f"ingestion_date={logical_date.date().isoformat()}/batch_id={manifest['batch_id']}/records.parquet"

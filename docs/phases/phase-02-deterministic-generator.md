@@ -106,15 +106,15 @@ Payment: pending → completed → refunded
 - [x] 동일 성공 입력의 결과 재사용과 Warehouse의 원천 데이터 동시성 잠금 중 Source 변경 0 검증
 
 CLI가 직접 실행하는 Profile은 `default`, `late-arrival`, `membership-change`,
-`subscription-trial`, `subscription-active`, `subscription-payment-failed`,
-`subscription-cancel-requested`, `subscription-churned`, `subscription-rejoined`다.
+`subscription-active`, `subscription-payment-failed`, `subscription-cancel-requested`,
+`subscription-churned`다.
 `membership-change`는 `BRONZE` 또는 `SILVER` 사람 한 명의 `customer_membership_tiers` 행만
 갱신한다. 구독 Profile은 상태별로 허용된 현재 상태의 사람 한 명을 결정적으로 골라
-`customer_subscriptions` 행을 갱신한다. `subscription-active`의 정기 결제와 `subscription-trial`
-종료 시점의 결제는 `subscription_payments`에 행을 추가한다. `PAYMENT_FAILED`는 7일 유예
-종료 시각을 만들고, `subscription-churned`는 해당 시각 이후에만 실행할 수 있다.
-`CHURNED → ACTIVE`는 재가입 전이로 보존한다. 시각 기반 만료 스캔은 매 실행마다 돌며
-`benefit_ends_at` 경과 행을 `CHURNED`로 전이한다. `delayed-payment`는 Phase 3 검증에서도
+`customer_subscriptions` 계약 행을 갱신한다. `subscription-active`는 유효 계약이 없는 고객의
+새 계약을 만들고, 자동갱신과 실패 재시도는 `subscription_payments`에 청구 회차·시도 순번별
+행을 추가한다. `PAYMENT_FAILED`는 재시도 예정 시각을 만들고, `subscription-churned`는 현재
+혜택 기간 종료 뒤에만 실행할 수 있다. 시각 기반 만료 스캔은 매 실행마다 돌며
+`current_period_ends_at` 경과 행을 `CHURNED`로 전이한다. `delayed-payment`는 Phase 3 검증에서도
 조합할 수 있는 재사용 가능한 Source Scenario Fixture로 제공한다.
 
 ## 범위 밖
@@ -180,8 +180,8 @@ AC-20과 AC-21의 전체 E2E 판정은 Phase 3의 Ingestion과 결합해 완료�
 | `src/generator/ids.py`                                        | 생성      | UUIDv5 Business ID와 안정적인 Logical Hash 유틸리티를 추가했다.                                                       |
 | `src/generator/metadata.py`                                   | 생성      | `generator_runs` Schema 준비와 RUNNING/완료 실행 이력 기록 기능을 추가했다.                                           |
 | `src/generator/customers.py`                                  | 수정      | 불변 Customer 계정, 사람 단위 구독 Record와 등급 Record를 각각 `customer_subscriptions`·`customer_membership_tiers`로 분리하고, 구독 상태 전이·등급의 단조 변경 저장과 시각 기반 만료 스캔을 추가했다. |
-| `src/generator/subscription_payments.py`                      | 생성      | 구독 자동결제 1건을 `subscription_payments`에 결정적으로 기록하고 `next_billing_at`을 1개월 뒤로 민다.                 |
-| `src/generator/orders.py`                                     | 수정      | Order·Item·Payment Bundle 저장 시 새 사람의 `customer_subscriptions` `NON_MEMBER` 행과 `customer_membership_tiers` `BRONZE` 행을 함께 보장하고, 신규 `pending` 주문 결제의 시작 시각을 기록한다.                               |
+| `src/generator/subscription_payments.py`                      | 수정      | 구독 계약별 청구 회차·재시도 순번의 결제 시도와 실제 결제 시각을 결정적으로 기록한다.                 |
+| `src/generator/orders.py`                                     | 수정      | Order·Item·Payment Bundle 저장은 구독 계약을 자동 생성하지 않고, 거래 실적 등급 행과 신규 `pending` 주문 결제의 시작 시각만 함께 보장한다.                               |
 | `src/generator/transitions.py`                                | 생성      | Order·Payment 허용 상태 전이, 기대 Version, 원천 변경 시각 검증과 완료·실패·환불 결제의 비즈니스 사건 시각 기록을 추가했다.                                           |
 | `src/generator/scenarios.py`                                  | 생성      | Late Order·Delayed Payment·Late Update·Membership Change Scenario를 추가하고, Delayed Payment의 과거 완료 시각을 보존한다.                                         |
 | `dbt/models/staging/stg_payments.sql`, `dbt/tests/stg_source_mapping.sql` | 수정 | 결제 생명주기 사건 시각을 Bronze에서 Staging으로 보존하고 원천 매핑을 검증한다. |

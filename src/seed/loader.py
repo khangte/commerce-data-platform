@@ -52,13 +52,19 @@ TARGET_COLUMNS = {
         "created_at",
     ),
     "customer_subscriptions": (
+        "subscription_id",
         "customer_unique_id",
         "subscription_status",
-        "trial_ends_at",
-        "benefit_ends_at",
-        "next_billing_at",
+        "auto_renew_enabled",
+        "subscription_started_at",
+        "current_period_started_at",
+        "current_period_ends_at",
+        "billing_due_at",
+        "next_payment_attempt_at",
         "payment_failed_at",
         "cancel_requested_at",
+        "ended_at",
+        "status_changed_at",
         "created_at",
         "updated_at",
     ),
@@ -107,7 +113,7 @@ TARGET_COLUMNS = {
 }
 PRIMARY_KEYS = {
     **{table_name: contract.primary_key for table_name, contract in CONTRACT_BY_TABLE.items()},
-    "customer_subscriptions": ("customer_unique_id",),
+    "customer_subscriptions": ("subscription_id",),
     "customer_membership_tiers": ("customer_unique_id",),
 }
 
@@ -296,18 +302,6 @@ def build_seed_dataset(input_dir: Path, seeded_at: datetime) -> SeedDataset:
         .groupby("customer_unique_id", as_index=False)["created_at"]
         .min()
     )
-    customer_subscriptions = customer_axis_base.copy()
-    customer_subscriptions["subscription_status"] = "NON_MEMBER"
-    for column in (
-        "trial_ends_at",
-        "benefit_ends_at",
-        "next_billing_at",
-        "payment_failed_at",
-        "cancel_requested_at",
-    ):
-        customer_subscriptions[column] = None
-    customer_subscriptions["updated_at"] = seeded_at
-
     customer_membership_tiers = customer_axis_base.copy()
     customer_membership_tiers["membership_tier"] = customer_membership_tiers[
         "customer_unique_id"
@@ -363,9 +357,7 @@ def build_seed_dataset(input_dir: Path, seeded_at: datetime) -> SeedDataset:
 
     rows = {
         "customers": _table_rows(customers, TARGET_COLUMNS["customers"]),
-        "customer_subscriptions": _table_rows(
-            customer_subscriptions, TARGET_COLUMNS["customer_subscriptions"]
-        ),
+        "customer_subscriptions": [],
         "customer_membership_tiers": _table_rows(
             customer_membership_tiers, TARGET_COLUMNS["customer_membership_tiers"]
         ),
@@ -424,6 +416,7 @@ def _table_content_hash(connection: psycopg.Connection, table_name: str) -> str:
 
 def _ensure_schema(settings: PostgresSettings) -> None:
     with settings.source_connection() as source_connection:
+        apply_sql_file(source_connection, "sql/source/003_restructure_subscription_tables.sql")
         apply_sql_file(source_connection, "sql/source/001_create_source_tables.sql")
         apply_sql_file(source_connection, "sql/source/002_reorder_order_payments_columns.sql")
     with settings.pipeline_connection() as pipeline_connection:

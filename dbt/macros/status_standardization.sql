@@ -33,8 +33,6 @@
 
 {% macro standardized_subscription_status(column_name) -%}
     case {{ column_name }}
-        when 'NON_MEMBER' then 'NON_MEMBER'
-        when 'TRIAL' then 'TRIAL'
         when 'ACTIVE' then 'ACTIVE'
         when 'PAYMENT_FAILED' then 'PAYMENT_FAILED'
         when 'CANCEL_REQUESTED' then 'CANCEL_REQUESTED'

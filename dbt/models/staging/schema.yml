@@ -38,7 +38,7 @@ models:
                 values: [PENDING, COMPLETED, FAILED, REFUNDED]
 
   - name: stg_customer_subscription_observations
-    description: 사람 단위 구독 상태 이력 SCD2 입력용으로 중복 제거한 관측을 노출한다.
+    description: 구독 계약 단위 상태 이력 SCD2 입력용으로 중복 제거한 관측을 노출한다.
     columns:
       - name: customer_id
         data_tests: [not_null]
@@ -47,7 +47,7 @@ models:
           - not_null
           - accepted_values:
               arguments:
-                values: [NON_MEMBER, TRIAL, ACTIVE, PAYMENT_FAILED, CANCEL_REQUESTED, CHURNED]
+                values: [ACTIVE, PAYMENT_FAILED, CANCEL_REQUESTED, CHURNED]
       - name: attribute_hash
         data_tests: [not_null]
       - name: created_at
@@ -74,11 +74,13 @@ models:
         data_tests: [not_null]
 
   - name: stg_subscription_payments
-    description: 최신 구독 결제 Version을 결제 Grain으로 노출한다. 주문 결제 stg_payments와 별개다.
+    description: 최신 구독 결제 시도를 결제 Grain으로 노출한다. 주문 결제 stg_payments와 별개다.
     columns:
       - name: customer_id
         data_tests: [not_null]
-      - name: billing_sequence
+      - name: payment_id
+        data_tests: [not_null]
+      - name: billing_cycle_sequence
         data_tests: [not_null]
       - name: payment_status
         data_tests:

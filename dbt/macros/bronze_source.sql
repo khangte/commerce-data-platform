@@ -17,7 +17,7 @@
         {%- set catalog_rows = run_query(catalog_query) -%}
         {%- set object_keys = [] -%}
         {%- for row in catalog_rows.rows -%}
-            {%- if row[1] != 2 -%}
+            {%- if row[1] != 3 -%}
                 {{ exceptions.raise_compiler_error(
                     'SOURCE_CONTRACT_ERROR: unsupported schema_version=' ~ row[1]
                     ~ ' for source_table=' ~ source_table
@@ -51,10 +51,13 @@
             ('created_at', 'timestamptz')
         ],
         'customer_subscriptions': [
-            ('customer_unique_id', 'varchar'), ('subscription_status', 'varchar'),
-            ('trial_ends_at', 'timestamptz'), ('benefit_ends_at', 'timestamptz'),
-            ('next_billing_at', 'timestamptz'), ('payment_failed_at', 'timestamptz'),
-            ('cancel_requested_at', 'timestamptz'), ('created_at', 'timestamptz'),
+            ('subscription_id', 'varchar'), ('customer_unique_id', 'varchar'),
+            ('subscription_status', 'varchar'), ('auto_renew_enabled', 'boolean'),
+            ('subscription_started_at', 'timestamptz'), ('current_period_started_at', 'timestamptz'),
+            ('current_period_ends_at', 'timestamptz'), ('billing_due_at', 'timestamptz'),
+            ('next_payment_attempt_at', 'timestamptz'), ('payment_failed_at', 'timestamptz'),
+            ('cancel_requested_at', 'timestamptz'), ('ended_at', 'timestamptz'),
+            ('status_changed_at', 'timestamptz'), ('created_at', 'timestamptz'),
             ('updated_at', 'timestamptz')
         ],
         'customer_membership_tiers': [
@@ -62,9 +65,13 @@
             ('created_at', 'timestamptz'), ('updated_at', 'timestamptz')
         ],
         'subscription_payments': [
-            ('customer_unique_id', 'varchar'), ('billing_sequence', 'integer'),
-            ('payment_status', 'varchar'), ('payment_value', 'decimal(14, 2)'),
-            ('billing_period_start', 'timestamptz'), ('billing_period_end', 'timestamptz'),
+            ('payment_id', 'varchar'), ('subscription_id', 'varchar'),
+            ('billing_cycle_sequence', 'integer'), ('attempt_sequence', 'integer'),
+            ('payment_status', 'varchar'), ('payment_at', 'timestamptz'),
+            ('payment_value', 'decimal(14, 2)'), ('currency_code', 'varchar'),
+            ('billing_period_start_at', 'timestamptz'), ('billing_period_end_at', 'timestamptz'),
+            ('payment_method_type', 'varchar'), ('payment_provider', 'varchar'),
+            ('provider_payment_id', 'varchar'), ('failure_code', 'varchar'),
             ('created_at', 'timestamptz'), ('updated_at', 'timestamptz')
         ],
         'products': [
@@ -113,7 +120,7 @@
         {%- set invalid_versions_query -%}
             select distinct schema_version
             from control.bronze_files
-            where schema_version != 2
+            where schema_version != 3
             order by schema_version
         {%- endset -%}
         {%- set invalid_versions = run_query(invalid_versions_query) -%}

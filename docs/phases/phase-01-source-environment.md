@@ -16,7 +16,7 @@ Olist Raw 데이터를 원본 Naming과 값을 최대한 유지하는 PostgreSQL
 - Source 확장은 `created_at`, `updated_at`과 Synthetic 시나리오 필드로 제한한다.
 - 사람 단위 구독 생명주기는 `customer_subscriptions`, 거래 실적 등급은 `customer_membership_tiers`
   가 보관한다. 두 축은 변경 원인이 독립적이라 별도 Table로 나눈다. Olist Seed의 구독
-  기준선은 `NON_MEMBER`다.
+  구독 계약이 없는 고객은 구독 행을 만들지 않는다.
 - 구독 자동결제 이력은 `subscription_payments`가 사람당 N행으로 보관한다. Seed 대상이
   아니며 Generator가 채운다.
 - Timestamp는 UTC `TIMESTAMPTZ`, 금액은 PRD에 정의된 고정 Precision을 사용한다.
@@ -167,10 +167,13 @@ Source Schema Allowlist
 | `sql/bootstrap/01-create-databases-and-roles.sh` | 생성      | Source·Metadata·Airflow Database와 역할을 멱등적으로 생성하도록 추가했다.  |
 | `sql/source/001_create_source_tables.sql`        | 수정      | 불변 계정 `customers`, 사람 단위 `customer_subscriptions`·`customer_membership_tiers`, 구독 결제 `subscription_payments`를 포함한 9개 테이블과 `order_items.shipping_limit_date`, 주문 결제 생성·완료·실패·환불 사건 시각을 정의하고, 구독 상태·거래 실적 등급·상태별 시각 제약과 Cursor Index를 반영했다. |
 | `sql/source/002_reorder_order_payments_columns.sql` | 생성    | 기존 `order_payments`를 행 수 검증 후 재구성해 결제 사건 시각 뒤에 `created_at`, `updated_at`을 배치하는 멱등 마이그레이션을 추가했다. |
+| `sql/source/003_restructure_subscription_tables.sql` | 생성 | 기존 사람 단위 구독 상태·결제 원천을 계약 식별자, 자동갱신 일정, 청구 회차와 재시도 순번, 실제 결제 시각을 갖는 구조로 옮기는 멱등 마이그레이션을 추가했다. |
 | `sql/metadata/001_create_seed_metadata.sql`      | 생성      | Seed 실행 이력과 Count/Hash/상태를 기록하는 `seed_runs` 테이블을 추가했다. |
 | `src/common/database.py`                         | 생성      | `.env` 기반 PostgreSQL 연결과 SQL 적용 공통 기능을 추가했다.               |
 | `src/seed/contracts.py`                          | 생성      | CSV 파일·헤더·기본 키 계약 검증과 Raw Checksum 계산을 추가했다.            |
 | `src/seed/loader.py`                             | 수정      | CSV 변환, 검증, 임시 Staging, Transactional UPSERT에 `customer_subscriptions` 구독 기준선, `customer_membership_tiers` 거래 실적 등급, 필수 `shipping_limit_date`와 원본에 근거가 없는 결제 생명주기 시각 4개의 `NULL` Seed 및 결제 컬럼 순서 마이그레이션 실행을 반영했다. |
+| `src/generator/customers.py`, `src/generator/subscription_payments.py` | 수정 | 구독 계약 시작·자동갱신·해지·종료와 청구 회차별 결제 재시도 Record를 새 원천 계약으로 생성·검증하도록 바꿨다. |
+| `src/ingestion/tables.py`, `dbt/models/staging/*` | 수정 | 새 계약 식별자와 자동갱신·결제 컬럼의 증분 Cursor, Bronze Schema v3, Staging 투영을 반영했다. |
 | `src/seed/__main__.py`                           | 생성      | `python -m src.seed` CLI와 `seeded_at` 입력 처리를 추가했다.               |
 | `src/__init__.py`, `src/seed/__init__.py`        | 생성·수정 | Seed 모듈을 Python Package로 구성했다.                                     |
 | `tests/seed/test_contracts.py`                   | 수정      | CSV 계약과 Timestamp/Checksum, 거래 실적 등급 경계·구독 기준선 Column 단위 테스트를 추가했다. |
@@ -185,7 +188,7 @@ Source Schema Allowlist
 Membership Grain 분리 후 `customers`는 계정 불변값과 `created_at`만 보관한다. 사람 단위
 구독 생명주기는 `customer_subscriptions`, 거래 실적 등급은 `customer_membership_tiers`가 각각
 `created_at`·`updated_at`과 함께 보관한다. Seed는 모든 사람을 `customer_subscriptions`에
-`NON_MEMBER`로 만들고, 완료 주문 수를 `customer_unique_id`별로 집계해
+구독 계약 행을 만들지 않고, 완료 주문 수를 `customer_unique_id`별로 집계해
 `customer_membership_tiers`에 `BRONZE`·`SILVER`·`GOLD` 등급을 한 행씩 기록한다.
 
 ### 구독 상태·등급 전환 진행

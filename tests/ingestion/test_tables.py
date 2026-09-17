@@ -31,9 +31,9 @@ def test_table_configs_cover_all_source_tables_with_complete_composite_cursors()
     )
     assert {name: config.cursor_columns for name, config in TABLE_CONFIGS.items()} == {
         "customers": ("created_at", "customer_id"),
-        "customer_subscriptions": ("updated_at", "customer_unique_id"),
+        "customer_subscriptions": ("updated_at", "subscription_id"),
         "customer_membership_tiers": ("updated_at", "customer_unique_id"),
-        "subscription_payments": ("updated_at", "customer_unique_id", "billing_sequence"),
+        "subscription_payments": ("updated_at", "payment_id"),
         "products": ("updated_at", "product_id"),
         "sellers": ("updated_at", "seller_id"),
         "orders": ("updated_at", "order_id"),

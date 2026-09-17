@@ -193,6 +193,7 @@ def _reset_source(postgres: PostgresSettings, lease: SourceMutationLease) -> Non
             connection.execute(
                 f"DROP TABLE IF EXISTS {', '.join((*SOURCE_TABLES, *LEGACY_SOURCE_TABLES))} CASCADE"
             )
+        apply_sql_file(connection, "sql/source/003_restructure_subscription_tables.sql")
         apply_sql_file(connection, "sql/source/001_create_source_tables.sql")
         apply_sql_file(connection, "sql/source/002_reorder_order_payments_columns.sql")
 

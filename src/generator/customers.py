@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
+from uuid import UUID
 
 import psycopg
 
@@ -13,7 +14,7 @@ from src.generator.ids import deterministic_uuid, logical_hash
 
 MEMBERSHIP_TIERS = frozenset({"BRONZE", "SILVER", "GOLD"})
 SUBSCRIPTION_STATUSES = frozenset(
-    {"NON_MEMBER", "TRIAL", "ACTIVE", "PAYMENT_FAILED", "CANCEL_REQUESTED", "CHURNED"}
+    {"ACTIVE", "PAYMENT_FAILED", "CANCEL_REQUESTED", "CHURNED"}
 )
 SUBSCRIPTION_PERIOD = timedelta(days=30)
 PAYMENT_FAILURE_GRACE_PERIOD = timedelta(days=7)
@@ -60,49 +61,70 @@ class CustomerRecord:
 
 @dataclass(frozen=True)
 class SubscriptionRecord:
-    """한 사람의 가변 구독 상태 Source Record 계획이다. customer_subscriptions 축이다."""
+    """구독 계약 1건의 현재 운영 상태 Source Record 계획이다."""
 
+    subscription_id: UUID
     customer_unique_id: str
     subscription_status: str
-    trial_ends_at: datetime | None
-    benefit_ends_at: datetime | None
-    next_billing_at: datetime | None
+    auto_renew_enabled: bool
+    subscription_started_at: datetime
+    current_period_started_at: datetime | None
+    current_period_ends_at: datetime | None
+    billing_due_at: datetime | None
+    next_payment_attempt_at: datetime | None
     payment_failed_at: datetime | None
     cancel_requested_at: datetime | None
+    ended_at: datetime | None
+    status_changed_at: datetime
     created_at: datetime
     updated_at: datetime
 
     def __post_init__(self) -> None:
-        """사람 키·구독 상태·시각의 Source 계약을 확인한다."""
+        """계약 키·상태·자동갱신 시각의 Source 계약을 확인한다."""
         if not self.customer_unique_id or len(self.customer_unique_id) > 64:
             raise ValueError("customer_unique_id must contain 1 to 64 characters")
         if self.subscription_status not in SUBSCRIPTION_STATUSES:
             raise ValueError(f"Unsupported subscription_status: {self.subscription_status}")
-        _assert_utc_timestamp(self.created_at, "created_at")
-        _assert_utc_timestamp(self.updated_at, "updated_at")
+        for name, value in (
+            ("subscription_started_at", self.subscription_started_at),
+            ("status_changed_at", self.status_changed_at),
+            ("created_at", self.created_at),
+            ("updated_at", self.updated_at),
+        ):
+            _assert_utc_timestamp(value, name)
         for name, value in _subscription_timestamps(self):
             if value is not None:
                 _assert_utc_timestamp(value, name)
         if self.updated_at < self.created_at:
             raise ValueError("updated_at must be greater than or equal to created_at")
-        if self.subscription_status == "TRIAL" and self.trial_ends_at is None:
-            raise ValueError("TRIAL requires trial_ends_at")
+        if self.current_period_started_at and self.current_period_ends_at and (
+            self.current_period_ends_at <= self.current_period_started_at
+        ):
+            raise ValueError("current period must end after it starts")
+        if self.subscription_status == "ACTIVE" and (
+            self.current_period_started_at is None
+            or self.current_period_ends_at is None
+            or self.billing_due_at is None
+            or self.next_payment_attempt_at is None
+        ):
+            raise ValueError("ACTIVE requires a current period and next payment schedule")
         if self.subscription_status == "PAYMENT_FAILED" and (
-            self.payment_failed_at is None or self.benefit_ends_at is None
+            self.payment_failed_at is None
         ):
-            raise ValueError("PAYMENT_FAILED requires payment_failed_at and benefit_ends_at")
+            raise ValueError("PAYMENT_FAILED requires payment_failed_at")
         if self.subscription_status == "CANCEL_REQUESTED" and (
-            self.cancel_requested_at is None
-            or self.benefit_ends_at is None
-            or self.benefit_ends_at <= self.updated_at
+            self.auto_renew_enabled
+            or self.cancel_requested_at is None
+            or self.next_payment_attempt_at is not None
         ):
-            raise ValueError(
-                "CANCEL_REQUESTED requires cancel_requested_at and a future benefit_ends_at"
-            )
+            raise ValueError("CANCEL_REQUESTED disables renewal and has no next payment attempt")
         if self.subscription_status == "CHURNED" and (
-            self.benefit_ends_at is None or self.benefit_ends_at > self.updated_at
+            self.auto_renew_enabled
+            or self.ended_at is None
+            or self.billing_due_at is not None
+            or self.next_payment_attempt_at is not None
         ):
-            raise ValueError("CHURNED requires benefit_ends_at at or before updated_at")
+            raise ValueError("CHURNED must be ended with no renewal schedule")
 
 
 @dataclass(frozen=True)
@@ -191,17 +213,32 @@ def address_change_customer_record(
 
 
 def new_subscription_record(customer: CustomerRecord) -> SubscriptionRecord:
-    """새 계정의 사람 키로 최초 비구독 Record를 만든다."""
+    """새 계정의 사람 키로 최초 활성 구독 계약 Record를 만든다."""
+    return new_subscription_record_for_customer(customer.customer_unique_id, customer.created_at)
+
+
+def new_subscription_record_for_customer(
+    customer_unique_id: str, subscription_started_at: datetime
+) -> SubscriptionRecord:
+    """사람 키와 시작 시각으로 최초 활성 구독 계약 Record를 만든다."""
     return SubscriptionRecord(
-        customer_unique_id=customer.customer_unique_id,
-        subscription_status="NON_MEMBER",
-        trial_ends_at=None,
-        benefit_ends_at=None,
-        next_billing_at=None,
+        subscription_id=deterministic_uuid(
+            "subscription-contract", customer_unique_id, subscription_started_at
+        ),
+        customer_unique_id=customer_unique_id,
+        subscription_status="ACTIVE",
+        auto_renew_enabled=True,
+        subscription_started_at=subscription_started_at,
+        current_period_started_at=subscription_started_at,
+        current_period_ends_at=subscription_started_at + SUBSCRIPTION_PERIOD,
+        billing_due_at=subscription_started_at + SUBSCRIPTION_PERIOD,
+        next_payment_attempt_at=subscription_started_at + SUBSCRIPTION_PERIOD,
         payment_failed_at=None,
         cancel_requested_at=None,
-        created_at=customer.created_at,
-        updated_at=customer.created_at,
+        ended_at=None,
+        status_changed_at=subscription_started_at,
+        created_at=subscription_started_at,
+        updated_at=subscription_started_at,
     )
 
 
@@ -283,14 +320,16 @@ def fetch_customer_records(connection: psycopg.Connection) -> tuple[CustomerReco
 def fetch_subscription_record(
     connection: psycopg.Connection, customer_unique_id: str
 ) -> SubscriptionRecord | None:
-    """변경할 사람의 현재 구독 상태 Record를 읽는다."""
+    """한 고객의 유효 구독 계약 상태 Record를 읽는다."""
     row = connection.execute(
         """
-        SELECT customer_unique_id, subscription_status,
-               trial_ends_at, benefit_ends_at, next_billing_at,
-               payment_failed_at, cancel_requested_at, created_at, updated_at
+        SELECT subscription_id, customer_unique_id, subscription_status, auto_renew_enabled,
+               subscription_started_at, current_period_started_at, current_period_ends_at,
+               billing_due_at, next_payment_attempt_at, payment_failed_at, cancel_requested_at,
+               ended_at, status_changed_at, created_at, updated_at
         FROM customer_subscriptions
         WHERE customer_unique_id = %s
+          AND subscription_status <> 'CHURNED'
         """,
         (customer_unique_id,),
     ).fetchone()
@@ -341,20 +380,21 @@ def persist_customer_records(
 def ensure_subscription_records(
     connection: psycopg.Connection, records: Iterable[SubscriptionRecord]
 ) -> AxisMutationResult:
-    """새 사람의 최초 구독 Record만 저장하고 기존 상태는 보존한다."""
+    """새 구독 계약 Record만 저장하고 같은 계약은 보존한다."""
     inserted = 0
     skipped = 0
     for record in records:
-        existing = _find_subscription_record(connection, record.customer_unique_id)
+        existing = _find_subscription_record(connection, record.subscription_id)
         if existing is None:
             connection.execute(
                 """
                 INSERT INTO customer_subscriptions (
-                    customer_unique_id, subscription_status,
-                    trial_ends_at, benefit_ends_at, next_billing_at,
-                    payment_failed_at, cancel_requested_at, created_at, updated_at
+                    subscription_id, customer_unique_id, subscription_status, auto_renew_enabled,
+                    subscription_started_at, current_period_started_at, current_period_ends_at,
+                    billing_due_at, next_payment_attempt_at, payment_failed_at, cancel_requested_at,
+                    ended_at, status_changed_at, created_at, updated_at
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 _subscription_parameters(record),
             )
@@ -391,21 +431,22 @@ def ensure_membership_tier_records(
 def persist_subscription_records(
     connection: psycopg.Connection, records: Iterable[SubscriptionRecord]
 ) -> AxisMutationResult:
-    """사람 단위 구독 상태 Record를 멱등 저장하고 역행 변경을 거부한다."""
+    """구독 계약 상태 Record를 멱등 저장하고 역행 변경을 거부한다."""
     inserted = 0
     updated = 0
     skipped = 0
     for record in records:
-        existing = _find_subscription_record(connection, record.customer_unique_id)
+        existing = _find_subscription_record(connection, record.subscription_id)
         if existing is None:
             connection.execute(
                 """
                 INSERT INTO customer_subscriptions (
-                    customer_unique_id, subscription_status,
-                    trial_ends_at, benefit_ends_at, next_billing_at,
-                    payment_failed_at, cancel_requested_at, created_at, updated_at
+                    subscription_id, customer_unique_id, subscription_status, auto_renew_enabled,
+                    subscription_started_at, current_period_started_at, current_period_ends_at,
+                    billing_due_at, next_payment_attempt_at, payment_failed_at, cancel_requested_at,
+                    ended_at, status_changed_at, created_at, updated_at
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 _subscription_parameters(record),
             )
@@ -422,14 +463,12 @@ def persist_subscription_records(
             connection.execute(
                 """
                 UPDATE customer_subscriptions
-                SET subscription_status = %s,
-                    trial_ends_at = %s,
-                    benefit_ends_at = %s,
-                    next_billing_at = %s,
-                    payment_failed_at = %s,
-                    cancel_requested_at = %s,
-                    updated_at = %s
-                WHERE customer_unique_id = %s
+                SET subscription_status = %s, auto_renew_enabled = %s,
+                    current_period_started_at = %s, current_period_ends_at = %s,
+                    billing_due_at = %s, next_payment_attempt_at = %s,
+                    payment_failed_at = %s, cancel_requested_at = %s, ended_at = %s,
+                    status_changed_at = %s, updated_at = %s
+                WHERE subscription_id = %s
                 """,
                 _subscription_update_parameters(record),
             )
@@ -514,17 +553,18 @@ def _find_customer_record(
 
 
 def _find_subscription_record(
-    connection: psycopg.Connection, customer_unique_id: str
+    connection: psycopg.Connection, subscription_id: UUID
 ) -> SubscriptionRecord | None:
-    """저장 전 동일 사람 구독 상태를 Lock으로 보호해 읽는다."""
+    """저장 전 동일 구독 계약 상태를 Lock으로 보호해 읽는다."""
     row = connection.execute(
         """
-        SELECT customer_unique_id, subscription_status,
-               trial_ends_at, benefit_ends_at, next_billing_at,
-               payment_failed_at, cancel_requested_at, created_at, updated_at
-        FROM customer_subscriptions WHERE customer_unique_id = %s FOR UPDATE
+        SELECT subscription_id, customer_unique_id, subscription_status, auto_renew_enabled,
+               subscription_started_at, current_period_started_at, current_period_ends_at,
+               billing_due_at, next_payment_attempt_at, payment_failed_at, cancel_requested_at,
+               ended_at, status_changed_at, created_at, updated_at
+        FROM customer_subscriptions WHERE subscription_id = %s FOR UPDATE
         """,
-        (customer_unique_id,),
+        (subscription_id,),
     ).fetchone()
     return None if row is None else SubscriptionRecord(*row)
 
@@ -555,31 +595,41 @@ def _customer_parameters(record: CustomerRecord) -> tuple[object, ...]:
 
 
 def _subscription_parameters(record: SubscriptionRecord) -> tuple[object, ...]:
-    """INSERT에 사용할 사람 구독 상태 Source Column 순서를 반환한다."""
+    """INSERT에 사용할 구독 계약 상태 Source Column 순서를 반환한다."""
     return (
+        record.subscription_id,
         record.customer_unique_id,
         record.subscription_status,
-        record.trial_ends_at,
-        record.benefit_ends_at,
-        record.next_billing_at,
+        record.auto_renew_enabled,
+        record.subscription_started_at,
+        record.current_period_started_at,
+        record.current_period_ends_at,
+        record.billing_due_at,
+        record.next_payment_attempt_at,
         record.payment_failed_at,
         record.cancel_requested_at,
+        record.ended_at,
+        record.status_changed_at,
         record.created_at,
         record.updated_at,
     )
 
 
 def _subscription_update_parameters(record: SubscriptionRecord) -> tuple[object, ...]:
-    """UPDATE에 사용할 사람 구독 상태 Source Column 순서를 반환한다."""
+    """UPDATE에 사용할 구독 계약 상태 Source Column 순서를 반환한다."""
     return (
         record.subscription_status,
-        record.trial_ends_at,
-        record.benefit_ends_at,
-        record.next_billing_at,
+        record.auto_renew_enabled,
+        record.current_period_started_at,
+        record.current_period_ends_at,
+        record.billing_due_at,
+        record.next_payment_attempt_at,
         record.payment_failed_at,
         record.cancel_requested_at,
+        record.ended_at,
+        record.status_changed_at,
         record.updated_at,
-        record.customer_unique_id,
+        record.subscription_id,
     )
 
 
@@ -598,23 +648,23 @@ def _subscription_timestamps(
 ) -> tuple[tuple[str, datetime | None], ...]:
     """구독 상태 Record의 선택 시각 Column 이름과 값을 반환한다."""
     return (
-        ("trial_ends_at", record.trial_ends_at),
-        ("benefit_ends_at", record.benefit_ends_at),
-        ("next_billing_at", record.next_billing_at),
+        ("current_period_started_at", record.current_period_started_at),
+        ("current_period_ends_at", record.current_period_ends_at),
+        ("billing_due_at", record.billing_due_at),
+        ("next_payment_attempt_at", record.next_payment_attempt_at),
         ("payment_failed_at", record.payment_failed_at),
         ("cancel_requested_at", record.cancel_requested_at),
+        ("ended_at", record.ended_at),
     )
 
 
 def _allowed_subscription_targets(status: str) -> frozenset[str]:
     """현재 구독 상태에서 허용되는 다음 상태 집합을 반환한다."""
     return {
-        "NON_MEMBER": frozenset({"TRIAL", "ACTIVE"}),
-        "TRIAL": frozenset({"ACTIVE", "PAYMENT_FAILED", "CANCEL_REQUESTED"}),
         "ACTIVE": frozenset({"ACTIVE", "PAYMENT_FAILED", "CANCEL_REQUESTED"}),
         "PAYMENT_FAILED": frozenset({"ACTIVE", "CANCEL_REQUESTED", "CHURNED"}),
         "CANCEL_REQUESTED": frozenset({"ACTIVE", "CHURNED"}),
-        "CHURNED": frozenset({"TRIAL", "ACTIVE"}),
+        "CHURNED": frozenset(),
     }[status]
 
 
@@ -622,59 +672,54 @@ def _transition_subscription_record(
     record: SubscriptionRecord, next_status: str, mutation_time: datetime
 ) -> SubscriptionRecord:
     """상태별 시각 정책을 적용해 다음 구독 상태 Record를 만든다."""
-    if next_status == "TRIAL":
-        return replace(
-            record,
-            subscription_status="TRIAL",
-            trial_ends_at=mutation_time + SUBSCRIPTION_PERIOD,
-            benefit_ends_at=mutation_time + SUBSCRIPTION_PERIOD,
-            next_billing_at=mutation_time + SUBSCRIPTION_PERIOD,
-            payment_failed_at=None,
-            cancel_requested_at=None,
-            updated_at=mutation_time,
-        )
     if next_status == "ACTIVE":
         return replace(
             record,
             subscription_status="ACTIVE",
-            trial_ends_at=(
-                record.trial_ends_at if record.subscription_status == "TRIAL" else None
-            ),
-            benefit_ends_at=mutation_time + SUBSCRIPTION_PERIOD,
-            next_billing_at=mutation_time + SUBSCRIPTION_PERIOD,
+            auto_renew_enabled=True,
+            current_period_started_at=mutation_time,
+            current_period_ends_at=mutation_time + SUBSCRIPTION_PERIOD,
+            billing_due_at=mutation_time + SUBSCRIPTION_PERIOD,
+            next_payment_attempt_at=mutation_time + SUBSCRIPTION_PERIOD,
             payment_failed_at=None,
             cancel_requested_at=None,
+            ended_at=None,
+            status_changed_at=mutation_time,
             updated_at=mutation_time,
         )
     if next_status == "PAYMENT_FAILED":
         return replace(
             record,
             subscription_status="PAYMENT_FAILED",
-            benefit_ends_at=mutation_time + PAYMENT_FAILURE_GRACE_PERIOD,
-            next_billing_at=None,
+            current_period_ends_at=mutation_time + PAYMENT_FAILURE_GRACE_PERIOD,
+            billing_due_at=record.billing_due_at or mutation_time,
+            next_payment_attempt_at=mutation_time + timedelta(days=2),
             payment_failed_at=mutation_time,
             cancel_requested_at=None,
+            status_changed_at=mutation_time,
             updated_at=mutation_time,
         )
     if next_status == "CANCEL_REQUESTED":
-        benefit_ends_at = record.benefit_ends_at or mutation_time + SUBSCRIPTION_PERIOD
-        if benefit_ends_at <= mutation_time:
-            benefit_ends_at = mutation_time + SUBSCRIPTION_PERIOD
         return replace(
             record,
             subscription_status="CANCEL_REQUESTED",
-            benefit_ends_at=benefit_ends_at,
-            next_billing_at=None,
+            auto_renew_enabled=False,
+            next_payment_attempt_at=None,
             cancel_requested_at=mutation_time,
+            status_changed_at=mutation_time,
             updated_at=mutation_time,
         )
     if next_status == "CHURNED":
-        if record.benefit_ends_at is None or mutation_time < record.benefit_ends_at:
-            raise ValueError("CHURNED requires logical_date at or after benefit_ends_at")
+        if record.current_period_ends_at is None or mutation_time < record.current_period_ends_at:
+            raise ValueError("CHURNED requires logical_date at or after current_period_ends_at")
         return replace(
             record,
             subscription_status="CHURNED",
-            next_billing_at=None,
+            auto_renew_enabled=False,
+            billing_due_at=None,
+            next_payment_attempt_at=None,
+            ended_at=mutation_time,
+            status_changed_at=mutation_time,
             updated_at=mutation_time,
         )
     raise ValueError(f"Unsupported subscription target: {next_status}")

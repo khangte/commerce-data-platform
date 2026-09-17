@@ -13,12 +13,10 @@ SUPPORTED_ANOMALY_PROFILES = frozenset(
         "late-arrival",
         "delayed-payment",
         "membership-change",
-        "subscription-trial",
         "subscription-active",
         "subscription-payment-failed",
         "subscription-cancel-requested",
         "subscription-churned",
-        "subscription-rejoined",
     }
 )
 EXECUTABLE_ANOMALY_PROFILES = SUPPORTED_ANOMALY_PROFILES - {"delayed-payment"}

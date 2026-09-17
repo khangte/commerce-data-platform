@@ -16,9 +16,7 @@ from src.generator.customers import (
     CustomerMutationResult,
     CustomerRecord,
     ensure_membership_tier_records,
-    ensure_subscription_records,
     new_membership_tier_record,
-    new_subscription_record,
     persist_customer_records,
 )
 from src.generator.ids import deterministic_uuid, logical_hash
@@ -227,9 +225,8 @@ def persist_order_bundle(
 ) -> OrderBundleMutationResult:
     """외부 Transaction 안에서 Order Bundle을 멱등적으로 저장한다."""
     customer_result = persist_customer_records(connection, (bundle.customer,))
-    subscription_result = ensure_subscription_records(
-        connection, (new_subscription_record(bundle.customer),)
-    )
+    # 주문 생성은 구독 계약을 자동으로 만들지 않는다.
+    subscription_result = AxisMutationResult(inserted=0, updated=0, skipped=0)
     membership_tier_result = ensure_membership_tier_records(
         connection, (new_membership_tier_record(bundle.customer),)
     )

@@ -1,11 +1,18 @@
 with subscription_observations as (
     select
+        subscription_id,
         customer_unique_id as customer_id,
         {{ standardized_subscription_status('subscription_status') }} as subscription_status,
-        trial_ends_at,
-        benefit_ends_at,
+        auto_renew_enabled,
+        subscription_started_at,
+        current_period_started_at,
+        current_period_ends_at,
+        billing_due_at,
+        next_payment_attempt_at,
         payment_failed_at,
         cancel_requested_at,
+        ended_at,
+        status_changed_at,
         created_at,
         updated_at,
         _batch_id,
@@ -20,10 +27,12 @@ with_attribute_hash as (
         *,
         md5(
             coalesce('status:' || subscription_status, 'status:')
-            || '|' || coalesce('trial:' || cast(trial_ends_at as varchar), 'trial:')
-            || '|' || coalesce('benefit:' || cast(benefit_ends_at as varchar), 'benefit:')
+            || '|' || coalesce('renew:' || cast(auto_renew_enabled as varchar), 'renew:')
+            || '|' || coalesce('period-start:' || cast(current_period_started_at as varchar), 'period-start:')
+            || '|' || coalesce('period-end:' || cast(current_period_ends_at as varchar), 'period-end:')
             || '|' || coalesce('failed:' || cast(payment_failed_at as varchar), 'failed:')
             || '|' || coalesce('cancel:' || cast(cancel_requested_at as varchar), 'cancel:')
+            || '|' || coalesce('ended:' || cast(ended_at as varchar), 'ended:')
         ) as attribute_hash
     from subscription_observations
 ),
@@ -31,18 +40,25 @@ deduplicated as (
     select
         *,
         row_number() over (
-            partition by customer_id, updated_at, attribute_hash
+            partition by subscription_id, updated_at, attribute_hash
             order by _ingested_at desc, _batch_id desc
         ) as _observation_rank
     from with_attribute_hash
 )
 select
+    subscription_id,
     customer_id,
     subscription_status,
-    trial_ends_at,
-    benefit_ends_at,
+    auto_renew_enabled,
+    subscription_started_at,
+    current_period_started_at,
+    current_period_ends_at,
+    billing_due_at,
+    next_payment_attempt_at,
     payment_failed_at,
     cancel_requested_at,
+    ended_at,
+    status_changed_at,
     attribute_hash,
     created_at,
     updated_at,

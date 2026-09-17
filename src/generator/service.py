@@ -13,6 +13,7 @@ from src.generator.customers import (
     SubscriptionRecord,
     membership_tier_change_records,
     new_customer_record,
+    new_subscription_record_for_customer,
     persist_membership_tier_records,
     persist_subscription_records,
     subscription_transition_records,
@@ -34,7 +35,8 @@ from src.generator.metadata import (
 from src.generator.orders import fetch_order_catalog, new_order_bundle, persist_order_bundle
 from src.generator.scenarios import late_order_bundle
 from src.generator.subscription_payments import (
-    next_billing_sequence,
+    next_attempt_sequence,
+    next_billing_cycle_sequence,
     persist_subscription_payments,
     plan_subscription_payment,
 )
@@ -257,14 +259,15 @@ def _add_mutation_counts(result_counts: dict[str, int], mutation_result) -> None
 
 
 def _fetch_subscriptions_ordered(connection) -> tuple[SubscriptionRecord, ...]:
-    """구독 상태 Record 전체를 사람 키 순서로 읽는다."""
+    """구독 계약 상태 Record 전체를 사람 키와 계약 키 순서로 읽는다."""
     rows = connection.execute(
         """
-        SELECT customer_unique_id, subscription_status,
-               trial_ends_at, benefit_ends_at, next_billing_at,
-               payment_failed_at, cancel_requested_at, created_at, updated_at
+        SELECT subscription_id, customer_unique_id, subscription_status, auto_renew_enabled,
+               subscription_started_at, current_period_started_at, current_period_ends_at,
+               billing_due_at, next_payment_attempt_at, payment_failed_at, cancel_requested_at,
+               ended_at, status_changed_at, created_at, updated_at
         FROM customer_subscriptions
-        ORDER BY customer_unique_id COLLATE "C"
+        ORDER BY customer_unique_id COLLATE "C", subscription_id
         """
     ).fetchall()
     return tuple(SubscriptionRecord(*row) for row in rows)
@@ -273,7 +276,7 @@ def _fetch_subscriptions_ordered(connection) -> tuple[SubscriptionRecord, ...]:
 def _run_subscription_expiry_scan(
     connection, config: GeneratorConfig, result_counts: dict[str, int], logical_rows: list
 ) -> None:
-    """logical_date 기준 시각 스캔으로 만료 종료·체험 종료·정기 결제·재결제를 처리한다.
+    """logical_date 기준 시각 스캔으로 만료 종료·정기 결제·재결제를 처리한다.
 
     요구사항 5.1절 순서를 그대로 따른다. 무작위가 아니라 결정적 스캔이므로 같은 logical_date로
     재실행하면 같은 결과가 나온다.
@@ -286,33 +289,26 @@ def _run_subscription_expiry_scan(
         # 1. 만료 종료
         if (
             status in {"CANCEL_REQUESTED", "PAYMENT_FAILED"}
-            and record.benefit_ends_at is not None
-            and record.benefit_ends_at <= now
+            and record.current_period_ends_at is not None
+            and record.current_period_ends_at <= now
         ):
             _persist_scan_transition(connection, config, record, "CHURNED", result_counts)
             logical_rows.append(_subscription_scan_row(record.customer_unique_id, "CHURNED"))
             continue
-        # 2. 체험 종료
-        if (
-            status == "TRIAL"
-            and record.trial_ends_at is not None
-            and record.trial_ends_at <= now
-        ):
-            _bill_and_transition(connection, config, record, result_counts, logical_rows)
-            continue
-        # 3. 정기 결제
+        # 2. 정기 결제
         if (
             status == "ACTIVE"
-            and record.next_billing_at is not None
-            and record.next_billing_at <= now
+            and record.auto_renew_enabled
+            and record.next_payment_attempt_at is not None
+            and record.next_payment_attempt_at <= now
         ):
             _bill_and_transition(connection, config, record, result_counts, logical_rows)
             continue
-        # 4. 재결제
+        # 3. 재결제
         if (
             status == "PAYMENT_FAILED"
-            and record.benefit_ends_at is not None
-            and record.benefit_ends_at > now
+            and record.next_payment_attempt_at is not None
+            and record.next_payment_attempt_at <= now
         ):
             _bill_and_transition(connection, config, record, result_counts, logical_rows)
 
@@ -325,10 +321,21 @@ def _bill_and_transition(
     logical_rows: list,
 ) -> None:
     """결제를 시도해 subscription_payments 행을 남기고 성공·실패에 따라 상태를 바꾼다."""
-    billing_sequence = next_billing_sequence(connection, record.customer_unique_id)
-    period_start = record.next_billing_at or record.trial_ends_at or config.logical_date
+    if record.subscription_status == "PAYMENT_FAILED":
+        billing_cycle_sequence = next_billing_cycle_sequence(connection, record.subscription_id) - 1
+        attempt_sequence = next_attempt_sequence(
+            connection, record.subscription_id, billing_cycle_sequence
+        )
+    else:
+        billing_cycle_sequence = next_billing_cycle_sequence(connection, record.subscription_id)
+        attempt_sequence = 1
+    period_start = record.billing_due_at or config.logical_date
     payment = plan_subscription_payment(
-        config, record.customer_unique_id, billing_sequence, period_start
+        config,
+        record.subscription_id,
+        billing_cycle_sequence,
+        attempt_sequence,
+        period_start,
     )
     result_counts["subscription_payments_inserted"] += persist_subscription_payments(
         connection, (payment,)
@@ -336,7 +343,9 @@ def _bill_and_transition(
     logical_rows.append(
         {
             "customer_unique_id": record.customer_unique_id,
-            "billing_sequence": billing_sequence,
+            "subscription_id": str(record.subscription_id),
+            "billing_cycle_sequence": billing_cycle_sequence,
+            "attempt_sequence": attempt_sequence,
             "payment_status": payment.payment_status,
         }
     )
@@ -356,15 +365,21 @@ def _bill_and_transition(
 def _advance_active_billing(
     connection, config: GeneratorConfig, record: SubscriptionRecord, payment, result_counts
 ) -> None:
-    """ACTIVE 유지 결제 성공 시 상태 변화 없이 next_billing_at만 1개월 뒤로 민다."""
+    """ACTIVE 유지 결제 성공 시 현재 기간과 다음 자동갱신 일정을 갱신한다."""
     advanced = SubscriptionRecord(
+        subscription_id=record.subscription_id,
         customer_unique_id=record.customer_unique_id,
         subscription_status="ACTIVE",
-        trial_ends_at=None,
-        benefit_ends_at=payment.billing_period_end,
-        next_billing_at=payment.billing_period_end,
+        auto_renew_enabled=True,
+        subscription_started_at=record.subscription_started_at,
+        current_period_started_at=payment.billing_period_start_at,
+        current_period_ends_at=payment.billing_period_end_at,
+        billing_due_at=payment.billing_period_end_at,
+        next_payment_attempt_at=payment.billing_period_end_at,
         payment_failed_at=None,
         cancel_requested_at=None,
+        ended_at=None,
+        status_changed_at=record.status_changed_at,
         created_at=record.created_at,
         updated_at=config.logical_date,
     )
@@ -432,12 +447,15 @@ def _apply_membership_tier_change(connection, config: GeneratorConfig):
 
 def _apply_subscription_transition(connection, config: GeneratorConfig):
     """Profile에 맞는 현재 상태 사람 하나를 골라 구독 상태 전이를 저장한다."""
+    if config.anomaly_profile == "subscription-active":
+        return _start_subscription_contract(connection, config)
     next_status, source_statuses = _subscription_profile_contract(config.anomaly_profile)
     rows = connection.execute(
         """
-        SELECT customer_unique_id, subscription_status,
-               trial_ends_at, benefit_ends_at, next_billing_at,
-               payment_failed_at, cancel_requested_at, created_at, updated_at
+        SELECT subscription_id, customer_unique_id, subscription_status, auto_renew_enabled,
+               subscription_started_at, current_period_started_at, current_period_ends_at,
+               billing_due_at, next_payment_attempt_at, payment_failed_at, cancel_requested_at,
+               ended_at, status_changed_at, created_at, updated_at
         FROM customer_subscriptions
         WHERE subscription_status = ANY(%s)
           AND updated_at < %s
@@ -450,7 +468,10 @@ def _apply_subscription_transition(connection, config: GeneratorConfig):
         record
         for record in candidates
         if next_status != "CHURNED"
-        or (record.benefit_ends_at is not None and config.logical_date >= record.benefit_ends_at)
+        or (
+            record.current_period_ends_at is not None
+            and config.logical_date >= record.current_period_ends_at
+        )
     )
     if not candidates:
         raise ValueError(f"{config.anomaly_profile} requires an eligible subscription record")
@@ -473,19 +494,51 @@ def _apply_subscription_transition(connection, config: GeneratorConfig):
     }
 
 
+def _start_subscription_contract(connection, config: GeneratorConfig):
+    """현재 유효 계약이 없는 고객 한 명의 자동갱신 구독 계약을 시작한다."""
+    rows = connection.execute(
+        """
+        SELECT DISTINCT customers.customer_unique_id
+        FROM customers
+        WHERE NOT EXISTS (
+            SELECT 1
+            FROM customer_subscriptions
+            WHERE customer_subscriptions.customer_unique_id = customers.customer_unique_id
+              AND customer_subscriptions.subscription_status <> 'CHURNED'
+        )
+        ORDER BY customers.customer_unique_id COLLATE "C"
+        """
+    ).fetchall()
+    if not rows:
+        raise ValueError("subscription-active requires a customer without an open subscription")
+    selector = int(
+        logical_hash(
+            {
+                "generator_inputs": config.deterministic_inputs(),
+                "entity": "subscription-contract-start-selection",
+            }
+        ),
+        16,
+    ) % len(rows)
+    record = new_subscription_record_for_customer(rows[selector][0], config.logical_date)
+    result = persist_subscription_records(connection, (record,))
+    return result, {
+        "customer_unique_id": record.customer_unique_id,
+        "subscription_id": str(record.subscription_id),
+        "subscription_status": record.subscription_status,
+        "subscription_updated_at": record.updated_at.isoformat(),
+    }
+
+
 def _subscription_profile_contract(profile: str) -> tuple[str, frozenset[str]]:
     """실행 Profile의 목표 상태와 허용 시작 상태를 반환한다."""
     contracts = {
-        "subscription-trial": ("TRIAL", frozenset({"NON_MEMBER", "CHURNED"})),
-        "subscription-active": ("ACTIVE", frozenset({"NON_MEMBER", "TRIAL", "PAYMENT_FAILED"})),
-        "subscription-payment-failed": ("PAYMENT_FAILED", frozenset({"TRIAL", "ACTIVE"})),
+        "subscription-active": ("ACTIVE", frozenset({"PAYMENT_FAILED", "CANCEL_REQUESTED"})),
+        "subscription-payment-failed": ("PAYMENT_FAILED", frozenset({"ACTIVE"})),
         "subscription-cancel-requested": (
             "CANCEL_REQUESTED",
-            frozenset({"TRIAL", "ACTIVE", "PAYMENT_FAILED"}),
+            frozenset({"ACTIVE", "PAYMENT_FAILED"}),
         ),
         "subscription-churned": ("CHURNED", frozenset({"PAYMENT_FAILED", "CANCEL_REQUESTED"})),
-        "subscription-rejoined": ("ACTIVE", frozenset({"CHURNED"})),
     }
     return contracts[profile]
-
-
