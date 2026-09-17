@@ -23,9 +23,11 @@ Dimension에는 Grain을 선언하지 않는다. Dimension의 행은 Business Ke
 | ------------ | ------------------------------- | --------------------------------------------------- | ------------------------------------------- |
 | `PK`         | Grain을 강제하는 Key            | `not_null`, `unique`(단일) 또는 Singular Test(복합) | Grain 문장과 1:1 대응                       |
 | `FK`         | Dimension 참조 Key              | `not_null`, `relationships`                         | 대상 Model을 함께 적는다                    |
-| `Degenerate` | Dimension 없이 Fact에 남는 속성 | `accepted_values` 등                                | 자체 Dimension을 만들 만큼 속성이 없을 때만 |
+| `Degenerate` | Dimension 없이 Fact에 남는 속성 | `accepted_values` 등                                | 자체 Dimension을 만들 만큼 속성이 없거나, Dimension이 있어도 원본 Business Key 추적이 필요할 때 |
 | `Measure`    | 집계 대상 수치                  | 범위·부호 Test                                      | 5절 규칙 적용                               |
 | `Attribute`  | Dimension의 서술 속성           | 필요 시                                             | Dimension 전용                              |
+
+Dimension이 있는데도 원본 Business Key를 Degenerate로 함께 두는 경우가 있다. SCD Type 2 Dimension의 FK는 버전 Key라서 같은 Entity가 버전마다 다른 값을 가진다. Entity 단위로 묶는 집계나 Grain 검증 Test는 버전 Key로 할 수 없으므로 원본 Key가 필요하다. 이때 FK와 Degenerate는 같은 Entity를 가리키되 역할이 다르다. FK는 그 시점의 속성을 가져오고, Degenerate는 Entity를 식별한다.
 
 ### 1.3 새 컬럼을 추가할 때
 
@@ -80,22 +82,26 @@ Dimension은 Grain 대신 `한 행`과 Business Key를 적는다. SCD Type 2인 
 - `Null` 열은 `Y`(허용) 또는 `N`(불가)로 적는다.
 - `정의 / Test` 열에는 Measure의 계산식, FK의 참조 대상, 값 목록을 적는다.
 
-### 1.6 SCD2 Dimension의 운영 스케줄 컬럼
+### 1.6 SCD2 Dimension의 미래 예정 컬럼
 
 SCD2 Dimension의 계약은 "이 행의 모든 컬럼은 `valid_from`부터 `valid_to`까지 이 값이었다"이다. 이 계약을 지키지 못하는 컬럼은 Hash에서 빼는 것이 아니라 Model에서 뺀다.
 
 #### 판별 기준
 
-값이 바뀌는 계기로 나눈다.
+값이 가리키는 시제로 나눈다.
 
-| 구분   | 의미                        | 예시                                            | 처리                 |
-| ------ | --------------------------- | ----------------------------------------------- | -------------------- |
-| 사건   | 무언가 일어나서 바뀐다      | 상태 전이, 해지 신청, 결제 실패, 혜택 기간 갱신 | 컬럼 유지, Hash 포함 |
-| 스케줄 | 일정 주기로 자동으로 밀린다 | 다음 청구 기한, 다음 결제 시도 예정 시각        | 컬럼 제외            |
+| 구분      | 의미                            | 예시                                                        | 처리                 |
+| --------- | ------------------------------- | ----------------------------------------------------------- | -------------------- |
+| 과거 사실 | 이미 일어난 일을 기록한다       | 상태 전이 시각, 해지 신청 시각, 현재 혜택 기간의 시작과 종료 | 컬럼 유지, Hash 포함 |
+| 미래 예정 | 앞으로 할 일을 예고한다         | 다음 청구 기한, 다음 결제 시도 예정 시각                     | 컬럼 제외            |
 
-사건은 버전을 만들 가치가 있다. 스케줄은 운영 시스템의 예정 값이지 분석 대상이 아니다.
+`current_period_ends_at`은 "이 기간이 유효했다"는 사실이라 특정 시점에 혜택이 살아 있었는지 답한다. `billing_due_at`은 "이때 청구할 예정"이라는 예고다. 둘 다 갱신 시점에 바뀌지만, 과거 시점에 대해 "그때 예정이 무엇이었나"를 묻는 분석 질문은 없다.
 
-#### 스케줄 컬럼을 Hash에서만 빼면 안 되는 이유
+과거 사실은 버전을 만들 가치가 있다. 미래 예정은 운영 시스템의 할 일 목록이지 분석 대상이 아니다.
+
+미래 예정 값은 SCD2 계약과 애초에 맞지 않는다. "이 구간 동안 이 값이었다"는 진술은 이미 확정된 사실에만 성립한다.
+
+#### 미래 예정 컬럼을 Hash에서만 빼면 안 되는 이유
 
 컬럼을 남긴 채 Hash에서만 빼면 값이 버전 생성 시점에 고정된다. 버전의 유효 구간 안에서 실제 값은 계속 바뀌는데 행에는 첫 값만 남는다.
 
@@ -133,7 +139,7 @@ Hash 제외는 값이 그 버전 구간 내내 유효한 컬럼에만 쓴다. �
 
 #### 현재 값이 필요할 때
 
-스케줄 값은 Staging에서 직접 읽는다. Mart는 시점 이력을 제공하고, 운영 예정 값은 원천이 정본이다.
+미래 예정 값은 Staging에서 직접 읽는다. Mart는 시점 이력을 제공하고, 운영 예정 값은 원천이 정본이다.
 
 ```sql
 select billing_due_at, next_payment_attempt_at
@@ -141,9 +147,40 @@ from stg_customer_subscription_observations
 where subscription_id = 'S1'
 ```
 
+### 1.7 SCD2 Metadata 컬럼
+
+SCD Type 2 Dimension은 아래 세 컬럼을 공통으로 갖는다.
+
+| 컬럼         | 의미                                                  |
+| ------------ | ----------------------------------------------------- |
+| `valid_from` | 해당 버전이 유효해진 시각                             |
+| `valid_to`   | 다음 버전이 시작된 시각. 최신 버전은 `NULL`           |
+| `is_current` | 해당 Entity의 최신 버전 여부                          |
+
+`is_current`는 버전의 최신성만 나타낸다. Entity 자체가 유효한지는 각 Dimension의 상태 Attribute가 답한다. 종료된 Entity도 최신 버전은 `is_current`가 `true`다.
+
+최신 버전의 `valid_to`를 Entity의 종료 시각으로 닫지 않는다. 종료 전이 시점이 곧 `valid_from`이므로 `valid_from`과 `valid_to`가 같아져 어떤 시점 조회에도 걸리지 않는 버전이 생긴다. 또한 종료 시각과 같거나 그 뒤에 발생한 사건을 담은 Fact가 이 Dimension을 참조하지 못해 FK가 `NULL`이 된다.
+
+### 1.8 Surrogate Key 생성
+
+Dimension의 Surrogate Key는 `VARCHAR` 타입이며 결정적 Hash로 만든다.
+
+| 대상        | 생성식                                                            |
+| ----------- | ----------------------------------------------------------------- |
+| 비-SCD2     | `md5(<Business Key>)`                                             |
+| SCD Type 2  | `md5(<Business Key> \|\| '\|' \|\| <valid_from> \|\| '\|' \|\| <attribute_hash>)` |
+
+시퀀스나 `row_number()`를 쓰지 않는다. Full Refresh와 Incremental 사이에서 값이 달라져 이미 적재된 Fact의 FK가 끊긴다. Hash는 같은 입력에 항상 같은 값을 주므로 두 실행 방식이 일치한다.
+
+`dim_date.date_key`는 예외다. `YYYYMMDD` 정수라 날짜 자체가 결정적 Key이고, 기간 조회에서 정수 비교와 범위 Partition을 쓴다.
+
+Fact의 Dimension FK는 참조 대상 Dimension의 Surrogate Key와 같은 타입으로 적는다.
+
 ## 2. Dimension
 
 Dimension은 Grain 문장 대신 `한 행` 항목으로 정의한다. Grain은 Fact의 집계 단위를 선언하는 개념이고, Dimension은 Business Key가 행을 식별한다. 다만 SCD Type 2 Dimension은 한 행이 Entity가 아니라 그 Entity의 시점 Version이므로, 이 구별을 `한 행` 항목이 드러낸다.
+
+SCD Type 2 Dimension의 `incremental`은 단순 append가 아니다. 새 Version이 생기면 직전 Version의 `valid_to`와 `is_current`도 함께 바뀐다. Model은 `incremental_strategy='delete+insert'`로 해당 Business Key의 모든 Version을 다시 쓴다. Version 구간 계산은 Intermediate가 전담하고 Dimension은 그 결과를 투영한다.
 
 | Model              | 한 행                   | Unique Key         | Materialization |
 | ------------------ | ----------------------- | ------------------ | --------------- |
@@ -161,16 +198,17 @@ Dimension은 Grain 문장 대신 `한 행` 항목으로 정의한다. Grain은 F
 - Version Unique Key: `(customer_id, valid_from)`
 - SCD Type: Type 2
 - Materialization: incremental
-- 출처: `customers`, `customer_membership_tiers`
+- 출처: `stg_customer_tier_observations`
 
 | 컬럼              | 타입        | 종류                | Null | 정의 / Test                                                                                     |
 | ----------------- | ----------- | ------------------- | ---- | ----------------------------------------------------------------------------------------------- |
-| `customer_key`    | BIGINT      | Surrogate Key / PK  | N    | 고객 상태 버전을 식별하는 DW 내부 키 / `unique`, `not_null`                                     |
+| `customer_key`    | VARCHAR     | Surrogate Key / PK  | N    | 고객 상태 버전을 식별하는 DW 내부 키. `md5(customer_id, valid_from, attribute_hash)`. 1.8절 / `unique`, `not_null` |
 | `customer_id`     | VARCHAR     | Business Key        | N    | 실제 고객 식별자. Olist `customer_unique_id` 매핑 / `not_null`                                  |
 | `membership_tier` | VARCHAR     | Dimension Attribute | N    | 고객의 거래 실적 등급. SCD2로 이력을 관리 / `not_null`, `accepted_values: BRONZE, SILVER, GOLD` |
-| `valid_from`      | TIMESTAMPTZ | SCD2 Metadata       | N    | 해당 고객 버전의 유효 시작 시각 / `not_null`                                                    |
-| `valid_to`        | TIMESTAMPTZ | SCD2 Metadata       | Y    | 해당 고객 버전의 유효 종료 시각. 현재 버전은 `NULL`                                             |
-| `is_current`      | BOOLEAN     | SCD2 Metadata       | N    | 현재 유효한 고객 버전 여부 / `not_null`                                                         |
+| `attribute_hash`  | VARCHAR     | SCD2 Metadata       | N    | 버전 생성을 판정하는 속성 Hash. 1.6절의 제외 대상을 뺀 값으로 계산 / `not_null`                 |
+| `valid_from`      | TIMESTAMPTZ | SCD2 Metadata       | N    | 해당 고객 버전이 유효해진 시각. 1.7절 / `not_null`                                              |
+| `valid_to`        | TIMESTAMPTZ | SCD2 Metadata       | Y    | 다음 버전이 시작된 시각. 최신 버전은 `NULL`. 1.7절                                              |
+| `is_current`      | BOOLEAN     | SCD2 Metadata       | N    | 해당 고객의 최신 버전 여부. 1.7절 / `not_null`                                                  |
 
 ### 2.2 `dim_date`
 
@@ -200,11 +238,11 @@ Dimension은 Grain 문장 대신 `한 행` 항목으로 정의한다. Grain은 F
 - Primary Key: `product_key`
 - Business Key: `product_id`
 - Materialization: table
-- 출처: `products`
+- 출처: `stg_products`
 
 | 컬럼                    | 타입    | 종류                | Null | 정의 / Test                                   |
 | ----------------------- | ------- | ------------------- | ---- | --------------------------------------------- |
-| `product_key`           | BIGINT  | Surrogate Key / PK  | N    | DW 내부 상품 식별 키 / `unique`, `not_null`   |
+| `product_key`           | VARCHAR | Surrogate Key / PK  | N    | DW 내부 상품 식별 키. `md5(product_id)`. 1.8절 / `unique`, `not_null` |
 | `product_id`            | VARCHAR | Business Key        | N    | Olist 원본 상품 식별자 / `unique`, `not_null` |
 | `product_category_name` | VARCHAR | Dimension Attribute | Y    | 상품 카테고리명                               |
 | `product_weight_g`      | INTEGER | Dimension Attribute | Y    | 상품 무게(g)                                  |
@@ -218,11 +256,11 @@ Dimension은 Grain 문장 대신 `한 행` 항목으로 정의한다. Grain은 F
 - Primary Key: `seller_key`
 - Business Key: `seller_id`
 - Materialization: table
-- 출처: `sellers`
+- 출처: `stg_sellers`
 
 | 컬럼           | 타입    | 종류                | Null | 정의 / Test                                     |
 | -------------- | ------- | ------------------- | ---- | ----------------------------------------------- |
-| `seller_key`   | BIGINT  | Surrogate Key / PK  | N    | DW 내부 판매자 식별 키 / `unique`, `not_null`   |
+| `seller_key`   | VARCHAR | Surrogate Key / PK  | N    | DW 내부 판매자 식별 키. `md5(seller_id)`. 1.8절 / `unique`, `not_null` |
 | `seller_id`    | VARCHAR | Business Key        | N    | Olist 원본 판매자 식별자 / `unique`, `not_null` |
 | `seller_city`  | VARCHAR | Dimension Attribute | N    | 판매자가 위치한 도시                            |
 | `seller_state` | VARCHAR | Dimension Attribute | N    | 판매자가 위치한 브라질 주(State) 코드           |
@@ -235,13 +273,13 @@ Dimension은 Grain 문장 대신 `한 행` 항목으로 정의한다. Grain은 F
 - Version Unique Key: `(subscription_id, valid_from)`
 - SCD Type: Type 2
 - Materialization: incremental
-- 출처: `customer_subscriptions`
+- 출처: `stg_customer_subscription_observations`
 
 Business Key가 계약이므로 해지 뒤 재가입한 사람은 `subscription_id`가 다른 계약을 여러 개 가진다. 재가입 횟수는 이 Model에서 `count(distinct subscription_id) - 1`로 얻는다. 계약 이력을 사람 1행에 접어 넣는 파생 컬럼은 두지 않는다.
 
 | 컬럼                        | 타입        | 종류                | Null | 정의 / Test                                                                                                          |
 | --------------------------- | ----------- | ------------------- | ---- | -------------------------------------------------------------------------------------------------------------------- |
-| `subscription_key`          | VARCHAR     | Surrogate Key / PK  | N    | 구독 계약 상태 버전을 식별하는 DW 내부 키. `md5(subscription_id, valid_from, attribute_hash)` / `unique`, `not_null` |
+| `subscription_key`          | VARCHAR     | Surrogate Key / PK  | N    | 구독 계약 상태 버전을 식별하는 DW 내부 키. `md5(subscription_id, valid_from, attribute_hash)`. 1.8절 / `unique`, `not_null` |
 | `subscription_id`           | VARCHAR     | Business Key        | N    | 원본 구독 계약 식별자 / `not_null`                                                                                   |
 | `customer_id`               | VARCHAR     | Dimension Attribute | N    | 계약을 보유한 사람의 Business Key. 계약 생애 동안 불변 / `not_null`                                                  |
 | `subscription_status`       | VARCHAR     | Dimension Attribute | N    | 계약의 표준 상태 / `not_null`, `accepted_values: ACTIVE, PAYMENT_FAILED, CANCEL_REQUESTED, CHURNED`                  |
@@ -254,9 +292,9 @@ Business Key가 계약이므로 해지 뒤 재가입한 사람은 `subscription_
 | `ended_at`                  | TIMESTAMPTZ | Dimension Attribute | Y    | 계약이 실제 종료된 시각. `CHURNED`가 아니면 `NULL`                                                                   |
 | `status_changed_at`         | TIMESTAMPTZ | Dimension Attribute | N    | 현재 상태로 전이한 시각 / `not_null`                                                                                 |
 | `attribute_hash`            | VARCHAR     | SCD2 Metadata       | N    | 버전 생성을 판정하는 속성 Hash. 1.6절의 제외 대상을 뺀 값으로 계산 / `not_null`                                      |
-| `valid_from`                | TIMESTAMPTZ | SCD2 Metadata       | N    | 해당 계약 버전의 유효 시작 시각. 최초 버전은 `subscription_started_at` / `not_null`                                  |
-| `valid_to`                  | TIMESTAMPTZ | SCD2 Metadata       | Y    | 해당 계약 버전의 유효 종료 시각. 현재 버전은 `NULL`                                                                  |
-| `is_current`                | BOOLEAN     | SCD2 Metadata       | N    | 현재 유효한 계약 버전 여부 / `not_null`                                                                              |
+| `valid_from`                | TIMESTAMPTZ | SCD2 Metadata       | N    | 해당 계약 버전이 유효해진 시각. 최초 버전은 `subscription_started_at`. 1.7절 / `not_null`                            |
+| `valid_to`                  | TIMESTAMPTZ | SCD2 Metadata       | Y    | 다음 버전이 시작된 시각. 최신 버전은 `NULL`. 1.7절                                                                   |
+| `is_current`                | BOOLEAN     | SCD2 Metadata       | N    | 해당 계약의 최신 버전 여부. `CHURNED` 계약도 최신 버전은 `true`이며 계약의 유효 여부는 `subscription_status`가 답한다. 1.7절 / `not_null` |
 
 `billing_due_at`과 `next_payment_attempt_at`은 이 Model에 두지 않는다. 근거는 1.6절이다.
 
@@ -275,13 +313,13 @@ Business Key가 계약이므로 해지 뒤 재가입한 사람은 `subscription_
 - Unique Key: `order_id`
 - Fact Type: Accumulating Snapshot
 - Materialization: incremental
-- 출처: `orders`
+- 출처: `stg_orders`
 - Dimension 참조: `dim_customer`, `dim_date`
 
 | 컬럼                    | 타입        | 종류                              | Null | 정의 / Test                                                                                                                          |
 | ----------------------- | ----------- | --------------------------------- | ---- | ------------------------------------------------------------------------------------------------------------------------------------ |
 | `order_id`              | VARCHAR     | Degenerate Dimension / Unique Key | N    | 주문 식별자. Olist 원본 `order_id` / `unique`, `not_null`                                                                            |
-| `customer_key`          | BIGINT      | Dimension FK                      | N    | 주문 당시 유효한 고객 버전의 `dim_customer.customer_key` / `not_null`, `relationships → dim_customer.customer_key`                   |
+| `customer_key`          | VARCHAR     | Dimension FK                      | N    | 주문 당시 유효한 고객 버전의 `dim_customer.customer_key` / `not_null`, `relationships → dim_customer.customer_key`                   |
 | `purchase_date_key`     | INTEGER     | Dimension FK                      | N    | 주문 발생일에 해당하는 `dim_date.date_key` / `not_null`, `relationships → dim_date.date_key`                                         |
 | `source_customer_id`    | VARCHAR     | Degenerate Dimension              | N    | 원본 `customers.customer_id`, 주문-원본고객 추적용 / `not_null`                                                                      |
 | `customer_city`         | VARCHAR     | Fact Attribute                    | N    | 주문 당시 고객 도시 스냅샷 / `not_null`                                                                                              |
@@ -300,15 +338,15 @@ Business Key가 계약이므로 해지 뒤 재가입한 사람은 `subscription_
 - Unique Key: `(order_id, order_item_id)`
 - Fact Type: Transaction Fact
 - Materialization: incremental
-- 출처: `order_items`, `orders`
+- 출처: `stg_order_items`, `stg_orders`
 - Dimension 참조: `dim_product`, `dim_seller`, `dim_date`
 
 | 컬럼                      | 타입          | 종류                             | Null | 정의 / Test                                                                                          |
 | ------------------------- | ------------- | -------------------------------- | ---- | ---------------------------------------------------------------------------------------------------- |
 | `order_id`                | VARCHAR       | Degenerate Dimension / Grain Key | N    | Olist 주문 식별자 / `not_null`                                                                       |
 | `order_item_id`           | INTEGER       | Degenerate Dimension / Grain Key | N    | 주문 내부 상품 항목 순번 / `not_null`                                                                |
-| `product_key`             | BIGINT        | Dimension FK                     | N    | 상품 Dimension 참조 키 / `not_null`, `relationships → dim_product.product_key`                       |
-| `seller_key`              | BIGINT        | Dimension FK                     | N    | 판매자 Dimension 참조 키 / `not_null`, `relationships → dim_seller.seller_key`                       |
+| `product_key`             | VARCHAR       | Dimension FK                     | N    | 상품 Dimension 참조 키 / `not_null`, `relationships → dim_product.product_key`                       |
+| `seller_key`              | VARCHAR       | Dimension FK                     | N    | 판매자 Dimension 참조 키 / `not_null`, `relationships → dim_seller.seller_key`                       |
 | `purchase_date_key`       | INTEGER       | Dimension FK                     | N    | 주문이 발생한 날짜 / `not_null`, `relationships → dim_date.date_key`                                 |
 | `shipping_limit_date_key` | INTEGER       | Dimension FK                     | N    | 판매자가 물류사에 상품을 전달해야 하는 기한의 날짜 / `not_null`, `relationships → dim_date.date_key` |
 | `shipping_limit_at`       | TIMESTAMPTZ   | Event Timestamp                  | N    | 원본 `shipping_limit_date`. 정확한 배송 준비 마감 시각                                               |
@@ -322,14 +360,14 @@ Business Key가 계약이므로 해지 뒤 재가입한 사람은 `subscription_
 - Unique Key: `(order_id, payment_sequential)`
 - Fact Type: Accumulating Snapshot
 - Materialization: incremental
-- 출처: `order_payments`, `orders`
+- 출처: `stg_payments`, `stg_orders`
 - Dimension 참조: `dim_customer`, `dim_date`
 
 | 컬럼                   | 타입          | 종류                             | Null | 정의 / Test                                                                                                      |
 | ---------------------- | ------------- | -------------------------------- | ---- | ---------------------------------------------------------------------------------------------------------------- |
 | `order_id`             | VARCHAR       | Degenerate Dimension / Grain Key | N    | 결제가 속한 주문 식별자 / `not_null`                                                                             |
 | `payment_sequential`   | INTEGER       | Grain Key                        | N    | 동일 주문 내 결제 레코드 순번 / `not_null`, `>= 1`                                                               |
-| `customer_key`         | BIGINT        | Dimension FK                     | N    | `order_payments.created_at` 시점에 유효한 고객 버전 키 / `not_null`, `relationships → dim_customer.customer_key` |
+| `customer_key`         | VARCHAR       | Dimension FK                     | N    | `order_payments.created_at` 시점에 유효한 고객 버전 키 / `not_null`, `relationships → dim_customer.customer_key` |
 | `initiated_date_key`   | INTEGER       | Dimension FK                     | Y    | `payment_initiated_at`의 날짜. 시각이 `NULL`이면 `NULL` / `relationships → dim_date.date_key`                    |
 | `completed_date_key`   | INTEGER       | Dimension FK                     | Y    | `payment_completed_at`의 날짜. 시각이 `NULL`이면 `NULL` / `relationships → dim_date.date_key`                    |
 | `failed_date_key`      | INTEGER       | Dimension FK                     | Y    | `payment_failed_at`의 날짜. 시각이 `NULL`이면 `NULL` / `relationships → dim_date.date_key`                       |
@@ -349,16 +387,16 @@ Business Key가 계약이므로 해지 뒤 재가입한 사람은 `subscription_
 - Unique Key: `payment_id`
 - Fact Type: Transaction Fact
 - Materialization: incremental
-- 출처: `subscription_payments`, `customer_subscriptions`
+- 출처: `stg_subscription_payments`
 - Dimension 참조: `dim_subscription`, `dim_customer`, `dim_date`
 
 | 컬럼                       | 타입          | 종류                               | Null | 정의 / Test                                                                                             |
 | -------------------------- | ------------- | ----------------------------------- | ---- | -------------------------------------------------------------------------------------------------------- |
 | `payment_id`                | VARCHAR       | Degenerate Dimension / Unique Key | N    | 결제 시도 식별자. 원본 `subscription_payments.payment_id` / `unique`, `not_null`                        |
 | `subscription_key`          | VARCHAR       | Dimension FK                       | N    | `payment_at` 시점 유효한 계약 버전 / `not_null`, `relationships → dim_subscription.subscription_key`    |
-| `customer_key`               | BIGINT        | Dimension FK                       | N    | `payment_at` 시점 유효한 고객 버전 / `not_null`, `relationships → dim_customer.customer_key`             |
+| `customer_key`               | VARCHAR       | Dimension FK                       | N    | `payment_at` 시점 유효한 고객 버전 / `not_null`, `relationships → dim_customer.customer_key`             |
 | `payment_date_key`           | INTEGER       | Dimension FK                       | N    | `payment_at`의 날짜 / `not_null`, `relationships → dim_date.date_key`                                    |
-| `source_subscription_id`     | VARCHAR       | Degenerate Dimension               | N    | 원본 `subscription_id`. 결제-원본계약 추적용 / `not_null`                                                |
+| `subscription_id`            | VARCHAR       | Degenerate Dimension               | N    | 계약 Business Key. `subscription_key`는 버전 Key라 계약 단위 집계와 Grain Test에 쓸 수 없다. 1.2절 / `not_null` |
 | `billing_cycle_sequence`     | INTEGER       | Degenerate Dimension               | N    | 계약 내 청구 회차 순번 / `not_null`, `>= 1`                                                              |
 | `attempt_sequence`           | INTEGER       | Degenerate Dimension               | N    | 동일 청구 회차 내 시도 순번 / `not_null`, `>= 1`                                                         |
 | `provider_payment_id`        | VARCHAR       | Degenerate Dimension               | Y    | 결제 대행사 거래 식별자. 정산 대조·분쟁 추적용                                                           |
@@ -366,7 +404,7 @@ Business Key가 계약이므로 해지 뒤 재가입한 사람은 `subscription_
 | `payment_method_type`        | VARCHAR       | Fact Attribute                     | Y    | 결제수단 유형                                                                                             |
 | `payment_provider`           | VARCHAR       | Fact Attribute                     | Y    | 결제 대행사                                                                                               |
 | `failure_code`                | VARCHAR       | Fact Attribute                     | Y    | 실패 원인 코드. `payment_status = 'completed'`이면 `NULL`                                                |
-| `currency_code`               | VARCHAR       | Fact Attribute                     | N    | ISO 4217 통화 코드 / `not_null`                                                                          |
+| `currency_code`               | VARCHAR       | Fact Attribute                     | N    | ISO 4217 통화 코드 / `not_null`, `accepted_values: BRL`                                                  |
 | `payment_at`                  | TIMESTAMPTZ   | Business Event Timestamp           | N    | 결제 시도와 결과가 확정된 시각 / `not_null`                                                              |
 | `billing_period_start_at`     | TIMESTAMPTZ   | Business Event Timestamp           | N    | 이 결제가 커버하는 혜택 기간 시작 / `not_null`                                                           |
 | `billing_period_end_at`       | TIMESTAMPTZ   | Business Event Timestamp           | N    | 혜택 기간 종료 / `not_null`, `> billing_period_start_at`                                                 |
@@ -426,6 +464,7 @@ Fact는 계산하지 않고 투영한다. 집계와 파생 계산은 Intermediat
 - Grain이 다른 Raw 입력을 직접 다대다 Join한 뒤 SUM하지 않는다. 6절 참조.
 - 주문 금액과 실제 결제 금액을 같은 컬럼으로 합치지 않는다. 할부·환불·실패로 값이 달라진다.
 - 금액 타입은 `decimal(14,2)`를 유지한다. `double`은 Full Refresh와 Incremental 사이에서 합계가 달라진다.
+- 금액 Measure는 단일 통화를 전제한다. 통화가 둘 이상이면 `SUM`이 서로 다른 단위를 더해 조용히 틀린 값을 낸다. 현재 Mart는 `BRL` 단일이며 통화 컬럼을 가진 Model은 `accepted_values`로 이를 강제한다. 통화가 늘어나면 통화별로 Measure를 나누거나 환산 기준 시각을 정의한다.
 
 ### 5.4 NULL 처리
 
@@ -471,8 +510,8 @@ Grain 계약은 문서가 아니라 Test로 강제한다. 아래 표는 컬럼 �
 | 계약 SCD2 복합 Unique Key | `(subscription_id, valid_from)`을 검증하는 `dbt/tests/dim_subscription_version_unique.sql` Singular Test              |
 | 계약 SCD2 유효 기간       | `dim_subscription_scd2_no_overlapping_ranges.sql` 및 `dim_subscription_exactly_one_current_version.sql` Singular Test |
 | 계약 상태 전이 유효성     | `dbt/tests/dim_subscription_transition_valid.sql` Singular Test                                                       |
-| 사람당 열린 계약 유일성   | `dbt/tests/dim_subscription_one_open_contract.sql` Singular Test. 원천 부분 Unique Index를 Mart에서 재확인한다        |
-| 청구 회차·시도 조합 Unique | `(source_subscription_id, billing_cycle_sequence, attempt_sequence)`를 검증하는 `dbt/tests/fct_subscription_payment_cycle_attempt_unique.sql` Singular Test |
+| 사람당 열린 계약 유일성   | `is_current`이면서 `subscription_status`가 `ACTIVE`·`PAYMENT_FAILED`·`CANCEL_REQUESTED`인 계약이 사람당 최대 1건인지 검증하는 `dbt/tests/dim_subscription_one_open_contract.sql` Singular Test. 원천 부분 Unique Index를 Mart에서 재확인한다 |
+| 청구 회차·시도 조합 Unique | `(subscription_id, billing_cycle_sequence, attempt_sequence)`를 검증하는 `dbt/tests/fct_subscription_payment_cycle_attempt_unique.sql` Singular Test |
 | 성공분리 Measure 정합성   | 성공 행은 `completed_payment_value = payment_value`, 실패 행은 `NULL`인지 검증하는 `dbt/tests/fct_subscription_payment_completed_value_consistent.sql` Singular Test |
 | 실패 코드 정합성          | `payment_status = 'completed'`이면 `failure_code`가 `NULL`인지 검증하는 `dbt/tests/fct_subscription_payment_failure_code_consistent.sql` Singular Test |
 | 계층 책임 분리            | `tests/test_fact_layer_contract.py`                                                                                   |
