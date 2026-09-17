@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from uuid import UUID
 
 import pytest
 
@@ -112,24 +113,30 @@ def test_membership_change_scenario_updates_one_person_grain_record() -> None:
 
 
 def test_subscription_transition_scenario_returns_a_person_grain_state_change() -> None:
-    """구독 상태 Scenario는 사람 단위 TRIAL 변경 후보를 반환한다."""
+    """구독 상태 Scenario는 계약 단위 결제 실패 변경 후보를 반환한다."""
     old_time = _config().logical_date - timedelta(days=1)
     record = SubscriptionRecord(
+        subscription_id=UUID("00000000-0000-0000-0000-000000000001"),
         customer_unique_id="person-1",
-        subscription_status="NON_MEMBER",
-        trial_ends_at=None,
-        benefit_ends_at=None,
-        next_billing_at=None,
+        subscription_status="ACTIVE",
+        auto_renew_enabled=True,
+        subscription_started_at=old_time,
+        current_period_started_at=old_time,
+        current_period_ends_at=old_time + timedelta(days=30),
+        billing_due_at=old_time + timedelta(days=30),
+        next_payment_attempt_at=old_time + timedelta(days=30),
         payment_failed_at=None,
         cancel_requested_at=None,
+        ended_at=None,
+        status_changed_at=old_time,
         created_at=old_time,
         updated_at=old_time,
     )
 
-    changed = subscription_transition_scenario(_config(), (record,), "TRIAL")
+    changed = subscription_transition_scenario(_config(), (record,), "PAYMENT_FAILED")
 
-    assert changed[0].subscription_status == "TRIAL"
-    assert changed[0].trial_ends_at == _config().logical_date + timedelta(days=30)
+    assert changed[0].subscription_status == "PAYMENT_FAILED"
+    assert changed[0].payment_failed_at == _config().logical_date
 
 
 @pytest.mark.parametrize(

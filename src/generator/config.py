@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-GENERATOR_VERSION = "1.0.0"
+GENERATOR_VERSION = "1.12.0"
 SUPPORTED_GENERATOR_VERSIONS = frozenset({GENERATOR_VERSION})
 SUPPORTED_ANOMALY_PROFILES = frozenset(
     {

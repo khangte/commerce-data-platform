@@ -6,7 +6,7 @@
 >
 > 선행 Phase: [Phase 1. Source Environment](phase-01-source-environment.md)
 >
-> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.11](../../PRD_v1.11.md)
+> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.12](../../PRD_v1.12.md)
 
 ## 목표
 
@@ -179,8 +179,9 @@ AC-20과 AC-21의 전체 E2E 판정은 Phase 3의 Ingestion과 결합해 완료�
 | `src/generator/config.py`                                     | 생성·수정 | 결정성 실행 Config, UTC `logical_date`, 지원 Version·Profile 검증과 CLI 실행 Profile 범위를 추가했다.                 |
 | `src/generator/ids.py`                                        | 생성      | UUIDv5 Business ID와 안정적인 Logical Hash 유틸리티를 추가했다.                                                       |
 | `src/generator/metadata.py`                                   | 생성      | `generator_runs` Schema 준비와 RUNNING/완료 실행 이력 기록 기능을 추가했다.                                           |
-| `src/generator/customers.py`                                  | 수정      | 불변 Customer 계정, 사람 단위 구독 Record와 등급 Record를 각각 `customer_subscriptions`·`customer_membership_tiers`로 분리하고, 구독 상태 전이·등급의 단조 변경 저장과 시각 기반 만료 스캔을 추가했다. |
-| `src/generator/subscription_payments.py`                      | 수정      | 구독 계약별 청구 회차·재시도 순번의 결제 시도와 실제 결제 시각을 결정적으로 기록한다.                 |
+| `src/generator/customers.py`                                  | 수정      | 불변 Customer 계정, 계약 단위 `subscription_id`를 가진 구독 Record와 사람 단위 등급 Record를 각각 `customer_subscriptions`·`customer_membership_tiers`로 분리하고, 계약 상태 전이·등급의 단조 변경 저장과 시각 기반 만료 스캔을 추가했다. |
+| `src/generator/subscription_payments.py`                      | 수정      | 계약별 `billing_cycle_sequence`·`attempt_sequence` 조합과 실제 결제 시각을 가진 결제 시도를 결정적으로 기록한다.                 |
+| `src/generator/service.py`                                    | 수정      | 새 계약 후보를 `COLLATE "C"`가 적용된 선택 Column으로 정렬해 PostgreSQL `DISTINCT` 규칙을 지키도록 수정했다. |
 | `src/generator/orders.py`                                     | 수정      | Order·Item·Payment Bundle 저장은 구독 계약을 자동 생성하지 않고, 거래 실적 등급 행과 신규 `pending` 주문 결제의 시작 시각만 함께 보장한다.                               |
 | `src/generator/transitions.py`                                | 생성      | Order·Payment 허용 상태 전이, 기대 Version, 원천 변경 시각 검증과 완료·실패·환불 결제의 비즈니스 사건 시각 기록을 추가했다.                                           |
 | `src/generator/scenarios.py`                                  | 생성      | Late Order·Delayed Payment·Late Update·Membership Change Scenario를 추가하고, Delayed Payment의 과거 완료 시각을 보존한다.                                         |
@@ -203,6 +204,13 @@ AC-20과 AC-21의 전체 E2E 판정은 Phase 3의 Ingestion과 결합해 완료�
 | `docs/phases/phase-02-deterministic-generator.md`             | 수정      | P2-01~22와 구독 상태·거래 실적 등급 Generator 전환, 파일별 변경 요약을 기록했다.                                 |
 
 ### 구독·등급 Generator 재작업 완료
+
+### v1.12 계약·청구 회차 전환
+
+- [x] `SubscriptionRecord`는 사람 키가 아닌 계약 Business Key `subscription_id`를 생성·저장한다.
+- [x] `subscription_payments`는 계약별 청구 회차와 동일 회차의 재시도 순번을 함께 저장한다.
+- [x] 신규 계약은 종료 계약과 구별되는 결정적 ID를 갖고, 사람당 열린 계약은 하나만 유지한다.
+- [x] Scenario 단위 테스트는 `ACTIVE → PAYMENT_FAILED` 계약 전이와 실패 시각을 검증한다.
 
 구독 상태 전이와 등급 갱신 로직은 통합 테이블(A안) 기준으로 먼저 작성했다. 이후
 [비교](../architecture/04-membership-table-split-comparison.md)를 거쳐 B안(Source만 분리)으로

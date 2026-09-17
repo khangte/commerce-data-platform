@@ -498,7 +498,7 @@ def _start_subscription_contract(connection, config: GeneratorConfig):
     """현재 유효 계약이 없는 고객 한 명의 자동갱신 구독 계약을 시작한다."""
     rows = connection.execute(
         """
-        SELECT DISTINCT customers.customer_unique_id
+        SELECT DISTINCT customers.customer_unique_id COLLATE "C" AS customer_unique_id
         FROM customers
         WHERE NOT EXISTS (
             SELECT 1
@@ -506,7 +506,7 @@ def _start_subscription_contract(connection, config: GeneratorConfig):
             WHERE customer_subscriptions.customer_unique_id = customers.customer_unique_id
               AND customer_subscriptions.subscription_status <> 'CHURNED'
         )
-        ORDER BY customers.customer_unique_id COLLATE "C"
+        ORDER BY customer_unique_id
         """
     ).fetchall()
     if not rows:
