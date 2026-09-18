@@ -180,15 +180,15 @@ Fact의 Dimension FK는 참조 대상 Dimension의 Surrogate Key와 같은 타�
 
 Dimension은 Grain 문장 대신 `한 행` 항목으로 정의한다. Grain은 Fact의 집계 단위를 선언하는 개념이고, Dimension은 Business Key가 행을 식별한다. 다만 SCD Type 2 Dimension은 한 행이 Entity가 아니라 그 Entity의 시점 Version이므로, 이 구별을 `한 행` 항목이 드러낸다.
 
-SCD Type 2 Dimension의 `incremental`은 단순 append가 아니다. 새 Version이 생기면 직전 Version의 `valid_to`와 `is_current`도 함께 바뀐다. Model은 `incremental_strategy='delete+insert'`로 해당 Business Key의 모든 Version을 다시 쓴다. Version 구간 계산은 Intermediate가 전담하고 Dimension은 그 결과를 투영한다.
+SCD Type 2 Dimension은 지연 관측 하나로 과거 구간 전체가 재배열될 수 있으므로 `table`로 전량 재계산한다. Version 구간 계산은 Intermediate가 전담하고 Dimension은 그 결과를 투영한다.
 
 | Model              | 한 행                   | Unique Key         | Materialization |
 | ------------------ | ----------------------- | ------------------ | --------------- |
-| `dim_customer`     | 고객 상태 버전 1행      | `customer_key`     | incremental     |
+| `dim_customer`     | 고객 상태 버전 1행      | `customer_key`     | table           |
 | `dim_date`         | 날짜 1일 1행            | `date_key`         | table           |
 | `dim_product`      | 상품 1개 1행            | `product_key`      | table           |
 | `dim_seller`       | 판매자 1명 1행          | `seller_key`       | table           |
-| `dim_subscription` | 구독 계약 상태 버전 1행 | `subscription_key` | incremental     |
+| `dim_subscription` | 구독 계약 상태 버전 1행 | `subscription_key` | table           |
 
 ### 2.1 `dim_customer`
 
@@ -197,7 +197,7 @@ SCD Type 2 Dimension의 `incremental`은 단순 append가 아니다. 새 Version
 - Business Key: `customer_id`
 - Version Unique Key: `(customer_id, valid_from)`
 - SCD Type: Type 2
-- Materialization: incremental
+- Materialization: table
 - 출처: `stg_customer_tier_observations`
 
 | 컬럼              | 타입        | 종류                | Null | 정의 / Test                                                                                     |
@@ -272,7 +272,7 @@ SCD Type 2 Dimension의 `incremental`은 단순 append가 아니다. 새 Version
 - Business Key: `subscription_id`
 - Version Unique Key: `(subscription_id, valid_from)`
 - SCD Type: Type 2
-- Materialization: incremental
+- Materialization: table
 - 출처: `stg_customer_subscription_observations`
 
 Business Key가 계약이므로 해지 뒤 재가입한 사람은 `subscription_id`가 다른 계약을 여러 개 가진다. 재가입 횟수는 이 Model에서 `count(distinct subscription_id) - 1`로 얻는다. 계약 이력을 사람 1행에 접어 넣는 파생 컬럼은 두지 않는다.
