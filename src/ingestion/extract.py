@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from types import MappingProxyType
 
 import psycopg
@@ -138,6 +138,31 @@ def open_table_snapshot(
         )
 
 
+def cursor_before_timestamp(
+    settings: PostgresSettings, config: TableConfig, boundary: datetime
+) -> CursorPosition:
+    """경계 시각 직전에 실재하는 마지막 Composite Cursor를 돌려준다."""
+    _assert_supported_config(config)
+    _assert_boundary_is_utc(boundary)
+    with settings.source_connection() as connection, connection.transaction():
+        connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
+        row = connection.execute(
+            f"""
+            SELECT {config.cursor_timestamp_column}, {", ".join(config.cursor_key_columns)}
+            FROM {config.source_table}
+            WHERE {config.cursor_timestamp_column} < %s
+            ORDER BY {_order_by(config, descending=True)}
+            LIMIT 1
+            """,
+            (boundary,),
+        ).fetchone()
+    if row is None:
+        return CursorPosition(None, ())
+    return CursorPosition(
+        row[0], _cursor_key_values(config, dict(zip(config.cursor_key_columns, row[1:])))
+    )
+
+
 def _fetch_upper_bound(
     connection: psycopg.Connection, config: TableConfig, watermark_before: CursorPosition
 ) -> CursorPosition | None:
@@ -251,6 +276,12 @@ def _assert_supported_config(config: TableConfig) -> None:
     """임의 SQL 식별자를 막기 위해 정적으로 등록된 Config만 허용한다."""
     if table_config(config.source_table) is not config:
         raise ValueError("Table extraction requires a registered table config")
+
+
+def _assert_boundary_is_utc(boundary: datetime) -> None:
+    """되감기 경계가 UTC Timestamp인지 확인한다."""
+    if boundary.tzinfo is None or boundary.utcoffset() != timedelta(0):
+        raise ValueError("boundary must be a UTC datetime")
 
 
 def _assert_cursor(config: TableConfig, cursor: CursorPosition) -> None:
