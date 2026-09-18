@@ -1,3 +1,4 @@
+-- depends_on: {{ ref('int_affected_subscription_payment_keys') }}
 {{ config(unique_key='payment_id', incremental_strategy='delete+insert') }}
 
 -- dbt unique_key는 교체 단위인 결제 시도다. Grain 유일성은 schema.yml의 unique Test가 강제한다.

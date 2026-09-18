@@ -18,6 +18,7 @@ def test_order_axis_facts_filter_by_affected_order_keys() -> None:
 
         assert "is_incremental()" in sql, relative_path
         assert "ref('int_affected_order_keys')" in sql, relative_path
+        assert "-- depends_on: {{ ref('int_affected_order_keys') }}" in sql, relative_path
 
 
 def test_order_axis_facts_replace_whole_orders() -> None:
@@ -35,4 +36,5 @@ def test_subscription_payment_fact_filters_by_affected_payment_keys() -> None:
 
     assert "is_incremental()" in sql
     assert "ref('int_affected_subscription_payment_keys')" in sql
+    assert "-- depends_on: {{ ref('int_affected_subscription_payment_keys') }}" in sql
     assert "unique_key='payment_id'" in sql

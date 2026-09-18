@@ -1,3 +1,4 @@
+-- depends_on: {{ ref('int_affected_order_keys') }}
 {{
     config(
         unique_key='order_id',
