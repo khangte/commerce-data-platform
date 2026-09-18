@@ -15,6 +15,7 @@ from src.warehouse.mart_hash import (
     MartTarget,
     _canonical_row_json,
     describe_mart_difference,
+    main,
     mart_logical_hash,
     mismatched_relations,
     target_for,
@@ -120,6 +121,35 @@ def test_target_for_returns_the_declared_target() -> None:
 
     with pytest.raises(KeyError):
         target_for("facts.fact_unknown")
+
+
+def test_main_reports_a_mismatch_with_a_non_zero_exit_code(tmp_path: Path, capsys) -> None:
+    """비교 Mode는 불일치를 발견하면 진단을 출력하고 1을 반환한다."""
+    left_path = tmp_path / "left.duckdb"
+    right_path = tmp_path / "right.duckdb"
+    _write_sample_database(left_path, [(1, "a")])
+    _write_sample_database(right_path, [(1, "CHANGED")])
+    target = MartTarget("main", "sample", ("id",))
+
+    exit_code = main(
+        [str(left_path), "--compare", str(right_path)],
+        targets=(target,),
+    )
+
+    assert exit_code == 1
+    assert "main.sample" in capsys.readouterr().out
+
+
+def test_main_prints_hashes_when_no_comparison_is_requested(tmp_path: Path, capsys) -> None:
+    """단일 Mode는 Relation별 Hash를 JSON으로 출력하고 0을 반환한다."""
+    warehouse_path = tmp_path / "left.duckdb"
+    _write_sample_database(warehouse_path, [(1, "a")])
+    target = MartTarget("main", "sample", ("id",))
+
+    exit_code = main([str(warehouse_path)], targets=(target,))
+
+    assert exit_code == 0
+    assert "main.sample" in capsys.readouterr().out
 
 
 def _sample_connection(rows: list[tuple[int, str]]) -> duckdb.DuckDBPyConnection:

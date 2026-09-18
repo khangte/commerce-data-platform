@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
+import sys
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from decimal import Decimal
@@ -60,12 +62,14 @@ def mart_logical_hash(connection: duckdb.DuckDBPyConnection, target: MartTarget)
     return digest.hexdigest()
 
 
-def mart_logical_hashes(warehouse_path: Path) -> dict[str, str]:
+def mart_logical_hashes(
+    warehouse_path: Path, targets: tuple[MartTarget, ...] = MART_HASH_TARGETS
+) -> dict[str, str]:
     """Hash 대상 Mart 전부를 Relation 이름 기준 Hash Dict로 반환한다."""
     with duckdb.connect(str(warehouse_path), read_only=True) as connection:
         return {
             target.relation: mart_logical_hash(connection, target)
-            for target in MART_HASH_TARGETS
+            for target in targets
         }
 
 
@@ -159,3 +163,36 @@ def _json_default(value: object) -> str:
     if isinstance(value, UUID):
         return str(value)
     raise TypeError(f"Unsupported mart value: {type(value).__name__}")
+
+
+def main(
+    argv: list[str] | None = None, *, targets: tuple[MartTarget, ...] = MART_HASH_TARGETS
+) -> int:
+    """Mart Hash를 출력하거나 두 Warehouse의 Hash를 비교한다."""
+    parser = argparse.ArgumentParser(description="Compare mart logical hashes between warehouses")
+    parser.add_argument("warehouse", type=Path, help="Warehouse DuckDB file to hash")
+    parser.add_argument(
+        "--compare", type=Path, default=None, help="Second warehouse to compare against"
+    )
+    arguments = parser.parse_args(argv)
+
+    left = mart_logical_hashes(arguments.warehouse, targets)
+    if arguments.compare is None:
+        print(json.dumps(left, ensure_ascii=False, indent=2, sort_keys=True))
+        return 0
+
+    right = mart_logical_hashes(arguments.compare, targets)
+    mismatched = mismatched_relations(left, right)
+    if not mismatched:
+        print(f"All {len(left)} mart hashes match")
+        return 0
+
+    print(f"Mismatched marts: {', '.join(mismatched)}")
+    for relation in mismatched:
+        target = next(item for item in targets if item.relation == relation)
+        print(describe_mart_difference(arguments.warehouse, arguments.compare, target))
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
