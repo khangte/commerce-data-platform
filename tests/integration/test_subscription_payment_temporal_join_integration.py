@@ -301,6 +301,135 @@ def test_late_subscription_payment_updates_the_past_payment_date_fact(tmp_path) 
         _cleanup(postgres, storage, pipeline_name, results, customer.customer_unique_id)
 
 
+@pytest.mark.skipif(
+    os.environ.get("RUN_POSTGRES_INTEGRATION") != "1"
+    or os.environ.get("RUN_SEAWEEDFS_INTEGRATION") != "1",
+    reason="Set PostgreSQL and SeaweedFS integration environment flags after starting containers.",
+)
+def test_late_contract_observation_rebinds_following_payment_versions(tmp_path) -> None:
+    """지연 도착한 계약 상태 관측이 그 이후 결제의 계약 Version을 다시 묶는다."""
+    postgres = PostgresSettings.from_environment()
+    storage = SeaweedFSSettings.from_environment()
+    pipeline_name = f"test_late_contract_observation_{uuid.uuid4().hex}"
+    ingested_at = datetime.now(UTC)
+    initial_config = _generator_config(FIXTURE_START, anomaly_profile="default")
+    customer = new_customer_record(initial_config, 1)
+    subscription = new_subscription_record(customer)
+    tier = new_membership_tier_record(customer)
+    early_payment_at = FIXTURE_START + timedelta(days=1)
+    early_payment = plan_subscription_payment(
+        _generator_config(early_payment_at, anomaly_profile="default"),
+        subscription.subscription_id,
+        billing_cycle_sequence=1,
+        attempt_sequence=1,
+        billing_period_start_at=FIXTURE_START,
+    )
+    later_payment_at = FIXTURE_START + timedelta(days=40)
+    later_payment = plan_subscription_payment(
+        _generator_config(later_payment_at, anomaly_profile="default"),
+        subscription.subscription_id,
+        billing_cycle_sequence=2,
+        attempt_sequence=1,
+        billing_period_start_at=FIXTURE_START + timedelta(days=31),
+    )
+    transition_at = FIXTURE_START + timedelta(days=20)
+    (transitioned_subscription,) = subscription_transition_records(
+        _generator_config(transition_at, anomaly_profile="default"),
+        (subscription,),
+        "PAYMENT_FAILED",
+    )
+    results: list[TableIngestionResult] = []
+    warehouse_path = tmp_path / "warehouse.duckdb"
+
+    try:
+        with postgres.source_connection() as connection:
+            assert persist_customer_records(connection, (customer,)).inserted == 1
+            assert ensure_subscription_records(connection, (subscription,)).inserted == 1
+            assert ensure_membership_tier_records(connection, (tier,)).inserted == 1
+            assert persist_subscription_payments(connection, (early_payment, later_payment)) == 2
+            connection.commit()
+
+        for source_table, cursor_at, cursor_key in (
+            ("customer_subscriptions", subscription.updated_at, str(subscription.subscription_id)),
+            ("customer_membership_tiers", tier.updated_at, customer.customer_unique_id),
+            ("subscription_payments", later_payment.updated_at, str(later_payment.payment_id)),
+        ):
+            _set_watermark(
+                postgres,
+                pipeline_name,
+                source_table,
+                CursorPosition(cursor_at - timedelta(microseconds=1), (cursor_key,)),
+                now=ingested_at,
+            )
+            results.append(
+                _ingest(
+                    postgres,
+                    storage,
+                    pipeline_name,
+                    source_table,
+                    cursor_at,
+                    1,
+                    tmp_path,
+                    ingested_at,
+                )
+            )
+
+        _create_fixture_catalog(postgres, warehouse_path, results)
+        first_build = _run_dbt_build(warehouse_path, storage, tmp_path)
+        assert first_build.returncode == 0, _combined_output(first_build)
+
+        with duckdb.connect(str(warehouse_path), read_only=True) as connection:
+            before = dict(
+                connection.execute(
+                    "SELECT payment_id, subscription_key FROM facts.fact_subscription_payments"
+                ).fetchall()
+            )
+
+        with postgres.source_connection() as connection:
+            assert persist_subscription_records(connection, (transitioned_subscription,)).updated == 1
+            connection.commit()
+
+        transition_results = [
+            _ingest(
+                postgres,
+                storage,
+                pipeline_name,
+                "customer_subscriptions",
+                transitioned_subscription.updated_at,
+                1,
+                tmp_path,
+                ingested_at,
+            )
+        ]
+        results.extend(transition_results)
+        _append_fixture_catalog(postgres, warehouse_path, transition_results)
+        second_build = _run_dbt_build(warehouse_path, storage, tmp_path)
+        assert second_build.returncode == 0, _combined_output(second_build)
+
+        with duckdb.connect(str(warehouse_path), read_only=True) as connection:
+            after = dict(
+                connection.execute(
+                    """
+                    SELECT fact.payment_id, subscription.subscription_status
+                    FROM facts.fact_subscription_payments AS fact
+                    JOIN dimensions.dim_subscription AS subscription USING (subscription_key)
+                    """
+                ).fetchall()
+            )
+            keys_after = dict(
+                connection.execute(
+                    "SELECT payment_id, subscription_key FROM facts.fact_subscription_payments"
+                ).fetchall()
+            )
+
+        assert after[str(early_payment.payment_id)] == "ACTIVE"
+        assert after[str(later_payment.payment_id)] == "PAYMENT_FAILED"
+        assert keys_after[str(early_payment.payment_id)] == before[str(early_payment.payment_id)]
+        assert keys_after[str(later_payment.payment_id)] != before[str(later_payment.payment_id)]
+    finally:
+        _cleanup(postgres, storage, pipeline_name, results, customer.customer_unique_id)
+
+
 def _generator_config(logical_date: datetime, *, anomaly_profile: str) -> GeneratorConfig:
     """고정된 Snapshot·Seed로 Fixture의 각 업무 시각 Generator 입력을 만든다."""
     return GeneratorConfig(
