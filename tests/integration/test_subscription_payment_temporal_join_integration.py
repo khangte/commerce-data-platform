@@ -6,6 +6,7 @@ import os
 import subprocess
 import sys
 import uuid
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -22,6 +23,8 @@ from src.generator.customers import (
     new_membership_tier_record,
     new_subscription_record,
     persist_customer_records,
+    persist_subscription_records,
+    subscription_transition_records,
 )
 from src.generator.subscription_payments import (
     persist_subscription_payments,
@@ -185,6 +188,119 @@ def test_subscription_payment_uses_the_active_customer_version_at_billing_time(t
         _cleanup(postgres, storage, pipeline_name, results, customer.customer_unique_id)
 
 
+@pytest.mark.skipif(
+    os.environ.get("RUN_POSTGRES_INTEGRATION") != "1"
+    or os.environ.get("RUN_SEAWEEDFS_INTEGRATION") != "1",
+    reason="Set PostgreSQL and SeaweedFS integration environment flags after starting containers.",
+)
+def test_late_subscription_payment_updates_the_past_payment_date_fact(tmp_path) -> None:
+    """과거 결제 시각을 가진 지연 결제가 두 번째 Build에서 과거 날짜 Fact로 들어온다."""
+    postgres = PostgresSettings.from_environment()
+    storage = SeaweedFSSettings.from_environment()
+    pipeline_name = f"test_late_subscription_payment_{uuid.uuid4().hex}"
+    ingested_at = datetime.now(UTC)
+    initial_config = _generator_config(FIXTURE_START, anomaly_profile="default")
+    customer = new_customer_record(initial_config, 1)
+    subscription = new_subscription_record(customer)
+    tier = new_membership_tier_record(customer)
+    first_payment_at = FIXTURE_START + timedelta(days=1)
+    first_payment = plan_subscription_payment(
+        _generator_config(first_payment_at, anomaly_profile="default"),
+        subscription.subscription_id,
+        billing_cycle_sequence=1,
+        attempt_sequence=1,
+        billing_period_start_at=FIXTURE_START,
+    )
+    late_payment_at = FIXTURE_START + timedelta(days=2)
+    late_arrival_at = FIXTURE_START + timedelta(days=5)
+    late_payment = replace(
+        plan_subscription_payment(
+            _generator_config(late_payment_at, anomaly_profile="default"),
+            subscription.subscription_id,
+            billing_cycle_sequence=2,
+            attempt_sequence=1,
+            billing_period_start_at=late_payment_at,
+        ),
+        updated_at=late_arrival_at,
+    )
+    results: list[TableIngestionResult] = []
+    warehouse_path = tmp_path / "warehouse.duckdb"
+
+    try:
+        with postgres.source_connection() as connection:
+            assert persist_customer_records(connection, (customer,)).inserted == 1
+            assert ensure_subscription_records(connection, (subscription,)).inserted == 1
+            assert ensure_membership_tier_records(connection, (tier,)).inserted == 1
+            assert persist_subscription_payments(connection, (first_payment,)) == 1
+            connection.commit()
+
+        for source_table, cursor_at, cursor_key in (
+            ("customer_subscriptions", subscription.updated_at, str(subscription.subscription_id)),
+            ("customer_membership_tiers", tier.updated_at, customer.customer_unique_id),
+            ("subscription_payments", first_payment.updated_at, str(first_payment.payment_id)),
+        ):
+            _set_watermark(
+                postgres,
+                pipeline_name,
+                source_table,
+                CursorPosition(cursor_at - timedelta(microseconds=1), (cursor_key,)),
+                now=ingested_at,
+            )
+            results.append(
+                _ingest(
+                    postgres,
+                    storage,
+                    pipeline_name,
+                    source_table,
+                    cursor_at,
+                    1,
+                    tmp_path,
+                    ingested_at,
+                )
+            )
+
+        _create_fixture_catalog(postgres, warehouse_path, results)
+        first_build = _run_dbt_build(warehouse_path, storage, tmp_path)
+        assert first_build.returncode == 0, _combined_output(first_build)
+
+        with postgres.source_connection() as connection:
+            assert persist_subscription_payments(connection, (late_payment,)) == 1
+            connection.commit()
+
+        late_results = [
+            _ingest(
+                postgres,
+                storage,
+                pipeline_name,
+                "subscription_payments",
+                late_arrival_at,
+                1,
+                tmp_path,
+                ingested_at,
+            )
+        ]
+        results.extend(late_results)
+        _append_fixture_catalog(postgres, warehouse_path, late_results)
+        second_build = _run_dbt_build(warehouse_path, storage, tmp_path)
+        assert second_build.returncode == 0, _combined_output(second_build)
+
+        with duckdb.connect(str(warehouse_path), read_only=True) as connection:
+            rows = connection.execute(
+                """
+                SELECT payment_id, payment_date_key
+                FROM facts.fact_subscription_payments
+                ORDER BY payment_date_key
+                """
+            ).fetchall()
+
+        assert rows == [
+            (str(first_payment.payment_id), 21000102),
+            (str(late_payment.payment_id), 21000103),
+        ]
+    finally:
+        _cleanup(postgres, storage, pipeline_name, results, customer.customer_unique_id)
+
+
 def _generator_config(logical_date: datetime, *, anomaly_profile: str) -> GeneratorConfig:
     """고정된 Snapshot·Seed로 Fixture의 각 업무 시각 Generator 입력을 만든다."""
     return GeneratorConfig(
@@ -285,6 +401,35 @@ def _create_fixture_catalog(
             )
             """
         )
+        connection.executemany(
+            "INSERT INTO control.bronze_files VALUES (?, ?, ?, ?, ?, ?, ?)", rows
+        )
+
+
+def _append_fixture_catalog(
+    postgres: PostgresSettings,
+    warehouse_path: Path,
+    results: list[TableIngestionResult],
+) -> None:
+    """이미 만들어진 Bronze Catalog에 추가 Batch의 Object만 등록한다."""
+    table_batch_ids = [f"{result.run.batch_id}__{result.run.source_table}" for result in results]
+    rows: list[tuple[object, ...]] = []
+    with postgres.pipeline_connection() as connection:
+        for table_batch_id in table_batch_ids:
+            row = connection.execute(
+                """
+                SELECT source_table, object_key, schema_version, batch_id,
+                       committed_at, row_count, logical_hash
+                FROM bronze_objects
+                WHERE table_batch_id = %s AND status = 'COMMITTED'
+                """,
+                (table_batch_id,),
+            ).fetchone()
+            if row is None:
+                raise RuntimeError(f"Fixture Bronze object is missing: {table_batch_id}")
+            rows.append(tuple(row))
+
+    with duckdb.connect(str(warehouse_path)) as connection:
         connection.executemany(
             "INSERT INTO control.bronze_files VALUES (?, ?, ?, ?, ?, ?, ?)", rows
         )
