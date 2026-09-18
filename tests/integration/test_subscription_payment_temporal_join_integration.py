@@ -387,7 +387,9 @@ def test_late_contract_observation_rebinds_following_payment_versions(tmp_path) 
             )
 
         with postgres.source_connection() as connection:
-            assert persist_subscription_records(connection, (transitioned_subscription,)).updated == 1
+            assert (
+                persist_subscription_records(connection, (transitioned_subscription,)).updated == 1
+            )
             connection.commit()
 
         transition_results = [
@@ -730,7 +732,7 @@ def _ingest(
     """Fixture 전용 Batch로 Source 한 Table을 Bronze까지 수집한다."""
     request = TableIngestionRequest.for_dag_run(
         source_table=source_table,
-        dag_id=f"subscription_temporal_fixture_{sequence}",
+        dag_id=f"{pipeline_name}_{sequence}",
         logical_date=logical_date,
         pipeline_name=pipeline_name,
     )

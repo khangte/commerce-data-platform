@@ -140,7 +140,9 @@ class QuarantineBatch:
         """Table Batch·Object Key·Row Count·오류 집계의 유효성을 검증한다."""
         _assert_nonempty(self.table_batch_id, "table_batch_id", 320)
         _assert_nonempty(self.object_key, "object_key")
-        if self.row_count < 0 or any(not code or count < 0 for code, count in self.error_counts.items()):
+        if self.row_count < 0 or any(
+            not code or count < 0 for code, count in self.error_counts.items()
+        ):
             raise ValueError("Quarantine counts must be non-negative and named")
 
 
@@ -214,9 +216,7 @@ def rewind_watermark(
     _assert_nonempty(source_table, "source_table", 64)
     current_time = _utc_now(now)
     with settings.pipeline_connection() as connection, connection.transaction():
-        current = _get_or_create_watermark(
-            connection, pipeline_name, source_table, current_time
-        )
+        current = _get_or_create_watermark(connection, pipeline_name, source_table, current_time)
         if current.version != expected_version:
             raise WatermarkConflictError("Watermark changed before rewind")
         if not _cursor_is_earlier(cursor, current.cursor):

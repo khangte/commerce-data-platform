@@ -105,8 +105,8 @@ Report Model은 Mart 위에서 파생된다. BI가 Source·Bronze·Staging을 �
 - [x] `P6-21` 변경 Key 기반 Transactional `DELETE + INSERT` 또는 검증된 `MERGE`
 - [x] `P6-22` 영향 Key/Business Date 재계산
 - [x] `P6-23` Incremental과 Full Refresh Logical Hash 비교
-- [ ] `P6-24` Bronze Replay와 Re-extract 입력 경계 제공
-- [ ] `P6-25` Phase 4 Warehouse DAG의 `P4-11` dbt Build 호출 경계 활성화
+- [x] `P6-24` Bronze Replay와 Re-extract 입력 경계 제공
+- [x] `P6-25` Phase 4 Warehouse DAG의 `P4-11` dbt Build 호출 경계 활성화
 
 ## 현재 구현 현황
 
@@ -205,14 +205,14 @@ Report Model은 Mart 위에서 파생된다. BI가 Source·Bronze·Staging을 �
 
 ## Definition of Done
 
-- [ ] 모든 `P6-*` Task가 완료됐다.
+- [x] 모든 `P6-*` Task가 완료됐다.
 - [x] [Mart Grain 계약](../reference/mart-grain.md)이 확정되고 구현이 그 계약을 따른다.
 - [x] 모든 Mart의 Grain과 Unique Key가 검증된다.
 - [x] Intermediate/Mart가 Raw Source Prefix를 직접 참조하지 않는다.
 - [x] 이력 구간 중첩이 0이고 Current Version이 정확히 하나다.
 - [x] 사건이 발생 시점에 유효한 Version을 참조한다.
 - [x] Incremental과 Full Refresh의 Logical Hash가 같다.
-- [ ] Phase 4 Warehouse DAG의 `dbt_build` 호출 경계가 활성화된다.
+- [x] Phase 4 Warehouse DAG의 `dbt_build` 호출 경계가 활성화된다.
 - [ ] AC-01, 09, 10, 11, 12가 통과한다.
 
 ## Portfolio Evidence

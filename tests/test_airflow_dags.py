@@ -7,6 +7,7 @@ Airflow Image를 빌드하고 Compose로 실행하므로 무겁다. `airflow` Ma
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -14,13 +15,10 @@ import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
-pytestmark = [
-    pytest.mark.airflow,
-    pytest.mark.skipif(
-        os.environ.get("RUN_AIRFLOW_SMOKE_TEST") != "1",
-        reason="Set RUN_AIRFLOW_SMOKE_TEST=1 to build and run the airflow Compose profile.",
-    ),
-]
+_SMOKE_SKIP = pytest.mark.skipif(
+    os.environ.get("RUN_AIRFLOW_SMOKE_TEST") != "1",
+    reason="Set RUN_AIRFLOW_SMOKE_TEST=1 to build and run the airflow Compose profile.",
+)
 
 
 def _run_compose(*args: str) -> subprocess.CompletedProcess[str]:
@@ -33,6 +31,8 @@ def _run_compose(*args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+@pytest.mark.airflow
+@_SMOKE_SKIP
 def test_dags_import_without_errors() -> None:
     """두 DAG 모두 Import Error 없이 Parse된다."""
     build = _run_compose("build", "airflow-scheduler")
@@ -58,6 +58,8 @@ def test_dags_import_without_errors() -> None:
         _run_compose("down")
 
 
+@pytest.mark.airflow
+@_SMOKE_SKIP
 def test_generator_success_triggers_warehouse_with_same_logical_date() -> None:
     """Generator DagRun 성공 뒤 같은 logical_date로 Warehouse DagRun이 생성되는지 검증한다."""
     build = _run_compose("build", "airflow-scheduler")
@@ -107,6 +109,8 @@ def test_generator_success_triggers_warehouse_with_same_logical_date() -> None:
         _run_compose("down")
 
 
+@pytest.mark.airflow
+@_SMOKE_SKIP
 def test_duplicate_generator_run_skips_second_warehouse_trigger() -> None:
     """같은 logical_date로 Generator를 두 번 실행하면 두 번째 Trigger Task는 skip되고 Warehouse DagRun은 1개로 유지되는지 검증한다."""
     build = _run_compose("build", "airflow-scheduler")
@@ -153,6 +157,8 @@ def test_duplicate_generator_run_skips_second_warehouse_trigger() -> None:
         _run_compose("down")
 
 
+@pytest.mark.airflow
+@_SMOKE_SKIP
 def test_paused_warehouse_dag_fails_trigger_task() -> None:
     """warehouse_pipeline_dag가 paused 상태면 Trigger Task가 명시적으로 실패하는지 검증한다."""
     build = _run_compose("build", "airflow-scheduler")
@@ -187,6 +193,8 @@ def test_paused_warehouse_dag_fails_trigger_task() -> None:
         _run_compose("down")
 
 
+@pytest.mark.airflow
+@_SMOKE_SKIP
 def test_generator_failure_does_not_trigger_warehouse() -> None:
     """Generator 실행이 실제로 실패(AirflowFailException)하면 DagRun이 실패로 종료되어
     trigger_warehouse_pipeline Task가 실행되지 못하고(스케줄러 환경에서는 upstream_failed로
@@ -254,3 +262,17 @@ def test_generator_failure_does_not_trigger_warehouse() -> None:
         )
     finally:
         _run_compose("down")
+
+
+def test_warehouse_pipeline_defines_the_dbt_build_boundary() -> None:
+    """Warehouse DAG는 Catalog 성공 뒤 dbt Build를 실행하고 실패를 Task 실패로 전파한다."""
+    dag_source = (PROJECT_ROOT / "airflow/dags/warehouse_pipeline_dag.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert re.search(r'@task\(trigger_rule="all_success"\)\s*\n\s*def dbt_build_task', dag_source)
+    assert '"dbt", "build", "--project-dir", str(DBT_PROJECT_DIR)' in dag_source
+    assert '"--profiles-dir", str(DBT_PROJECT_DIR)' in dag_source
+    assert re.search(r'raise AirflowFailException\(\s*\n\s*f"dbt build failed', dag_source)
+    assert "dbt_build = dbt_build_task(catalog)" in dag_source
+    assert "extract_results >> verification >> catalog >> dbt_build" in dag_source
