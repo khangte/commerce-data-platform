@@ -213,7 +213,7 @@ Report Model은 Mart 위에서 파생된다. BI가 Source·Bronze·Staging을 �
 - [x] 사건이 발생 시점에 유효한 Version을 참조한다.
 - [x] Incremental과 Full Refresh의 Logical Hash가 같다.
 - [x] Phase 4 Warehouse DAG의 `dbt_build` 호출 경계가 활성화된다.
-- [ ] AC-01, 09, 10, 11, 12가 통과한다.
+- [x] AC-01, 09, 10, 11, 12가 통과한다.
 
 ## Portfolio Evidence
 
