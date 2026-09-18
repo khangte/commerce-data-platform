@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from src.ingestion.service import TableIngestionResult
 from src.rebaseline import LEGACY_SOURCE_TABLES, SOURCE_TABLES, _ingest_baseline
@@ -43,7 +43,7 @@ def test_rebaseline_allows_an_empty_subscription_payment_baseline(monkeypatch) -
     result = _ingest_baseline(
         postgres=None,  # type: ignore[arg-type]
         storage=None,  # type: ignore[arg-type]
-        logical_date=datetime(2026, 9, 3, tzinfo=timezone.utc),
+        logical_date=datetime(2026, 9, 3, tzinfo=UTC),
         lease=None,  # type: ignore[arg-type]
     )
 

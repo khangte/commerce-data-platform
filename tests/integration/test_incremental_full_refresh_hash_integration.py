@@ -57,13 +57,14 @@ def test_incremental_marts_match_a_full_refresh_of_the_same_input(tmp_path: Path
     postgres = PostgresSettings.from_environment()
     storage = SeaweedFSSettings.from_environment()
     pipeline_name = f"test_full_refresh_hash_{uuid.uuid4().hex}"
+    fixture_snapshot_id = f"test:full-refresh-hash:{uuid.uuid4().hex}"
     ingested_at = datetime.now(UTC)
-    initial_config = _generator_config(FIXTURE_START, anomaly_profile="default")
+    initial_config = _fixture_config(FIXTURE_START, fixture_snapshot_id)
     customer = new_customer_record(initial_config, 1)
     subscription = new_subscription_record(customer)
     tier = new_membership_tier_record(customer)
     first_payment = plan_subscription_payment(
-        _generator_config(FIXTURE_START + timedelta(days=1), anomaly_profile="default"),
+        _fixture_config(FIXTURE_START + timedelta(days=1), fixture_snapshot_id),
         subscription.subscription_id,
         billing_cycle_sequence=1,
         attempt_sequence=1,
@@ -73,7 +74,7 @@ def test_incremental_marts_match_a_full_refresh_of_the_same_input(tmp_path: Path
     late_arrival_at = FIXTURE_START + timedelta(days=5)
     late_payment = replace(
         plan_subscription_payment(
-            _generator_config(late_payment_at, anomaly_profile="default"),
+            _fixture_config(late_payment_at, fixture_snapshot_id),
             subscription.subscription_id,
             billing_cycle_sequence=2,
             attempt_sequence=1,
@@ -163,6 +164,14 @@ def test_incremental_marts_match_a_full_refresh_of_the_same_input(tmp_path: Path
         assert len(incremental_hashes) == 9
     finally:
         _cleanup(postgres, storage, pipeline_name, results, customer.customer_unique_id)
+
+
+def _fixture_config(logical_date: datetime, snapshot_id: str):
+    """현재 테스트 실행에만 쓰는 고유한 Generator 입력을 만든다."""
+    return replace(
+        _generator_config(logical_date, anomaly_profile="default"),
+        source_snapshot_id=snapshot_id,
+    )
 
 
 def _run_full_refresh_build(

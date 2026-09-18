@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from airflow.providers.standard.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.sdk import DAG, task
@@ -25,7 +25,7 @@ DEFAULT_TASK_ARGS = {
 with DAG(
     dag_id="source_simulation_dag",
     schedule=None,
-    start_date=datetime(2026, 1, 1),
+    start_date=datetime(2026, 1, 1, tzinfo=UTC),
     catchup=False,
     max_active_runs=1,
     default_args=DEFAULT_TASK_ARGS,

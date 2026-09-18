@@ -16,35 +16,19 @@ pytestmark = pytest.mark.integration
 )
 def test_same_raw_input_and_seeded_at_are_idempotent() -> None:
     settings = PostgresSettings.from_environment()
+    _remove_successful_generator_runs(settings)
     input_dir = PROJECT_ROOT / "data" / "raw" / "olist"
     seeded_at = parse_seeded_at("2026-09-03T00:00:00Z")
 
-    with settings.pipeline_connection() as connection:
-        previous = connection.execute(
-            """
-            SELECT raw_checksum, table_row_counts, table_content_hashes
-            FROM seed_runs
-            WHERE status = 'SUCCESS'
-            ORDER BY finished_at DESC
-            LIMIT 1
-            """
-        ).fetchone()
+    first = run_seed(input_dir, seeded_at, settings)
+    second = run_seed(input_dir, seeded_at, settings)
 
-    current = run_seed(input_dir, seeded_at, settings)
-    if previous is None:
-        previous = run_seed(input_dir, seeded_at, settings)
-        previous_checksum = previous.raw_checksum
-        previous_counts = previous.table_row_counts
-        previous_hashes = previous.table_content_hashes
-    else:
-        previous_checksum, previous_counts, previous_hashes = previous
-
-    assert current.raw_checksum == previous_checksum
-    assert current.table_row_counts == previous_counts
-    assert current.table_content_hashes == previous_hashes
+    assert second.raw_checksum == first.raw_checksum
+    assert second.table_row_counts == first.table_row_counts
+    assert second.table_content_hashes == first.table_content_hashes
 
     with settings.source_connection() as connection:
-        for table_name, expected_count in current.table_row_counts.items():
+        for table_name, expected_count in second.table_row_counts.items():
             assert (
                 connection.execute(f"SELECT count(*) FROM {table_name}").fetchone()[0]
                 == expected_count
@@ -80,6 +64,7 @@ def test_source_schema_keeps_only_the_selected_raw_columns_and_extensions() -> N
 )
 def test_seed_guard_rejects_a_changed_baseline_after_success() -> None:
     settings = PostgresSettings.from_environment()
+    _remove_successful_generator_runs(settings)
 
     with pytest.raises(ValueError, match="baseline input differs"):
         run_seed(
@@ -87,3 +72,10 @@ def test_seed_guard_rejects_a_changed_baseline_after_success() -> None:
             parse_seeded_at("2026-09-04T00:00:00Z"),
             settings,
         )
+
+
+def _remove_successful_generator_runs(settings: PostgresSettings) -> None:
+    """Seed Guard가 검증할 기준선을 위해 이전 Generator 성공 이력을 제거한다."""
+    with settings.pipeline_connection() as connection:
+        connection.execute("DELETE FROM generator_runs WHERE status = 'SUCCESS'")
+        connection.commit()
