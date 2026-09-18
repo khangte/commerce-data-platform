@@ -1,6 +1,7 @@
 # 002. Mart Grain 계약과 구현의 명명 불일치 (보류)
 
 - 판정: **보류 — 이번 브랜치 범위 밖 (lead 결정)**
+- 후속: Dimension PK 이름(`dim_product` / `dim_seller` / `dim_date`)과 PK Test 부재는 `009_type1-dimension-pk-and-tests.md`에서 처리했다. Fact 이름과 `payment_sequential` 항목은 여전히 보류다.
 - 대상: `docs/reference/mart-grain.md` vs `dbt/models/marts/`
 - 발견 경위: `P6-23` Hash 정렬 Key 확정 중 확인
 - 기록일: 2026-09-18

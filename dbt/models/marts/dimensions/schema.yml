@@ -44,3 +44,23 @@ models:
         data_tests: [not_null]
       - name: is_current
         data_tests: [not_null]
+
+  - name: dim_date
+    description: 날짜 단위 분석을 위한 Type 1 Dimension이다.
+    columns:
+      - name: date_key
+        data_tests: [not_null, unique]
+      - name: calendar_date
+        data_tests: [not_null, unique]
+
+  - name: dim_product
+    description: 상품 단위 분석을 위한 Type 1 Dimension이다.
+    columns:
+      - name: product_id
+        data_tests: [not_null, unique]
+
+  - name: dim_seller
+    description: 판매자 단위 분석을 위한 Type 1 Dimension이다.
+    columns:
+      - name: seller_id
+        data_tests: [not_null, unique]

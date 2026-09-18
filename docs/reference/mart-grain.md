@@ -163,18 +163,19 @@ SCD Type 2 Dimension은 아래 세 컬럼을 공통으로 갖는다.
 
 ### 1.8 Surrogate Key 생성
 
-Dimension의 Surrogate Key는 `VARCHAR` 타입이며 결정적 Hash로 만든다.
+SCD Type 2 Dimension의 Surrogate Key는 `VARCHAR` 타입이며 결정적 Hash로 만든다.
 
 | 대상        | 생성식                                                            |
 | ----------- | ----------------------------------------------------------------- |
-| 비-SCD2     | `md5(<Business Key>)`                                             |
 | SCD Type 2  | `md5(<Business Key> \|\| '\|' \|\| <valid_from> \|\| '\|' \|\| <attribute_hash>)` |
 
 시퀀스나 `row_number()`를 쓰지 않는다. Full Refresh와 Incremental 사이에서 값이 달라져 이미 적재된 Fact의 FK가 끊긴다. Hash는 같은 입력에 항상 같은 값을 주므로 두 실행 방식이 일치한다.
 
 `dim_date.date_key`는 예외다. `YYYYMMDD` 정수라 날짜 자체가 결정적 Key이고, 기간 조회에서 정수 비교와 범위 Partition을 쓴다.
 
-Fact의 Dimension FK는 참조 대상 Dimension의 Surrogate Key와 같은 타입으로 적는다.
+Type 1 Dimension인 `dim_product`, `dim_seller`는 Surrogate Key를 두지 않고 Business Key를 Primary Key로 쓴다. 한 Entity가 정확히 한 행이고 `md5(<Business Key>)`는 Business Key와 1:1이므로 별도 식별 정보를 더하지 않는다. Type 2로 바뀌면 그때 `*_key`를 도입한다.
+
+Fact의 Dimension FK는 참조 대상 Dimension의 Primary Key와 같은 이름과 타입으로 적는다.
 
 ## 2. Dimension
 
@@ -186,8 +187,8 @@ SCD Type 2 Dimension은 지연 관측 하나로 과거 구간 전체가 재배�
 | ------------------ | ----------------------- | ------------------ | --------------- |
 | `dim_customer`     | 고객 상태 버전 1행      | `customer_key`     | table           |
 | `dim_date`         | 날짜 1일 1행            | `date_key`         | table           |
-| `dim_product`      | 상품 1개 1행            | `product_key`      | table           |
-| `dim_seller`       | 판매자 1명 1행          | `seller_key`       | table           |
+| `dim_product`      | 상품 1개 1행            | `product_id`       | table           |
+| `dim_seller`       | 판매자 1명 1행          | `seller_id`        | table           |
 | `dim_subscription` | 구독 계약 상태 버전 1행 | `subscription_key` | table           |
 
 ### 2.1 `dim_customer`
@@ -214,14 +215,14 @@ SCD Type 2 Dimension은 지연 관측 하나로 과거 구간 전체가 재배�
 
 - 한 행: 날짜 1일 1행
 - Primary Key: `date_key`
-- Business Key: `full_date`
+- Business Key: `calendar_date`
 - Materialization: table
 - 생성 방식: 지정 기간의 날짜를 연속 생성
 
 | 컬럼           | 타입     | 종류                | Null | 정의 / Test                                          |
 | -------------- | -------- | ------------------- | ---- | ---------------------------------------------------- |
 | `date_key`     | INTEGER  | Surrogate Key / PK  | N    | 날짜 식별 키. `YYYYMMDD` 형식 / `unique`, `not_null` |
-| `full_date`    | DATE     | Business Key        | N    | 실제 날짜 값 / `unique`, `not_null`                  |
+| `calendar_date`| DATE     | Business Key        | N    | 실제 날짜 값 / `unique`, `not_null`                  |
 | `year`         | SMALLINT | Dimension Attribute | N    | 연도                                                 |
 | `quarter`      | TINYINT  | Dimension Attribute | N    | 분기 번호 `1~4` / `accepted_values: 1,2,3,4`         |
 | `month`        | TINYINT  | Dimension Attribute | N    | 월 번호 `1~12`                                       |
@@ -235,15 +236,14 @@ SCD Type 2 Dimension은 지연 관측 하나로 과거 구간 전체가 재배�
 ### 2.3 `dim_product`
 
 - 한 행: 상품 1개 1행
-- Primary Key: `product_key`
-- Business Key: `product_id`
+- Primary Key: `product_id`
+- Business Key: `product_id` (PK와 같음)
 - Materialization: table
 - 출처: `stg_products`
 
 | 컬럼                    | 타입    | 종류                | Null | 정의 / Test                                   |
 | ----------------------- | ------- | ------------------- | ---- | --------------------------------------------- |
-| `product_key`           | VARCHAR | Surrogate Key / PK  | N    | DW 내부 상품 식별 키. `md5(product_id)`. 1.8절 / `unique`, `not_null` |
-| `product_id`            | VARCHAR | Business Key        | N    | Olist 원본 상품 식별자 / `unique`, `not_null` |
+| `product_id`            | VARCHAR | Business Key / PK   | N    | Olist 원본 상품 식별자 / `unique`, `not_null` |
 | `product_category_name` | VARCHAR | Dimension Attribute | Y    | 상품 카테고리명                               |
 | `product_weight_g`      | INTEGER | Dimension Attribute | Y    | 상품 무게(g)                                  |
 | `product_length_cm`     | INTEGER | Dimension Attribute | Y    | 상품 길이(cm)                                 |
@@ -253,15 +253,14 @@ SCD Type 2 Dimension은 지연 관측 하나로 과거 구간 전체가 재배�
 ### 2.4 `dim_seller`
 
 - 한 행: 판매자 1명 1행
-- Primary Key: `seller_key`
-- Business Key: `seller_id`
+- Primary Key: `seller_id`
+- Business Key: `seller_id` (PK와 같음)
 - Materialization: table
 - 출처: `stg_sellers`
 
 | 컬럼           | 타입    | 종류                | Null | 정의 / Test                                     |
 | -------------- | ------- | ------------------- | ---- | ----------------------------------------------- |
-| `seller_key`   | VARCHAR | Surrogate Key / PK  | N    | DW 내부 판매자 식별 키. `md5(seller_id)`. 1.8절 / `unique`, `not_null` |
-| `seller_id`    | VARCHAR | Business Key        | N    | Olist 원본 판매자 식별자 / `unique`, `not_null` |
+| `seller_id`    | VARCHAR | Business Key / PK   | N    | Olist 원본 판매자 식별자 / `unique`, `not_null` |
 | `seller_city`  | VARCHAR | Dimension Attribute | N    | 판매자가 위치한 도시                            |
 | `seller_state` | VARCHAR | Dimension Attribute | N    | 판매자가 위치한 브라질 주(State) 코드           |
 
@@ -345,8 +344,8 @@ Business Key가 계약이므로 해지 뒤 재가입한 사람은 `subscription_
 | ------------------------- | ------------- | -------------------------------- | ---- | ---------------------------------------------------------------------------------------------------- |
 | `order_id`                | VARCHAR       | Degenerate Dimension / Grain Key | N    | Olist 주문 식별자 / `not_null`                                                                       |
 | `order_item_id`           | INTEGER       | Degenerate Dimension / Grain Key | N    | 주문 내부 상품 항목 순번 / `not_null`                                                                |
-| `product_key`             | VARCHAR       | Dimension FK                     | N    | 상품 Dimension 참조 키 / `not_null`, `relationships → dim_product.product_key`                       |
-| `seller_key`              | VARCHAR       | Dimension FK                     | N    | 판매자 Dimension 참조 키 / `not_null`, `relationships → dim_seller.seller_key`                       |
+| `product_id`              | VARCHAR       | Dimension FK                     | N    | 상품 Dimension 참조 키 / `not_null`, `relationships → dim_product.product_id`                        |
+| `seller_id`               | VARCHAR       | Dimension FK                     | N    | 판매자 Dimension 참조 키 / `not_null`, `relationships → dim_seller.seller_id`                        |
 | `purchase_date_key`       | INTEGER       | Dimension FK                     | N    | 주문이 발생한 날짜 / `not_null`, `relationships → dim_date.date_key`                                 |
 | `shipping_limit_date_key` | INTEGER       | Dimension FK                     | N    | 판매자가 물류사에 상품을 전달해야 하는 기한의 날짜 / `not_null`, `relationships → dim_date.date_key` |
 | `shipping_limit_at`       | TIMESTAMPTZ   | Event Timestamp                  | N    | 원본 `shipping_limit_date`. 정확한 배송 준비 마감 시각                                               |
