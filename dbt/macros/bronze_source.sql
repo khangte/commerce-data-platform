@@ -12,6 +12,7 @@
             select object_key, schema_version
             from control.bronze_files
             where source_table = '{{ source_table }}'
+            {{ replay_boundary_predicate() }}
             order by committed_at, object_key
         {%- endset -%}
         {%- set catalog_rows = run_query(catalog_query) -%}
@@ -124,6 +125,7 @@
             select distinct schema_version
             from control.bronze_files
             where schema_version != 3
+            {{ replay_boundary_predicate() }}
             order by schema_version
         {%- endset -%}
         {%- set invalid_versions = run_query(invalid_versions_query) -%}
