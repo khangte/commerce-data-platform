@@ -38,10 +38,10 @@
     {#- 모든 Fact를 함께 Build한 경우에만 재계산 경계를 전진시킨다. -#}
     {%- if execute and replay_boundary() is none -%}
         {%- set required_facts = [
-            'model.commerce_data_platform.fact_orders',
-            'model.commerce_data_platform.fact_order_items',
-            'model.commerce_data_platform.fact_payments',
-            'model.commerce_data_platform.fact_subscription_payments',
+            'model.commerce_data_platform.fct_order',
+            'model.commerce_data_platform.fct_order_item',
+            'model.commerce_data_platform.fct_order_payment',
+            'model.commerce_data_platform.fct_subscription_payment',
         ] -%}
         {%- set selected = selected_resources | list -%}
         {%- set missing = required_facts | reject('in', selected) | list -%}

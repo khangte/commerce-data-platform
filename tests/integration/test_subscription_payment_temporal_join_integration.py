@@ -164,7 +164,7 @@ def test_subscription_payment_uses_the_active_customer_version_at_billing_time(t
                     customer.membership_tier,
                     subscription.valid_from,
                     subscription.valid_to
-                FROM facts.fact_subscription_payments AS fact
+                FROM facts.fct_subscription_payment AS fact
                 LEFT JOIN dimensions.dim_subscription AS subscription USING (subscription_key)
                 LEFT JOIN dimensions.dim_customer AS customer USING (customer_key)
                 WHERE fact.payment_id = ?
@@ -305,7 +305,7 @@ def test_subscription_payment_before_subscription_first_observation_still_resolv
             fact_rows = connection.execute(
                 """
                 SELECT fact.subscription_key, fact.customer_key
-                FROM facts.fact_subscription_payments AS fact
+                FROM facts.fct_subscription_payment AS fact
                 WHERE fact.payment_id = ?
                 """,
                 [str(payment.payment_id)],
@@ -419,7 +419,7 @@ def test_late_subscription_payment_updates_the_past_payment_date_fact(tmp_path) 
             rows = connection.execute(
                 """
                 SELECT payment_id, payment_date_key
-                FROM facts.fact_subscription_payments
+                FROM facts.fct_subscription_payment
                 ORDER BY payment_date_key
                 """
             ).fetchall()
@@ -513,7 +513,7 @@ def test_late_contract_observation_rebinds_following_payment_versions(tmp_path) 
         with duckdb.connect(str(warehouse_path), read_only=True) as connection:
             before = dict(
                 connection.execute(
-                    "SELECT payment_id, subscription_key FROM facts.fact_subscription_payments"
+                    "SELECT payment_id, subscription_key FROM facts.fct_subscription_payment"
                 ).fetchall()
             )
 
@@ -545,14 +545,14 @@ def test_late_contract_observation_rebinds_following_payment_versions(tmp_path) 
                 connection.execute(
                     """
                     SELECT fact.payment_id, subscription.subscription_status
-                    FROM facts.fact_subscription_payments AS fact
+                    FROM facts.fct_subscription_payment AS fact
                     JOIN dimensions.dim_subscription AS subscription USING (subscription_key)
                     """
                 ).fetchall()
             )
             keys_after = dict(
                 connection.execute(
-                    "SELECT payment_id, subscription_key FROM facts.fact_subscription_payments"
+                    "SELECT payment_id, subscription_key FROM facts.fct_subscription_payment"
                 ).fetchall()
             )
 
@@ -668,7 +668,7 @@ def test_two_batches_before_one_build_are_both_recomputed(tmp_path) -> None:
             payment_ids = {
                 row[0]
                 for row in connection.execute(
-                    "SELECT payment_id FROM facts.fact_subscription_payments"
+                    "SELECT payment_id FROM facts.fct_subscription_payment"
                 ).fetchall()
             }
 
@@ -806,7 +806,7 @@ def test_watermark_does_not_advance_when_a_model_fails(tmp_path) -> None:
             payment_ids = {
                 row[0]
                 for row in connection.execute(
-                    "SELECT payment_id FROM facts.fact_subscription_payments"
+                    "SELECT payment_id FROM facts.fct_subscription_payment"
                 ).fetchall()
             }
 

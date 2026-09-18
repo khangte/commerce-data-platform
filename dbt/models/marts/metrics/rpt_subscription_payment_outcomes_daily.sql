@@ -5,5 +5,5 @@ select
     count(*) as payment_count,
     count(distinct customer_key) as paying_customer_count,
     sum(completed_payment_value) as completed_payment_value_total
-from {{ ref('fact_subscription_payments') }}
+from {{ ref('fct_subscription_payment') }}
 group by payment_date_key, payment_status

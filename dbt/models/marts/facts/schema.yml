@@ -1,7 +1,7 @@
 version: 2
 
 models:
-  - name: fact_orders
+  - name: fct_order
     description: 주문 Grain Fact다. Item/Payment는 이미 주문 단위로 집계되어 반영되어 있다.
     columns:
       - name: order_id
@@ -21,23 +21,23 @@ models:
                 to: ref('dim_date')
                 field: date_key
 
-  - name: fact_order_items
-    description: 주문 Line Grain Fact다. 복합 PK는 tests/fact_order_items_unique.sql이 검증한다.
+  - name: fct_order_item
+    description: 주문 Line Grain Fact다. 복합 PK는 tests/fct_order_item_unique.sql이 검증한다.
     columns:
       - name: order_id
         data_tests: [not_null]
       - name: order_item_id
         data_tests: [not_null]
 
-  - name: fact_payments
-    description: 결제 Sequence Grain Fact다. 복합 PK는 tests/fact_payments_unique.sql이 검증한다.
+  - name: fct_order_payment
+    description: 결제 Sequence Grain Fact다. 복합 PK는 tests/fct_order_payment_unique.sql이 검증한다.
     columns:
       - name: order_id
         data_tests: [not_null]
       - name: payment_sequence
         data_tests: [not_null]
 
-  - name: fact_subscription_payments
+  - name: fct_subscription_payment
     description: 계약별 구독 결제 시도 Grain의 Fact다. 청구 회차·시도 조합은 Singular Test가 검증한다.
     columns:
       - name: payment_id

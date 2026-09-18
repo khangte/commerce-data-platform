@@ -5,9 +5,9 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 ORDER_AXIS_FACTS = (
-    "dbt/models/marts/facts/fact_orders.sql",
-    "dbt/models/marts/facts/fact_order_items.sql",
-    "dbt/models/marts/facts/fact_payments.sql",
+    "dbt/models/marts/facts/fct_order.sql",
+    "dbt/models/marts/facts/fct_order_item.sql",
+    "dbt/models/marts/facts/fct_order_payment.sql",
 )
 
 
@@ -32,7 +32,7 @@ def test_order_axis_facts_replace_whole_orders() -> None:
 
 def test_subscription_payment_fact_filters_by_affected_payment_keys() -> None:
     """구독 결제 Fact는 영향 결제 시도만 다시 계산한다."""
-    sql = (PROJECT_ROOT / "dbt/models/marts/facts/fact_subscription_payments.sql").read_text()
+    sql = (PROJECT_ROOT / "dbt/models/marts/facts/fct_subscription_payment.sql").read_text()
 
     assert "is_incremental()" in sql
     assert "ref('int_affected_subscription_payment_keys')" in sql

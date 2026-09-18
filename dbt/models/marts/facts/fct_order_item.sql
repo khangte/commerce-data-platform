@@ -6,7 +6,7 @@
     )
 }}
 
--- dbt unique_key는 교체 단위인 주문이다. Grain 유일성은 tests/fact_order_items_unique.sql이 강제한다.
+-- dbt unique_key는 교체 단위인 주문이다. Grain 유일성은 tests/fct_order_item_unique.sql이 강제한다.
 select
     order_id,
     order_item_id,

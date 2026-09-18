@@ -110,10 +110,10 @@ def test_hash_targets_declare_an_order_key() -> None:
 
 def test_mismatched_relations_reports_changed_and_missing_entries() -> None:
     """값이 다르거나 한쪽에만 있는 Relation 이름을 정렬해 돌려준다."""
-    left = {"facts.fact_orders": "aaa", "facts.fact_payments": "bbb", "dimensions.dim_date": "ccc"}
-    right = {"facts.fact_orders": "aaa", "facts.fact_payments": "zzz"}
+    left = {"facts.fct_order": "aaa", "facts.fct_order_payment": "bbb", "dimensions.dim_date": "ccc"}
+    right = {"facts.fct_order": "aaa", "facts.fct_order_payment": "zzz"}
 
-    assert mismatched_relations(left, right) == ("dimensions.dim_date", "facts.fact_payments")
+    assert mismatched_relations(left, right) == ("dimensions.dim_date", "facts.fct_order_payment")
 
 
 def test_describe_mart_difference_separates_missing_keys_from_changed_keys(tmp_path: Path) -> None:
@@ -134,7 +134,7 @@ def test_describe_mart_difference_separates_missing_keys_from_changed_keys(tmp_p
 
 def test_target_for_returns_the_declared_target() -> None:
     """Relation 이름으로 Hash 대상 정의를 찾는다."""
-    assert target_for("facts.fact_orders").order_by == ("order_id",)
+    assert target_for("facts.fct_order").order_by == ("order_id",)
 
     with pytest.raises(KeyError):
         target_for("facts.fact_unknown")

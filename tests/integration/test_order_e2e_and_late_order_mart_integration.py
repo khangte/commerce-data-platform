@@ -80,7 +80,7 @@ def test_fixed_order_is_traceable_from_source_to_fact(tmp_path) -> None:
 
         with duckdb.connect(str(warehouse_path), read_only=True) as connection:
             fact_row = connection.execute(
-                "SELECT order_id, order_count FROM facts.fact_orders WHERE order_id = ?",
+                "SELECT order_id, order_count FROM facts.fct_order WHERE order_id = ?",
                 [bundle.order.order_id],
             ).fetchone()
         assert fact_row == (bundle.order.order_id, 1)
@@ -129,7 +129,7 @@ def test_late_order_updates_the_past_business_date_mart(tmp_path) -> None:
         expected_date_key = int(business_event_time.strftime("%Y%m%d"))
         with duckdb.connect(str(warehouse_path), read_only=True) as connection:
             fact_row = connection.execute(
-                "SELECT purchase_date_key FROM facts.fact_orders WHERE order_id = ?",
+                "SELECT purchase_date_key FROM facts.fct_order WHERE order_id = ?",
                 [bundle.order.order_id],
             ).fetchone()
         assert fact_row == (expected_date_key,)

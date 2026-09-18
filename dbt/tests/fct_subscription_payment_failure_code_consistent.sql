@@ -1,3 +1,3 @@
 select *
-from {{ ref('fact_subscription_payments') }}
+from {{ ref('fct_subscription_payment') }}
 where payment_status = 'completed' and failure_code is not null

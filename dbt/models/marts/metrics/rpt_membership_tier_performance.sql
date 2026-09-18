@@ -3,18 +3,18 @@ select
     dim_customer.membership_tier,
     count(distinct dim_customer.customer_id) as customer_count,
     count(*) as order_count,
-    sum(fact_orders.gross_order_value) as gross_order_value,
-    sum(case when fact_orders.order_status = 'DELIVERED' then 1 else 0 end) as delivered_order_count,
+    sum(fct_order.gross_order_value) as gross_order_value,
+    sum(case when fct_order.order_status = 'DELIVERED' then 1 else 0 end) as delivered_order_count,
     sum(
-        case when fact_orders.order_status = 'DELIVERED' then fact_orders.gross_order_value else 0 end
+        case when fct_order.order_status = 'DELIVERED' then fct_order.gross_order_value else 0 end
     ) as delivered_gmv,
     sum(
-        case when fact_orders.order_status = 'DELIVERED' then fact_orders.gross_order_value else 0 end
+        case when fct_order.order_status = 'DELIVERED' then fct_order.gross_order_value else 0 end
     ) / nullif(
-        sum(case when fact_orders.order_status = 'DELIVERED' then 1 else 0 end),
+        sum(case when fct_order.order_status = 'DELIVERED' then 1 else 0 end),
         0
     ) as delivered_aov
-from {{ ref('fact_orders') }} as fact_orders
+from {{ ref('fct_order') }} as fct_order
 inner join {{ ref('dim_customer') }} as dim_customer
-    on fact_orders.customer_key = dim_customer.customer_key
+    on fct_order.customer_key = dim_customer.customer_key
 group by dim_customer.membership_tier

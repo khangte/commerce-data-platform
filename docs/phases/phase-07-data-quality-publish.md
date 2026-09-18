@@ -28,7 +28,7 @@ Phase 7의 Publish Workflow와 E2E 품질 Gate를 완료했다는 뜻은 아니�
 | ---- | --------- |
 | `dbt/models/marts/dimensions/schema.yml` | 고객 SCD2 Key·상태 도메인·등급 도메인·필수값 테스트를 추가했다. |
 | `dbt/tests/dim_customer_*.sql` | SCD2 구간 비중복, 고객별 Current Version 1건, 허용 상태 전이, 재가입 측정값, 등급 하락 금지를 검증한다. |
-| `dbt/tests/fact_subscription_payments_missing_customer_key.sql` | 구독 결제 Fact의 고객 SCD2 Version 누락을 검증한다. |
+| `dbt/tests/fct_subscription_payment_missing_customer_key.sql` | 구독 결제 Fact의 고객 SCD2 Version 누락을 검증한다. |
 
 - [x] 구독 상태 전이·SCD2 구간 비중복·재가입·등급 규칙을 dbt Test로 검증한다.
 - [ ] Publish 경계, 실패 Build 격리와 마지막 성공 Mart 보존은 `P7-13` 이후 작업으로 남는다.

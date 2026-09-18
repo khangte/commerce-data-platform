@@ -38,10 +38,10 @@ MART_HASH_TARGETS: tuple[MartTarget, ...] = (
     MartTarget("dimensions", "dim_product", ("product_id",)),
     MartTarget("dimensions", "dim_seller", ("seller_id",)),
     MartTarget("dimensions", "dim_subscription", ("subscription_key",)),
-    MartTarget("facts", "fact_orders", ("order_id",)),
-    MartTarget("facts", "fact_order_items", ("order_id", "order_item_id")),
-    MartTarget("facts", "fact_payments", ("order_id", "payment_sequence")),
-    MartTarget("facts", "fact_subscription_payments", ("payment_id",)),
+    MartTarget("facts", "fct_order", ("order_id",)),
+    MartTarget("facts", "fct_order_item", ("order_id", "order_item_id")),
+    MartTarget("facts", "fct_order_payment", ("order_id", "payment_sequence")),
+    MartTarget("facts", "fct_subscription_payment", ("payment_id",)),
 )
 
 
