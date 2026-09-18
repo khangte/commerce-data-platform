@@ -15,7 +15,11 @@ from psycopg.types.json import Jsonb
 
 from src.common.database import PostgresSettings
 from src.generator.config import GENERATOR_VERSION, GeneratorConfig
-from src.generator.customers import new_customer_record
+from src.generator.customers import (
+    ensure_subscription_records,
+    new_customer_record,
+    new_subscription_record,
+)
 from src.generator.orders import (
     OrderBundle,
     OrderCatalog,
@@ -49,6 +53,7 @@ def test_fixed_order_is_traceable_from_source_to_fact(tmp_path) -> None:
     config = _generator_config(FIXTURE_START)
     catalog = _fetch_catalog(postgres)
     customer = new_customer_record(config, 1)
+    subscription = new_subscription_record(customer)
     bundle = new_order_bundle(config, customer, catalog, order_ordinal=1)
     results: list[TableIngestionResult] = []
     pipeline_name = f"test_order_e2e_{uuid.uuid4().hex}"
@@ -56,6 +61,7 @@ def test_fixed_order_is_traceable_from_source_to_fact(tmp_path) -> None:
     try:
         with postgres.source_connection() as connection, connection.transaction():
             mutation = persist_order_bundle(connection, bundle)
+            assert ensure_subscription_records(connection, (subscription,)).inserted == 1
         assert mutation.orders_inserted == 1
         assert mutation.items_inserted == len(bundle.items)
         assert mutation.payments_inserted == len(bundle.payments)
@@ -65,7 +71,7 @@ def test_fixed_order_is_traceable_from_source_to_fact(tmp_path) -> None:
             results.append(
                 _ingest(postgres, storage, pipeline_name, source_table, FIXTURE_START, tmp_path, ingested_at)
             )
-        assert all(result.row_count == 1 for result in results)
+        assert [result.row_count for result in results] == [1, 1, 1, 1, len(bundle.items), 1]
 
         warehouse_path = tmp_path / "warehouse.duckdb"
         _create_fixture_catalog(postgres, warehouse_path, results)
@@ -97,6 +103,7 @@ def test_late_order_updates_the_past_business_date_mart(tmp_path) -> None:
     config = _generator_config(mutation_time)
     catalog = _fetch_catalog(postgres)
     customer = new_customer_record(config, 1)
+    subscription = new_subscription_record(customer)
     bundle = late_order_bundle(config, customer, catalog, order_ordinal=1, business_event_time=business_event_time)
     results: list[TableIngestionResult] = []
     pipeline_name = f"test_late_order_{uuid.uuid4().hex}"
@@ -104,6 +111,7 @@ def test_late_order_updates_the_past_business_date_mart(tmp_path) -> None:
     try:
         with postgres.source_connection() as connection, connection.transaction():
             mutation = persist_order_bundle(connection, bundle)
+            assert ensure_subscription_records(connection, (subscription,)).inserted == 1
         assert mutation.orders_inserted == 1
 
         _seed_watermarks(postgres, pipeline_name, bundle, ingested_at)
@@ -111,7 +119,7 @@ def test_late_order_updates_the_past_business_date_mart(tmp_path) -> None:
             results.append(
                 _ingest(postgres, storage, pipeline_name, source_table, mutation_time, tmp_path, ingested_at)
             )
-        assert all(result.row_count == 1 for result in results)
+        assert [result.row_count for result in results] == [1, 1, 1, 1, len(bundle.items), 1]
 
         warehouse_path = tmp_path / "warehouse.duckdb"
         _create_fixture_catalog(postgres, warehouse_path, results)

@@ -333,6 +333,7 @@ def test_late_contract_observation_rebinds_following_payment_versions(tmp_path) 
         billing_period_start_at=FIXTURE_START + timedelta(days=31),
     )
     transition_at = FIXTURE_START + timedelta(days=20)
+    transition_arrival_at = FIXTURE_START + timedelta(days=50)
     (transitioned_subscription,) = subscription_transition_records(
         _generator_config(transition_at, anomaly_profile="default"),
         (subscription,),
@@ -352,7 +353,7 @@ def test_late_contract_observation_rebinds_following_payment_versions(tmp_path) 
         for source_table, cursor_at, cursor_key in (
             ("customer_subscriptions", subscription.updated_at, str(subscription.subscription_id)),
             ("customer_membership_tiers", tier.updated_at, customer.customer_unique_id),
-            ("subscription_payments", later_payment.updated_at, str(later_payment.payment_id)),
+            ("subscription_payments", early_payment.updated_at, str(early_payment.payment_id)),
         ):
             _set_watermark(
                 postgres,
@@ -395,7 +396,7 @@ def test_late_contract_observation_rebinds_following_payment_versions(tmp_path) 
                 storage,
                 pipeline_name,
                 "customer_subscriptions",
-                transitioned_subscription.updated_at,
+                transition_arrival_at,
                 1,
                 tmp_path,
                 ingested_at,
