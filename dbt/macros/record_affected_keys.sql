@@ -9,7 +9,7 @@
                 recorded_at TIMESTAMPTZ NOT NULL DEFAULT current_timestamp
             )
         ") -%}
-        {%- set affected_relation = ref('int_affected_business_dates') -%}
+        {%- set affected_relation = ref('int_affected_order_keys') -%}
         {%- set insert_sql -%}
             insert into control.affected_keys (invocation_id, order_id, business_date_key)
             select '{{ invocation_id }}', order_id, business_date_key
