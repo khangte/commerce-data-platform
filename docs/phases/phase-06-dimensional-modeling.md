@@ -69,7 +69,7 @@ Model을 만들기 전에 Grain 문장을 먼저 쓴다. 컬럼 목록만으로�
 - [x] `P6-07` Grain이 다른 입력의 사전 집계
 - [x] `P6-08` 이력 구간 생성
 - [x] `P6-09` Mart가 투영할 행 준비 (파생 계산 포함)
-- [ ] `P6-10` Late Arrival 영향 범위 계산
+- [x] `P6-10` Late Arrival 영향 범위 계산
 
 집계·파생·이력 구간 생성은 Intermediate에서 끝낸다. Late Arrival 영향 범위는 주문 구매일, 연결 주문 구매일, 고객 변경 구간, Product/Seller 사용 주문일을 기준으로 계산한다.
 
@@ -103,7 +103,7 @@ Report Model은 Mart 위에서 파생된다. BI가 Source·Bronze·Staging을 �
 ## Phase 6F. Incremental과 Late Arrival
 
 - [x] `P6-21` 변경 Key 기반 Transactional `DELETE + INSERT` 또는 검증된 `MERGE`
-- [ ] `P6-22` 영향 Key/Business Date 재계산
+- [x] `P6-22` 영향 Key/Business Date 재계산
 - [ ] `P6-23` Incremental과 Full Refresh Logical Hash 비교
 - [ ] `P6-24` Bronze Replay와 Re-extract 입력 경계 제공
 - [ ] `P6-25` Phase 4 Warehouse DAG의 `P4-11` dbt Build 호출 경계 활성화
