@@ -60,6 +60,16 @@ def test_watermark_advance_skips_failed_or_skipped_build_results() -> None:
     assert "'warn'" not in macro
 
 
+def test_watermark_advance_skips_boundary_replay_builds() -> None:
+    """bronze_as_of 경계 Build는 재계산 경계를 전진시키지 않는다."""
+    macro = (PROJECT_ROOT / "dbt/macros/processed_batch_watermark.sql").read_text(
+        encoding="utf-8"
+    )
+
+    assert "execute and replay_boundary() is none" in macro
+    assert "Skipping watermark advance: bronze_as_of replay boundary build" in macro
+
+
 def _run_operation(warehouse_path: Path, operation: str) -> subprocess.CompletedProcess[str]:
     """격리된 Warehouse에 dbt Operation 하나를 실행한다."""
     environment = {

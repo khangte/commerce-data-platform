@@ -36,7 +36,7 @@
 
 {% macro advance_processed_batch_watermark() -%}
     {#- 모든 Fact를 함께 Build한 경우에만 재계산 경계를 전진시킨다. -#}
-    {%- if execute -%}
+    {%- if execute and replay_boundary() is none -%}
         {%- set required_facts = [
             'model.commerce_data_platform.fact_orders',
             'model.commerce_data_platform.fact_order_items',
@@ -72,5 +72,7 @@
                 {%- do run_query(advance_sql) -%}
             {%- endif -%}
         {%- endif -%}
+    {%- elif execute -%}
+        {%- do log("Skipping watermark advance: bronze_as_of replay boundary build", info=true) -%}
     {%- endif -%}
 {%- endmacro %}
