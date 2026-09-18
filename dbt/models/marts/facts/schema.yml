@@ -6,6 +6,20 @@ models:
     columns:
       - name: order_id
         data_tests: [not_null, unique]
+      - name: customer_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_customer')
+                field: customer_key
+      - name: purchase_date_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_date')
+                field: date_key
 
   - name: fact_order_items
     description: 주문 Line Grain Fact다. 복합 PK는 tests/fact_order_items_unique.sql이 검증한다.
