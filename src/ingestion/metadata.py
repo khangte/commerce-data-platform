@@ -22,6 +22,14 @@ class WatermarkConflictError(RuntimeError):
     """기대한 Watermark Version 또는 Cursor가 달라 Commit할 수 없을 때 발생한다."""
 
 
+class WatermarkRewindError(RuntimeError):
+    """되감기 대상 Cursor가 현재 Cursor보다 과거가 아닐 때 발생한다."""
+
+
+class TableLeaseOwnershipLostError(RuntimeError):
+    """Lease 소유권을 잃은 상태에서 Metadata를 쓰려 할 때 발생한다."""
+
+
 class PipelineRunStateError(RuntimeError):
     """허용되지 않은 Pipeline Run 상태 전이를 시도했을 때 발생한다."""
 
@@ -189,6 +197,62 @@ def get_or_create_watermark(
     ensure_ingestion_metadata(settings)
     with settings.pipeline_connection() as connection, connection.transaction():
         return _get_or_create_watermark(connection, pipeline_name, source_table, current_time)
+
+
+def rewind_watermark(
+    settings: PostgresSettings,
+    *,
+    pipeline_name: str,
+    source_table: str,
+    owner_id: uuid.UUID,
+    expected_version: int,
+    cursor: CursorPosition,
+    now: datetime | None = None,
+) -> Watermark:
+    """Table Lease 소유자만 Watermark Cursor를 과거로 되감고 새 Snapshot을 돌려준다."""
+    _assert_nonempty(pipeline_name, "pipeline_name", 128)
+    _assert_nonempty(source_table, "source_table", 64)
+    current_time = _utc_now(now)
+    with settings.pipeline_connection() as connection, connection.transaction():
+        current = _get_or_create_watermark(
+            connection, pipeline_name, source_table, current_time
+        )
+        if current.version != expected_version:
+            raise WatermarkConflictError("Watermark changed before rewind")
+        if not _cursor_is_earlier(cursor, current.cursor):
+            raise WatermarkRewindError("Rewind target must be earlier than the current cursor")
+        updated = connection.execute(
+            """
+            UPDATE watermarks
+            SET watermark_timestamp = %s,
+                watermark_keys = %s,
+                version = version + 1,
+                updated_at = %s
+            WHERE pipeline_name = %s
+              AND source_table = %s
+              AND version = %s
+              AND lease_owner = %s
+              AND lease_expires_at > %s
+            """,
+            (
+                cursor.timestamp,
+                Jsonb(cursor.as_json()),
+                current_time,
+                pipeline_name,
+                source_table,
+                expected_version,
+                owner_id,
+                current_time,
+            ),
+        )
+        if updated.rowcount != 1:
+            raise TableLeaseOwnershipLostError("Table lease ownership was lost before rewind")
+    return Watermark(
+        pipeline_name=pipeline_name,
+        source_table=source_table,
+        cursor=cursor,
+        version=expected_version + 1,
+    )
 
 
 def record_started_run(
@@ -424,6 +488,15 @@ def _get_or_create_watermark(
         cursor=CursorPosition(timestamp=row[0], keys=tuple(row[1])),
         version=row[2],
     )
+
+
+def _cursor_is_earlier(candidate: CursorPosition, current: CursorPosition) -> bool:
+    """되감기 대상 Cursor가 현재 Cursor보다 과거인지 판단한다."""
+    if current.timestamp is None:
+        return False
+    if candidate.timestamp is None:
+        return True
+    return (candidate.timestamp, candidate.keys) < (current.timestamp, current.keys)
 
 
 def _cursor_json(cursor: CursorPosition | None) -> Jsonb | None:
