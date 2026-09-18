@@ -14,7 +14,10 @@ from src.warehouse.mart_hash import (
     MART_HASH_TARGETS,
     MartTarget,
     _canonical_row_json,
+    describe_mart_difference,
     mart_logical_hash,
+    mismatched_relations,
+    target_for,
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -87,9 +90,48 @@ def test_hash_targets_declare_an_order_key() -> None:
         assert target.order_by, target.relation
 
 
+def test_mismatched_relations_reports_changed_and_missing_entries() -> None:
+    """값이 다르거나 한쪽에만 있는 Relation 이름을 정렬해 돌려준다."""
+    left = {"facts.fact_orders": "aaa", "facts.fact_payments": "bbb", "dimensions.dim_date": "ccc"}
+    right = {"facts.fact_orders": "aaa", "facts.fact_payments": "zzz"}
+
+    assert mismatched_relations(left, right) == ("dimensions.dim_date", "facts.fact_payments")
+
+
+def test_describe_mart_difference_separates_missing_keys_from_changed_keys(tmp_path: Path) -> None:
+    """한쪽에만 있는 Key와 값이 다른 Key를 나눠서 보고한다."""
+    left_path = tmp_path / "left.duckdb"
+    right_path = tmp_path / "right.duckdb"
+    _write_sample_database(left_path, [(1, "a"), (2, "b"), (3, "c")])
+    _write_sample_database(right_path, [(1, "a"), (2, "CHANGED")])
+
+    report = describe_mart_difference(left_path, right_path, MartTarget("main", "sample", ("id",)))
+
+    assert "left 3 rows, right 2 rows" in report
+    assert "only in left (1): 3" in report
+    assert "only in right (0): -" in report
+    assert "changed (1): 2" in report
+    assert "CHANGED" in report
+
+
+def test_target_for_returns_the_declared_target() -> None:
+    """Relation 이름으로 Hash 대상 정의를 찾는다."""
+    assert target_for("facts.fact_orders").order_by == ("order_id",)
+
+    with pytest.raises(KeyError):
+        target_for("facts.fact_unknown")
+
+
 def _sample_connection(rows: list[tuple[int, str]]) -> duckdb.DuckDBPyConnection:
     """지정한 순서로 행을 넣은 메모리 DuckDB 연결을 만든다."""
     connection = duckdb.connect()
     connection.execute("CREATE TABLE sample (id INTEGER, label VARCHAR)")
     connection.executemany("INSERT INTO sample VALUES (?, ?)", rows)
     return connection
+
+
+def _write_sample_database(path: Path, rows: list[tuple[int, str]]) -> None:
+    """진단 Test용 Sample Table을 가진 DuckDB 파일을 만든다."""
+    with duckdb.connect(str(path)) as connection:
+        connection.execute("CREATE TABLE sample (id INTEGER, label VARCHAR)")
+        connection.executemany("INSERT INTO sample VALUES (?, ?)", rows)
