@@ -59,6 +59,59 @@ def test_boundary_rejects_a_non_timestamp_value(tmp_path: Path) -> None:
     assert "REPLAY_BOUNDARY_ERROR" in _combined_output(result)
 
 
+def test_boundary_records_the_input_evidence_row(tmp_path: Path) -> None:
+    """경계 Build는 읽은 Object 수와 경계를 증거 Table에 남긴다."""
+    warehouse_path = tmp_path / "warehouse.duckdb"
+    _create_catalog(warehouse_path)
+
+    result = _run_operation(
+        warehouse_path, "record_replay_boundary", bronze_as_of="2026-09-10T00:00:00Z"
+    )
+
+    assert result.returncode == 0, _combined_output(result)
+    with duckdb.connect(str(warehouse_path)) as connection:
+        rows = connection.execute(
+            "SELECT bronze_as_of, object_count, full_refresh FROM control.dbt_replay_boundary"
+        ).fetchall()
+
+    assert len(rows) == 1
+    assert rows[0][1] == 1
+    assert rows[0][0] is not None
+
+
+def test_boundary_evidence_records_unbounded_builds_as_null(tmp_path: Path) -> None:
+    """무경계 Build도 증거를 남기고 경계 Column은 NULL이다."""
+    warehouse_path = tmp_path / "warehouse.duckdb"
+    _create_catalog(warehouse_path)
+
+    result = _run_operation(warehouse_path, "record_replay_boundary")
+
+    assert result.returncode == 0, _combined_output(result)
+    with duckdb.connect(str(warehouse_path)) as connection:
+        rows = connection.execute(
+            "SELECT bronze_as_of, object_count FROM control.dbt_replay_boundary"
+        ).fetchall()
+
+    assert rows == [(None, 2)]
+
+
+def test_boundary_evidence_skips_when_the_catalog_is_absent(tmp_path: Path) -> None:
+    """Bronze Catalog가 아직 없으면 증거 기록은 Build를 막지 않는다."""
+    warehouse_path = tmp_path / "warehouse.duckdb"
+
+    result = _run_operation(warehouse_path, "record_replay_boundary")
+
+    assert result.returncode == 0, _combined_output(result)
+
+
+def test_boundary_requires_full_refresh() -> None:
+    """경계 Build는 Full Refresh만 허용한다는 계약을 Macro가 담는다."""
+    macro = (PROJECT_ROOT / "dbt/macros/replay_boundary.sql").read_text(encoding="utf-8")
+
+    assert "flags.FULL_REFRESH" in macro
+    assert "REPLAY_BOUNDARY_ERROR: bronze_as_of requires --full-refresh" in macro
+
+
 def _create_catalog(warehouse_path: Path) -> None:
     """경계 앞뒤로 하나씩 Commit된 최소 Bronze Catalog를 만든다."""
     with duckdb.connect(str(warehouse_path)) as connection:
@@ -102,6 +155,38 @@ def _run_validate_catalog(
         str(Path(sys.executable).with_name("dbt")),
         "run-operation",
         "validate_bronze_catalog",
+        "--project-dir",
+        "dbt",
+        "--profiles-dir",
+        "dbt",
+    ]
+    if bronze_as_of is not None:
+        command += ["--vars", json.dumps({"bronze_as_of": bronze_as_of})]
+    return subprocess.run(
+        command,
+        cwd=PROJECT_ROOT,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def _run_operation(
+    warehouse_path: Path, operation: str, *, bronze_as_of: str | None = None
+) -> subprocess.CompletedProcess[str]:
+    """격리된 Warehouse에 dbt Operation 하나를 선택한 경계로 실행한다."""
+    environment = {
+        **os.environ,
+        "WAREHOUSE_PATH": str(warehouse_path),
+        "SEAWEEDFS_BUCKET": "test-bucket",
+        "SEAWEEDFS_ACCESS_KEY": "test-access-key",
+        "SEAWEEDFS_SECRET_KEY": "test-secret-key",
+    }
+    command = [
+        str(Path(sys.executable).with_name("dbt")),
+        "run-operation",
+        operation,
         "--project-dir",
         "dbt",
         "--profiles-dir",

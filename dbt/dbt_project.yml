@@ -11,7 +11,9 @@ target-path: "target"
 clean-targets: ["target", "dbt_packages"]
 
 on-run-start:
+  - "{{ assert_replay_boundary_mode() }}"
   - "{{ ensure_processed_batch_watermark() }}"
+  - "{{ record_replay_boundary() }}"
 
 on-run-end:
   - "-- depends_on: {{ ref('int_affected_order_keys') }}\n-- depends_on: {{ ref('int_affected_subscription_payment_keys') }}\n{{ record_affected_keys() }}"
