@@ -4,12 +4,20 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
+from pathlib import Path
 from uuid import UUID
 
 import duckdb
 import pytest
 
-from src.warehouse.mart_hash import MartTarget, _canonical_row_json, mart_logical_hash
+from src.warehouse.mart_hash import (
+    MART_HASH_TARGETS,
+    MartTarget,
+    _canonical_row_json,
+    mart_logical_hash,
+)
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_canonical_row_json_normalizes_deterministic_values() -> None:
@@ -61,6 +69,22 @@ def test_hash_changes_when_one_value_changes() -> None:
     finally:
         first.close()
         second.close()
+
+
+def test_hash_targets_cover_every_materialized_mart() -> None:
+    """Mart를 추가하고 Hash 대상 목록에 넣지 않으면 조용히 비교에서 빠지므로 막는다."""
+    expected = set()
+    for schema in ("dimensions", "facts"):
+        for path in (PROJECT_ROOT / "dbt/models/marts" / schema).glob("*.sql"):
+            expected.add(f"{schema}.{path.stem}")
+
+    assert {target.relation for target in MART_HASH_TARGETS} == expected
+
+
+def test_hash_targets_declare_an_order_key() -> None:
+    """정렬 Key가 없으면 행 순서가 Hash를 좌우하므로 모든 대상이 Key를 가진다."""
+    for target in MART_HASH_TARGETS:
+        assert target.order_by, target.relation
 
 
 def _sample_connection(rows: list[tuple[int, str]]) -> duckdb.DuckDBPyConnection:
