@@ -49,6 +49,17 @@ def test_watermark_table_creation_is_idempotent(tmp_path: Path) -> None:
     assert rows == [("warehouse_pipeline__20260909T030000Z",)]
 
 
+def test_watermark_advance_skips_failed_or_skipped_build_results() -> None:
+    """실패·Skip Node가 하나라도 있으면 Watermark를 전진시키지 않는다."""
+    macro = (PROJECT_ROOT / "dbt/macros/processed_batch_watermark.sql").read_text()
+
+    assert "for result in results" in macro
+    assert "result.status in blocking_statuses" in macro
+    for status in ("error", "fail", "runtime error", "skipped"):
+        assert f"'{status}'" in macro
+    assert "'warn'" not in macro
+
+
 def _run_operation(warehouse_path: Path, operation: str) -> subprocess.CompletedProcess[str]:
     """격리된 Warehouse에 dbt Operation 하나를 실행한다."""
     environment = {

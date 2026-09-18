@@ -48,18 +48,29 @@
         {%- if missing | length > 0 -%}
             {%- do log("Skipping watermark advance: facts not in this selection " ~ missing, info=true) -%}
         {%- else -%}
-            {%- set selects = [] -%}
-            {%- for model_name in batch_id_source_models() -%}
-                {%- do selects.append("select max(_batch_id) as batch_id from " ~ ref(model_name)) -%}
+            {%- set blocking_statuses = ['error', 'fail', 'runtime error', 'skipped'] -%}
+            {%- set blocking_nodes = [] -%}
+            {%- for result in results -%}
+                {%- if result.status in blocking_statuses -%}
+                    {%- do blocking_nodes.append(result.node.unique_id ~ '=' ~ result.status) -%}
+                {%- endif -%}
             {%- endfor -%}
-            {%- set advance_sql -%}
-                insert into control.dbt_processed_batch (processed_batch_id, invocation_id)
-                select max(batch_id), '{{ invocation_id }}'
-                from ({{ selects | join(' union all ') }})
-                where batch_id is not null
-                having max(batch_id) is not null
-            {%- endset -%}
-            {%- do run_query(advance_sql) -%}
+            {%- if blocking_nodes | length > 0 -%}
+                {%- do log("Skipping watermark advance: build had failures " ~ blocking_nodes, info=true) -%}
+            {%- else -%}
+                {%- set selects = [] -%}
+                {%- for model_name in batch_id_source_models() -%}
+                    {%- do selects.append("select max(_batch_id) as batch_id from " ~ ref(model_name)) -%}
+                {%- endfor -%}
+                {%- set advance_sql -%}
+                    insert into control.dbt_processed_batch (processed_batch_id, invocation_id)
+                    select max(batch_id), '{{ invocation_id }}'
+                    from ({{ selects | join(' union all ') }})
+                    where batch_id is not null
+                    having max(batch_id) is not null
+                {%- endset -%}
+                {%- do run_query(advance_sql) -%}
+            {%- endif -%}
         {%- endif -%}
     {%- endif -%}
 {%- endmacro %}

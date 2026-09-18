@@ -543,6 +543,145 @@ def test_two_batches_before_one_build_are_both_recomputed(tmp_path) -> None:
         _cleanup(postgres, storage, pipeline_name, results, customer.customer_unique_id)
 
 
+@pytest.mark.skipif(
+    os.environ.get("RUN_POSTGRES_INTEGRATION") != "1"
+    or os.environ.get("RUN_SEAWEEDFS_INTEGRATION") != "1",
+    reason="Set PostgreSQL and SeaweedFS integration environment flags after starting containers.",
+)
+def test_watermark_does_not_advance_when_a_model_fails(tmp_path) -> None:
+    """실패 Build는 Watermark를 보존하고 복구 Build가 누락 Batch를 다시 처리한다."""
+    postgres = PostgresSettings.from_environment()
+    storage = SeaweedFSSettings.from_environment()
+    pipeline_name = f"test_watermark_failed_build_{uuid.uuid4().hex}"
+    ingested_at = datetime.now(UTC)
+    initial_config = _generator_config(FIXTURE_START, anomaly_profile="default")
+    customer = new_customer_record(initial_config, 1)
+    subscription = new_subscription_record(customer)
+    tier = new_membership_tier_record(customer)
+    first_payment_at = FIXTURE_START + timedelta(days=1)
+    first_payment = plan_subscription_payment(
+        _generator_config(first_payment_at, anomaly_profile="default"),
+        subscription.subscription_id,
+        billing_cycle_sequence=1,
+        attempt_sequence=1,
+        billing_period_start_at=FIXTURE_START,
+    )
+    late_payment_at = FIXTURE_START + timedelta(days=2)
+    late_arrival_at = FIXTURE_START + timedelta(days=5)
+    late_payment = replace(
+        plan_subscription_payment(
+            _generator_config(late_payment_at, anomaly_profile="default"),
+            subscription.subscription_id,
+            billing_cycle_sequence=2,
+            attempt_sequence=1,
+            billing_period_start_at=late_payment_at,
+        ),
+        updated_at=late_arrival_at,
+    )
+    results: list[TableIngestionResult] = []
+    warehouse_path = tmp_path / "warehouse.duckdb"
+
+    try:
+        with postgres.source_connection() as connection:
+            assert persist_customer_records(connection, (customer,)).inserted == 1
+            assert ensure_subscription_records(connection, (subscription,)).inserted == 1
+            assert ensure_membership_tier_records(connection, (tier,)).inserted == 1
+            assert persist_subscription_payments(connection, (first_payment,)) == 1
+            connection.commit()
+
+        for source_table, cursor_at, cursor_key in (
+            ("customer_subscriptions", subscription.updated_at, str(subscription.subscription_id)),
+            ("customer_membership_tiers", tier.updated_at, customer.customer_unique_id),
+            ("subscription_payments", first_payment.updated_at, str(first_payment.payment_id)),
+        ):
+            _set_watermark(
+                postgres,
+                pipeline_name,
+                source_table,
+                CursorPosition(cursor_at - timedelta(microseconds=1), (cursor_key,)),
+                now=ingested_at,
+            )
+            results.append(
+                _ingest(
+                    postgres,
+                    storage,
+                    pipeline_name,
+                    source_table,
+                    cursor_at,
+                    1,
+                    tmp_path,
+                    ingested_at,
+                )
+            )
+
+        _create_fixture_catalog(postgres, warehouse_path, results)
+        first_build = _run_dbt_build(warehouse_path, storage, tmp_path)
+        assert first_build.returncode == 0, _combined_output(first_build)
+        with duckdb.connect(str(warehouse_path), read_only=True) as connection:
+            watermark_before_failure = connection.execute(
+                "SELECT max(processed_batch_id) FROM control.dbt_processed_batch"
+            ).fetchone()[0]
+
+        with postgres.source_connection() as connection:
+            assert persist_subscription_payments(connection, (late_payment,)) == 1
+            connection.commit()
+
+        late_results = [
+            _ingest(
+                postgres,
+                storage,
+                pipeline_name,
+                "subscription_payments",
+                late_arrival_at,
+                1,
+                tmp_path,
+                ingested_at,
+            )
+        ]
+        results.extend(late_results)
+        _append_fixture_catalog(postgres, warehouse_path, late_results)
+        original_object_key = late_results[0].object_key
+        assert original_object_key is not None
+        missing_object_key = f"missing/{uuid.uuid4().hex}.parquet"
+        with duckdb.connect(str(warehouse_path)) as connection:
+            connection.execute(
+                "UPDATE control.bronze_files SET object_key = ? WHERE object_key = ?",
+                [missing_object_key, original_object_key],
+            )
+
+        failed_build = _run_dbt_build(warehouse_path, storage, tmp_path)
+        assert failed_build.returncode != 0
+        with duckdb.connect(str(warehouse_path), read_only=True) as connection:
+            watermark_after_failure = connection.execute(
+                "SELECT max(processed_batch_id) FROM control.dbt_processed_batch"
+            ).fetchone()[0]
+        assert watermark_after_failure == watermark_before_failure
+
+        with duckdb.connect(str(warehouse_path)) as connection:
+            connection.execute(
+                "UPDATE control.bronze_files SET object_key = ? WHERE object_key = ?",
+                [original_object_key, missing_object_key],
+            )
+        recovered_build = _run_dbt_build(warehouse_path, storage, tmp_path)
+        assert recovered_build.returncode == 0, _combined_output(recovered_build)
+
+        with duckdb.connect(str(warehouse_path), read_only=True) as connection:
+            watermark_after_recovery = connection.execute(
+                "SELECT max(processed_batch_id) FROM control.dbt_processed_batch"
+            ).fetchone()[0]
+            payment_ids = {
+                row[0]
+                for row in connection.execute(
+                    "SELECT payment_id FROM facts.fact_subscription_payments"
+                ).fetchall()
+            }
+
+        assert watermark_after_recovery == late_results[0].run.batch_id
+        assert payment_ids == {str(first_payment.payment_id), str(late_payment.payment_id)}
+    finally:
+        _cleanup(postgres, storage, pipeline_name, results, customer.customer_unique_id)
+
+
 def _generator_config(logical_date: datetime, *, anomaly_profile: str) -> GeneratorConfig:
     """고정된 Snapshot·Seed로 Fixture의 각 업무 시각 Generator 입력을 만든다."""
     return GeneratorConfig(
