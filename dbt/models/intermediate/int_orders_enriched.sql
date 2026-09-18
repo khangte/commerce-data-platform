@@ -19,5 +19,5 @@ from {{ ref('stg_orders') }}
 left join {{ ref('stg_customers_current') }} using (source_customer_id)
 left join {{ ref('dim_customer') }}
     on stg_orders.customer_id = dim_customer.customer_id
-    and stg_orders.purchase_at >= dim_customer.valid_from
+    and stg_orders.purchase_at >= dim_customer.effective_from
     and stg_orders.purchase_at < coalesce(dim_customer.valid_to, timestamptz 'infinity')

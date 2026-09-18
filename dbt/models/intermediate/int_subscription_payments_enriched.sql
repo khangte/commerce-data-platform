@@ -22,9 +22,9 @@ select
 from {{ ref('stg_subscription_payments') }} as payments
 inner join {{ ref('dim_subscription') }} as subscription
     on payments.subscription_id = subscription.subscription_id
-    and payments.payment_at >= subscription.valid_from
+    and payments.payment_at >= subscription.effective_from
     and payments.payment_at < coalesce(subscription.valid_to, timestamptz 'infinity')
 inner join {{ ref('dim_customer') }} as customer
     on payments.customer_id = customer.customer_id
-    and payments.payment_at >= customer.valid_from
+    and payments.payment_at >= customer.effective_from
     and payments.payment_at < coalesce(customer.valid_to, timestamptz 'infinity')

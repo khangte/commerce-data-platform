@@ -27,6 +27,7 @@ select
     membership_tier,
     attribute_hash,
     case when version_rank = 1 then created_at else updated_at end as valid_from,
+    case when version_rank = 1 then timestamptz '-infinity' else updated_at end as effective_from,
     lead(case when version_rank = 1 then created_at else updated_at end) over (
         partition by customer_id order by version_rank
     ) as valid_to,

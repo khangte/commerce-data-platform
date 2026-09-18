@@ -5,6 +5,7 @@ select
     membership_tier,
     attribute_hash,
     valid_from,
+    effective_from,
     valid_to,
     is_current
 from {{ ref('int_customer_history') }}

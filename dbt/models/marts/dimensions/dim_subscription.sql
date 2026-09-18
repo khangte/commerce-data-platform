@@ -14,6 +14,7 @@ select
     status_changed_at,
     attribute_hash,
     valid_from,
+    effective_from,
     valid_to,
     is_current
 from {{ ref('int_subscription_history') }}

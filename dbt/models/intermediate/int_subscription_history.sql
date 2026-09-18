@@ -36,6 +36,7 @@ select
     status_changed_at,
     attribute_hash,
     valid_from,
+    case when version_rank = 1 then timestamptz '-infinity' else valid_from end as effective_from,
     lead(valid_from) over (partition by subscription_id order by version_rank) as valid_to,
     lead(version_rank) over (partition by subscription_id order by version_rank) is null as is_current
 from versioned

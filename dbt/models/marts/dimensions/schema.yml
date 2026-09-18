@@ -16,6 +16,8 @@ models:
                 values: [BRONZE, SILVER, GOLD]
       - name: valid_from
         data_tests: [not_null]
+      - name: effective_from
+        data_tests: [not_null]
       - name: is_current
         data_tests: [not_null]
 
@@ -37,6 +39,8 @@ models:
       - name: auto_renew_enabled
         data_tests: [not_null]
       - name: valid_from
+        data_tests: [not_null]
+      - name: effective_from
         data_tests: [not_null]
       - name: is_current
         data_tests: [not_null]

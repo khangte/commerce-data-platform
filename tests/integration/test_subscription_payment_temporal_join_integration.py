@@ -193,6 +193,137 @@ def test_subscription_payment_uses_the_active_customer_version_at_billing_time(t
     or os.environ.get("RUN_SEAWEEDFS_INTEGRATION") != "1",
     reason="Set PostgreSQL and SeaweedFS integration environment flags after starting containers.",
 )
+def test_subscription_payment_before_subscription_first_observation_still_resolves_keys(
+    tmp_path,
+) -> None:
+    """구독 결제가 구독·고객 첫 관측보다 앞서도(Early-Arriving Fact) subscription_key·customer_key는 NULL이 되지 않는다."""
+    postgres = PostgresSettings.from_environment()
+    storage = SeaweedFSSettings.from_environment()
+    pipeline_name = f"test_subscription_early_arriving_{uuid.uuid4().hex}"
+    ingested_at = datetime.now(UTC)
+    initial_config = _generator_config(FIXTURE_START, anomaly_profile="default")
+    early_payment_at = FIXTURE_START - timedelta(days=3)
+    payment_config = _generator_config(early_payment_at, anomaly_profile="default")
+    customer = new_customer_record(initial_config, 1)
+    initial_subscription = new_subscription_record(customer)
+    initial_tier = new_membership_tier_record(customer)
+    payment = plan_subscription_payment(
+        payment_config,
+        initial_subscription.subscription_id,
+        billing_cycle_sequence=1,
+        attempt_sequence=1,
+        billing_period_start_at=early_payment_at,
+    )
+    results: list[TableIngestionResult] = []
+
+    try:
+        with postgres.source_connection() as connection:
+            assert persist_customer_records(connection, (customer,)).inserted == 1
+            assert ensure_subscription_records(connection, (initial_subscription,)).inserted == 1
+            assert ensure_membership_tier_records(connection, (initial_tier,)).inserted == 1
+            connection.commit()
+
+        _set_watermark(
+            postgres,
+            pipeline_name,
+            "customer_subscriptions",
+            CursorPosition(
+                initial_subscription.updated_at - timedelta(microseconds=1),
+                (str(initial_subscription.subscription_id),),
+            ),
+            now=ingested_at,
+        )
+        _set_watermark(
+            postgres,
+            pipeline_name,
+            "customer_membership_tiers",
+            CursorPosition(
+                initial_tier.updated_at - timedelta(microseconds=1),
+                (customer.customer_unique_id,),
+            ),
+            now=ingested_at,
+        )
+        results.append(
+            _ingest(
+                postgres,
+                storage,
+                pipeline_name,
+                "customer_subscriptions",
+                initial_subscription.updated_at,
+                1,
+                tmp_path,
+                ingested_at,
+            )
+        )
+        results.append(
+            _ingest(
+                postgres,
+                storage,
+                pipeline_name,
+                "customer_membership_tiers",
+                initial_tier.updated_at,
+                1,
+                tmp_path,
+                ingested_at,
+            )
+        )
+
+        with postgres.source_connection() as connection:
+            assert persist_subscription_payments(connection, (payment,)) == 1
+            connection.commit()
+
+        _set_watermark(
+            postgres,
+            pipeline_name,
+            "subscription_payments",
+            CursorPosition(
+                payment.updated_at - timedelta(microseconds=1),
+                (str(payment.payment_id),),
+            ),
+            now=ingested_at,
+        )
+        results.append(
+            _ingest(
+                postgres,
+                storage,
+                pipeline_name,
+                "subscription_payments",
+                payment.updated_at,
+                1,
+                tmp_path,
+                ingested_at,
+            )
+        )
+
+        assert [result.row_count for result in results] == [1, 1, 1]
+        warehouse_path = tmp_path / "warehouse.duckdb"
+        _create_fixture_catalog(postgres, warehouse_path, results)
+        dbt_result = _run_dbt_build(warehouse_path, storage, tmp_path)
+        assert dbt_result.returncode == 0, _combined_output(dbt_result)
+
+        with duckdb.connect(str(warehouse_path), read_only=True) as connection:
+            fact_rows = connection.execute(
+                """
+                SELECT fact.subscription_key, fact.customer_key
+                FROM facts.fact_subscription_payments AS fact
+                WHERE fact.payment_id = ?
+                """,
+                [str(payment.payment_id)],
+            ).fetchall()
+
+        assert len(fact_rows) == 1
+        subscription_key, customer_key = fact_rows[0]
+        assert subscription_key is not None
+        assert customer_key is not None
+    finally:
+        _cleanup(postgres, storage, pipeline_name, results, customer.customer_unique_id)
+
+
+@pytest.mark.skipif(
+    os.environ.get("RUN_POSTGRES_INTEGRATION") != "1"
+    or os.environ.get("RUN_SEAWEEDFS_INTEGRATION") != "1",
+    reason="Set PostgreSQL and SeaweedFS integration environment flags after starting containers.",
+)
 def test_late_subscription_payment_updates_the_past_payment_date_fact(tmp_path) -> None:
     """과거 결제 시각을 가진 지연 결제가 두 번째 Build에서 과거 날짜 Fact로 들어온다."""
     postgres = PostgresSettings.from_environment()
