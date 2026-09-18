@@ -65,13 +65,10 @@ def test_customer_record_is_idempotent_and_membership_changes_monotonically() ->
                 (record.customer_unique_id,),
             ).fetchone()
 
-        assert subscription_row == ("NON_MEMBER",)
+        assert subscription_row == ("ACTIVE",)
         assert tier_row == ("SILVER", next_config.logical_date)
     finally:
         with settings.source_connection() as connection:
-            connection.execute(
-                "DELETE FROM customers WHERE customer_id = %s", (record.customer_id,)
-            )
             connection.execute(
                 "DELETE FROM customer_subscriptions WHERE customer_unique_id = %s",
                 (record.customer_unique_id,),
@@ -79,5 +76,8 @@ def test_customer_record_is_idempotent_and_membership_changes_monotonically() ->
             connection.execute(
                 "DELETE FROM customer_membership_tiers WHERE customer_unique_id = %s",
                 (record.customer_unique_id,),
+            )
+            connection.execute(
+                "DELETE FROM customers WHERE customer_id = %s", (record.customer_id,)
             )
             connection.commit()

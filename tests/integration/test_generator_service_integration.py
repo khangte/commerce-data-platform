@@ -32,7 +32,7 @@ def test_generator_creates_bundles_and_reuses_a_successful_deterministic_run() -
     settings = PostgresSettings.from_environment()
     config = GeneratorConfig(
         source_snapshot_id=resolve_source_snapshot_id(settings),
-        random_seed=9_001,
+        random_seed=uuid.uuid4().int % (2**63),
         logical_date=datetime(2026, 9, 20, tzinfo=UTC),
         order_count=2,
         anomaly_profile="default",
@@ -120,15 +120,15 @@ def _delete_bundles(settings: PostgresSettings, bundles) -> None:
             connection.execute(
                 "DELETE FROM order_items WHERE order_id = %s", (bundle.order.order_id,)
             )
-            connection.execute("DELETE FROM orders WHERE order_id = %s", (bundle.order.order_id,))
             connection.execute(
-                "DELETE FROM customers WHERE customer_id = %s", (bundle.customer.customer_id,)
-            )
-            connection.execute(
-                "DELETE FROM subscription_payments WHERE customer_unique_id = %s",
+                """
+                DELETE FROM subscription_payments
+                WHERE subscription_id IN (
+                    SELECT subscription_id FROM customer_subscriptions WHERE customer_unique_id = %s
+                )
+                """,
                 (bundle.customer.customer_unique_id,),
             )
-
             connection.execute(
                 "DELETE FROM customer_subscriptions WHERE customer_unique_id = %s",
                 (bundle.customer.customer_unique_id,),
@@ -137,5 +137,9 @@ def _delete_bundles(settings: PostgresSettings, bundles) -> None:
             connection.execute(
                 "DELETE FROM customer_membership_tiers WHERE customer_unique_id = %s",
                 (bundle.customer.customer_unique_id,),
+            )
+            connection.execute("DELETE FROM orders WHERE order_id = %s", (bundle.order.order_id,))
+            connection.execute(
+                "DELETE FROM customers WHERE customer_id = %s", (bundle.customer.customer_id,)
             )
         connection.commit()

@@ -100,7 +100,9 @@ def test_order_and_payment_transitions_are_idempotent_and_version_safe() -> None
 
         apply_order_bundle(settings, failed_bundle)
         with settings.source_connection() as connection:
-            pending_failed_payment = fetch_payment_state(connection, failed_bundle.order.order_id, 1)
+            pending_failed_payment = fetch_payment_state(
+                connection, failed_bundle.order.order_id, 1
+            )
         fail = plan_payment_transition(
             pending_failed_payment, "failed", config.logical_date + timedelta(days=1)
         )
@@ -121,15 +123,15 @@ def _delete_bundle(settings: PostgresSettings, bundle: OrderBundle) -> None:
             "DELETE FROM order_payments WHERE order_id = %s", (bundle.order.order_id,)
         )
         connection.execute("DELETE FROM order_items WHERE order_id = %s", (bundle.order.order_id,))
-        connection.execute("DELETE FROM orders WHERE order_id = %s", (bundle.order.order_id,))
         connection.execute(
-            "DELETE FROM customers WHERE customer_id = %s", (bundle.customer.customer_id,)
-        )
-        connection.execute(
-            "DELETE FROM subscription_payments WHERE customer_unique_id = %s",
+            """
+            DELETE FROM subscription_payments
+            WHERE subscription_id IN (
+                SELECT subscription_id FROM customer_subscriptions WHERE customer_unique_id = %s
+            )
+            """,
             (bundle.customer.customer_unique_id,),
         )
-
         connection.execute(
             "DELETE FROM customer_subscriptions WHERE customer_unique_id = %s",
             (bundle.customer.customer_unique_id,),
@@ -138,5 +140,9 @@ def _delete_bundle(settings: PostgresSettings, bundle: OrderBundle) -> None:
         connection.execute(
             "DELETE FROM customer_membership_tiers WHERE customer_unique_id = %s",
             (bundle.customer.customer_unique_id,),
+        )
+        connection.execute("DELETE FROM orders WHERE order_id = %s", (bundle.order.order_id,))
+        connection.execute(
+            "DELETE FROM customers WHERE customer_id = %s", (bundle.customer.customer_id,)
         )
         connection.commit()
