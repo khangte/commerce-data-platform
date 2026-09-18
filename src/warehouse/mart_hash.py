@@ -154,6 +154,10 @@ def _json_default(value: object) -> str:
     """JSON 기본 형식에 없는 Warehouse 값의 결정적 문자열 표현을 반환한다."""
     if isinstance(value, datetime):
         if value.tzinfo is None or value.utcoffset() is None:
+            if value == datetime.min:  # noqa: DTZ901
+                return "-infinity"
+            if value == datetime.max:  # noqa: DTZ901
+                return "infinity"
             raise ValueError("Mart timestamp must include a UTC offset")
         return value.astimezone(UTC).isoformat()
     if isinstance(value, date):

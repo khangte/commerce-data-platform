@@ -14,6 +14,7 @@ from src.warehouse.mart_hash import (
     MART_HASH_TARGETS,
     MartTarget,
     _canonical_row_json,
+    _json_default,
     describe_mart_difference,
     main,
     mart_logical_hash,
@@ -47,6 +48,22 @@ def test_canonical_row_json_rejects_a_naive_timestamp() -> None:
     """Timezone 없는 Timestamp는 Hash를 실행 환경에 의존하게 만들므로 막는다."""
     with pytest.raises(ValueError, match="UTC offset"):
         _canonical_row_json({"paid_at": datetime(2026, 9, 18, 3, 0)})  # noqa: DTZ001
+
+
+def test_json_default_normalizes_datetime_min_to_negative_infinity_sentinel() -> None:
+    """DuckDB -infinity Timestamp는 naive datetime.min으로 돌아오므로 Sentinel 문자열로 정규화한다."""
+    assert _json_default(datetime.min) == "-infinity"  # noqa: DTZ901
+
+
+def test_json_default_normalizes_datetime_max_to_infinity_sentinel() -> None:
+    """DuckDB infinity Timestamp는 naive datetime.max로 돌아오므로 Sentinel 문자열로 정규화한다."""
+    assert _json_default(datetime.max) == "infinity"  # noqa: DTZ901
+
+
+def test_json_default_still_rejects_other_naive_timestamps() -> None:
+    """Sentinel이 아닌 naive Timestamp는 여전히 Offset 유실로 취급해 거부한다."""
+    with pytest.raises(ValueError, match="UTC offset"):
+        _json_default(datetime(2026, 9, 18, 0, 0))  # noqa: DTZ001
 
 
 def test_hash_ignores_physical_row_order() -> None:
