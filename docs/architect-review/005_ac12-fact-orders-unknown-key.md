@@ -60,3 +60,7 @@ Model 쪽 대안 두 가지는 채택하지 않는다.
 
 - AC-01, AC-09, AC-10, AC-11, AC-12 중 AC-11과 AC-12만 열려 있다. 두 항목은 같은 Fixture 수정 하나로 함께 닫힌다.
 - 수정 뒤 `tests/integration/test_order_e2e_and_late_order_mart_integration.py`가 2건 모두 통과하면 `docs/phases/phase-06-dimensional-modeling.md`의 마지막 DoD를 켜고 Phase 6을 마감한다.
+
+## 추가 (2026-09-18)
+
+이 문서의 4절 "Fixture를 고쳐라" 판정은 [006](006_early-arriving-fact-effective-from.md)이 철회했다. 같은 형태를 운영 Generator의 `late-arrival` Profile이 직접 만들기 때문이다. 조치는 Fixture 수정이 아니라 Model의 결합 하한 변경이다.
