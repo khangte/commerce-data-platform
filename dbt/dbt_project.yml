@@ -10,8 +10,12 @@ test-paths: ["tests"]
 target-path: "target"
 clean-targets: ["target", "dbt_packages"]
 
+on-run-start:
+  - "{{ ensure_processed_batch_watermark() }}"
+
 on-run-end:
   - "-- depends_on: {{ ref('int_affected_business_dates') }}\n{{ record_affected_keys() }}"
+  - "-- depends_on: {{ ref('stg_orders') }}\n-- depends_on: {{ ref('stg_order_items') }}\n-- depends_on: {{ ref('stg_payments') }}\n-- depends_on: {{ ref('stg_products') }}\n-- depends_on: {{ ref('stg_sellers') }}\n-- depends_on: {{ ref('stg_customer_tier_observations') }}\n-- depends_on: {{ ref('stg_customer_subscription_observations') }}\n-- depends_on: {{ ref('stg_subscription_payments') }}\n{{ advance_processed_batch_watermark() }}"
 
 models:
   commerce_data_platform:
