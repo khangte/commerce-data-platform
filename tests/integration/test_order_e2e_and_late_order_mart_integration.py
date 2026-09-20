@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -94,6 +95,7 @@ def test_fixed_order_is_traceable_from_source_to_fact(tmp_path) -> None:
         _create_fixture_catalog(postgres, warehouse_path, results)
         dbt_result = _run_dbt_build(warehouse_path, storage, tmp_path)
         assert dbt_result.returncode == 0, _combined_output(dbt_result)
+        _assert_relationship_tests_passed(tmp_path / "dbt-target")
 
         with duckdb.connect(str(warehouse_path), read_only=True) as connection:
             fact_row = connection.execute(
@@ -159,6 +161,7 @@ def test_late_order_updates_the_past_business_date_mart(tmp_path) -> None:
         _create_fixture_catalog(postgres, warehouse_path, results)
         dbt_result = _run_dbt_build(warehouse_path, storage, tmp_path)
         assert dbt_result.returncode == 0, _combined_output(dbt_result)
+        _assert_relationship_tests_passed(tmp_path / "dbt-target")
 
         expected_date_key = int(business_event_time.strftime("%Y%m%d"))
         with duckdb.connect(str(warehouse_path), read_only=True) as connection:
@@ -361,6 +364,23 @@ def _run_dbt_build(
         text=True,
         check=False,
     )
+
+
+def _assert_relationship_tests_passed(target_path: Path) -> None:
+    """AC-12 정상 데이터 Unknown Key 0을 고정한다."""
+    payload = json.loads((target_path / "run_results.json").read_text(encoding="utf-8"))
+    relationship_nodes = [
+        result
+        for result in payload["results"]
+        if result["unique_id"].startswith("test.") and "relationships_" in result["unique_id"]
+    ]
+    assert relationship_nodes, "No dbt relationships tests were executed"
+    failed_nodes = [
+        (result["unique_id"], result.get("failures"))
+        for result in relationship_nodes
+        if result["status"] != "pass" or result.get("failures") != 0
+    ]
+    assert failed_nodes == [], f"dbt relationships failures: {failed_nodes}"
 
 
 def _cleanup(
