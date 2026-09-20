@@ -13,8 +13,16 @@ INVALID_STATUS = "INVALID_STATUS"
 NEGATIVE_NUMERIC = "NEGATIVE_NUMERIC"
 TYPE_MISMATCH = "TYPE_MISMATCH"
 BROKEN_REFERENCE = "BROKEN_REFERENCE"
+DUPLICATE_PRIMARY_KEY = "DUPLICATE_PRIMARY_KEY"
 SUPPORTED_CORRUPTION_KINDS = frozenset(
-    {NULL_PRIMARY_KEY, INVALID_STATUS, NEGATIVE_NUMERIC, TYPE_MISMATCH, BROKEN_REFERENCE}
+    {
+        NULL_PRIMARY_KEY,
+        INVALID_STATUS,
+        NEGATIVE_NUMERIC,
+        TYPE_MISMATCH,
+        BROKEN_REFERENCE,
+        DUPLICATE_PRIMARY_KEY,
+    }
 )
 
 
@@ -34,6 +42,8 @@ class CorruptionPlan:
         kind = self.rules.get(ordinal)
         if kind is None:
             return record
+        if kind == DUPLICATE_PRIMARY_KEY:
+            raise ValueError("DUPLICATE_PRIMARY_KEY needs the previous record; use apply_page")
         values = dict(record.values)
         if kind == NULL_PRIMARY_KEY:
             values[record.config.primary_key_columns[0]] = None
@@ -54,9 +64,32 @@ class CorruptionPlan:
             values[column] = "__missing_parent__"
         return SourceRecord(record.config, MappingProxyType(values), cursor_override=record.cursor)
 
+    def apply_page(
+        self, records: tuple[SourceRecord, ...], first_ordinal: int
+    ) -> tuple[SourceRecord, ...]:
+        """Page 전체에 Corruption을 적용하고 Duplicate는 직전 출력 Record PK를 복사한다."""
+        output: list[SourceRecord] = []
+        for index, record in enumerate(records):
+            ordinal = first_ordinal + index
+            if self.rules.get(ordinal) != DUPLICATE_PRIMARY_KEY:
+                output.append(self.apply(record, ordinal))
+                continue
+            if not output:
+                raise ValueError("DUPLICATE_PRIMARY_KEY requires a preceding record in the page")
+            output.append(_with_primary_key_of(record, output[-1]))
+        return tuple(output)
+
 
 def _child_reference_column(record: SourceRecord) -> str:
     """Broken Reference를 만들 수 있는 Child FK Column을 반환한다."""
     if record.config.source_table in {"order_items", "order_payments"}:
         return "order_id"
     raise ValueError("BROKEN_REFERENCE requires a child table record")
+
+
+def _with_primary_key_of(record: SourceRecord, previous: SourceRecord) -> SourceRecord:
+    """Record의 PK Column 값만 직전 Record 값으로 바꾼 복제본을 만든다."""
+    values = dict(record.values)
+    for column in record.config.primary_key_columns:
+        values[column] = previous.values[column]
+    return SourceRecord(record.config, MappingProxyType(values), cursor_override=record.cursor)

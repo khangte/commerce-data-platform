@@ -73,6 +73,19 @@ def mart_logical_hashes(
         }
 
 
+def mart_row_counts(
+    warehouse_path: Path, targets: tuple[MartTarget, ...] = MART_HASH_TARGETS
+) -> dict[str, int]:
+    """Hash 대상 Mart 전부의 Row 수를 Relation 이름 기준 Dict로 반환한다."""
+    with duckdb.connect(str(warehouse_path), read_only=True) as connection:
+        return {
+            target.relation: connection.execute(
+                f"SELECT count(*) FROM {target.relation}"
+            ).fetchone()[0]
+            for target in targets
+        }
+
+
 def target_for(relation: str) -> MartTarget:
     """Relation 이름에 해당하는 Hash 대상 정의를 반환한다."""
     for target in MART_HASH_TARGETS:

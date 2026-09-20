@@ -10,6 +10,7 @@ from uuid import UUID
 
 import pyarrow as pa
 
+from src.ingestion import rules
 from src.ingestion.extract import SourcePage, SourceRecord
 from src.ingestion.metadata import CursorPosition
 from src.ingestion.tables import SourceColumn, TableConfig
@@ -70,36 +71,36 @@ class ValidationPipeline:
         """Schema부터 Cursor 범위까지의 Record 오류를 정해진 순서로 수집한다."""
         values = record.values
         errors = _schema_and_type_errors(self.config, values)
-        if "SCHEMA_MISMATCH" in errors:
+        if rules.SCHEMA_MISMATCH.code in errors:
             raise SourceContractError("Source schema differs from the configured contract")
         if not _cursor_in_range(record.cursor, self.watermark_before, self.extract_upper_bound):
             raise SourceContractError("Source record cursor is outside the fixed extraction range")
         primary_key = tuple(values.get(column) for column in self.config.primary_key_columns)
         if any(value is None for value in primary_key):
-            errors.append("KEY_NULL")
+            errors.append(rules.KEY_NULL.code)
         elif primary_key in self._seen_primary_keys:
-            errors.append("BATCH_DUPLICATE")
+            errors.append(rules.BATCH_DUPLICATE.code)
         else:
             self._seen_primary_keys.add(primary_key)
         errors.extend(_domain_and_numeric_errors(self.config, values))
         if record.cursor.keys in broken_reference_cursors:
-            errors.append("BROKEN_REFERENCE")
+            errors.append(rules.BROKEN_REFERENCE.code)
         return errors
 
 
 def _schema_and_type_errors(config: TableConfig, values: Mapping[str, object]) -> list[str]:
     """Source Column 집합·필수값·Arrow Type 호환성 오류를 순서대로 반환한다."""
     if tuple(values) != config.source_column_names:
-        return ["SCHEMA_MISMATCH"]
+        return [rules.SCHEMA_MISMATCH.code]
     errors: list[str] = []
     for column in config.source_columns:
         value = values[column.name]
         if value is None:
             if not column.nullable:
-                errors.append("REQUIRED_NULL")
+                errors.append(rules.REQUIRED_NULL.code)
             continue
         if not _matches_source_column_type(value, column):
-            errors.append("TYPE_MISMATCH")
+            errors.append(rules.TYPE_MISMATCH.code)
     return errors
 
 
@@ -108,12 +109,12 @@ def _domain_and_numeric_errors(config: TableConfig, values: Mapping[str, object]
     errors: list[str] = []
     for column, domain in config.status_domains.items():
         if values.get(column) is not None and values[column] not in domain:
-            errors.append("STATUS_DOMAIN_INVALID")
+            errors.append(rules.STATUS_DOMAIN_INVALID.code)
     for column, minimum in config.numeric_minimums.items():
         value = values.get(column)
         field_type = config.source_schema.field(column).type
         if value is not None and _matches_arrow_type(value, field_type) and value < minimum:
-            errors.append("NUMERIC_RANGE_INVALID")
+            errors.append(rules.NUMERIC_RANGE_INVALID.code)
     return errors
 
 

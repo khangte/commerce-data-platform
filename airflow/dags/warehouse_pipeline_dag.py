@@ -2,16 +2,15 @@
 
 from __future__ import annotations
 
-import subprocess
 import tempfile
 import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from airflow.sdk import DAG, task
+from airflow.sdk import DAG, get_current_context, task
 from airflow.sdk.exceptions import AirflowFailException
 
-from src.common.database import PROJECT_ROOT, PostgresSettings
+from src.common.database import PostgresSettings
 from src.generator.lease import (
     WAREHOUSE_OWNER_TYPE,
     LeaseOwnershipLostError,
@@ -21,15 +20,21 @@ from src.generator.lease import (
     release_source_mutation_lease,
 )
 from src.ingestion.batch import BatchIdentity
-from src.ingestion.catalog import sync_bronze_catalog
 from src.ingestion.errors import classify_error, is_retryable
 from src.ingestion.service import TableIngestionRequest, ingest_table
 from src.ingestion.storage import SeaweedFSSettings
 from src.ingestion.verification import verify_bronze_commit
+from src.warehouse.publish import (
+    DEFAULT_WAREHOUSE_ROOT,
+    WarehousePaths,
+    build_warehouse,
+    prepare_warehouse_build,
+    publish_build,
+)
+from src.warehouse.publish_metadata import PublishRun, get_publish_run
 
-CATALOG_PATH = PROJECT_ROOT / "data" / "warehouse" / "warehouse.duckdb"
 LOCAL_DIRECTORY = Path(tempfile.gettempdir()) / "commerce-data-platform" / "warehouse-pipeline-dag"
-DBT_PROJECT_DIR = PROJECT_ROOT / "dbt"
+WAREHOUSE_PATHS = WarehousePaths.under(DEFAULT_WAREHOUSE_ROOT)
 
 DEFAULT_TASK_ARGS = {
     "retries": 2,
@@ -164,42 +169,68 @@ with DAG(
             raise
         return {"verified_table_count": len(verified)}
 
-    @task(trigger_rule="all_success")
-    def sync_bronze_catalog_task(verification: dict) -> dict:
-        """검증을 통과한 뒤에만 COMMITTED Object를 DuckDB Catalog로 동기화한다."""
+    @task(task_id="prepare_warehouse_build", trigger_rule="all_success")
+    def prepare_warehouse_build_task(run_info: dict, verification: dict) -> dict:
+        """검증 뒤 Published 파일을 복사한 Build 파일을 만들고 Catalog를 동기화한다."""
         settings = PostgresSettings.from_environment()
+        run = PublishRun(
+            publish_run_id=uuid.uuid4(),
+            pipeline_name=dag.dag_id,
+            batch_id=run_info["batch_id"],
+            dag_run_id=get_current_context()["run_id"],
+        )
         try:
-            entries = sync_bronze_catalog(settings, CATALOG_PATH)
+            build_path = prepare_warehouse_build(settings, WAREHOUSE_PATHS, run)
         except Exception as error:
             _reraise_classified(error)
             raise
-        return {"catalog_entry_count": len(entries)}
+        return {"publish_run_id": str(run.publish_run_id), "build_path": str(build_path)}
 
-    @task(trigger_rule="all_success")
-    def dbt_build_task(catalog: dict) -> dict:
-        """Catalog 동기화가 성공한 뒤에만 dbt build를 실행한다. dbt 실패는 이미 Commit된 Bronze와 Watermark를 되돌리지 않는다."""
-        process = subprocess.run(
-            ["dbt", "build", "--project-dir", str(DBT_PROJECT_DIR), "--profiles-dir", str(DBT_PROJECT_DIR)],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if process.returncode != 0:
-            raise AirflowFailException(
-                f"dbt build failed (exit {process.returncode}):\n{process.stdout}\n{process.stderr}"
-            )
-        return {"dbt_build_status": "SUCCESS"}
+    @task(task_id="dbt_build", trigger_rule="all_success", retries=0)
+    def dbt_build_task(build: dict) -> dict:
+        """Build 파일에만 dbt build를 실행한다. 실패 Build는 격리되고 Published 파일은 그대로다."""
+        settings = PostgresSettings.from_environment()
+        try:
+            result = build_warehouse(settings, WAREHOUSE_PATHS, uuid.UUID(build["publish_run_id"]))
+        except Exception as error:
+            _reraise_classified(error)
+            raise
+        return {"tests_passed": result.tests_passed, "tests_failed": result.tests_failed}
+
+    @task(task_id="publish_mart", trigger_rule="all_success", retries=0)
+    def publish_mart_task(build: dict, dbt_result: dict) -> dict:
+        """dbt build가 성공한 Build 파일을 Published 경로로 원자 교체한다."""
+        settings = PostgresSettings.from_environment()
+        try:
+            outcome = publish_build(settings, WAREHOUSE_PATHS, uuid.UUID(build["publish_run_id"]))
+        except Exception as error:
+            _reraise_classified(error)
+            raise
+        return {
+            "publish_run_id": str(outcome.publish_run_id),
+            "changed_relations": list(outcome.changed_relations),
+        }
 
     @task(trigger_rule="all_done")
     def publish_run_summary(
-        run_info: dict, verification: dict | None, catalog: dict | None, dbt_build: dict | None
+        run_info: dict, verification: dict | None, build: dict | None, publish: dict | None
     ) -> dict:
-        """DagRun 결과를 작은 JSON Summary로 로그와 XCom에 남긴다."""
+        """DagRun의 Bronze 검증과 Mart Publish 결과를 작은 JSON Summary로 남긴다."""
+        publish_status = "SKIPPED"
+        publish_error_type = None
+        if build:
+            record = get_publish_run(
+                PostgresSettings.from_environment(), uuid.UUID(build["publish_run_id"])
+            )
+            publish_status = record.status if record else "UNKNOWN"
+            publish_error_type = record.error_type if record else None
         summary = {
             "batch_id": run_info["batch_id"],
             "verified_table_count": verification["verified_table_count"] if verification else 0,
-            "catalog_entry_count": catalog["catalog_entry_count"] if catalog else 0,
-            "dbt_build_status": dbt_build["dbt_build_status"] if dbt_build else "SKIPPED",
+            "publish_run_id": build["publish_run_id"] if build else None,
+            "publish_status": publish_status,
+            "publish_error_type": publish_error_type,
+            "changed_relations": publish["changed_relations"] if publish else [],
         }
         print(summary)
         return summary
@@ -211,9 +242,10 @@ with DAG(
     )
     release_task = release_source_snapshot_lease(lease_token)
     verification = verify_bronze_commit_task(run_info, extract_results)
-    catalog = sync_bronze_catalog_task(verification)
-    dbt_build = dbt_build_task(catalog)
+    build = prepare_warehouse_build_task(run_info, verification)
+    dbt_result = dbt_build_task(build)
+    publish = publish_mart_task(build, dbt_result)
 
     extract_results >> release_task
-    extract_results >> verification >> catalog >> dbt_build
-    publish_run_summary(run_info, verification, catalog, dbt_build)
+    extract_results >> verification >> build >> dbt_result >> publish
+    publish_run_summary(run_info, verification, build, publish)

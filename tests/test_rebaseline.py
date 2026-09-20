@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from pathlib import Path
+
+import pytest
 
 from src.ingestion.service import TableIngestionResult
-from src.rebaseline import LEGACY_SOURCE_TABLES, SOURCE_TABLES, _ingest_baseline
+from src.rebaseline import LEGACY_SOURCE_TABLES, SOURCE_TABLES, _ingest_baseline, run_rebaseline
+from src.warehouse.errors import PublishInProgressError
 
 
 def test_rebaseline_replaces_the_legacy_membership_table() -> None:
@@ -49,3 +53,29 @@ def test_rebaseline_allows_an_empty_subscription_payment_baseline(monkeypatch) -
 
     assert result["subscription_payments"] == 0
     assert dict(recorded_row_counts) == result
+
+
+def test_rebaseline_refuses_while_a_publish_is_active(monkeypatch, tmp_path: Path) -> None:
+    """활성 Publish가 있으면 Lease를 잡거나 상태를 지우기 전에 재기준화를 거부한다."""
+    calls: list[str] = []
+
+    def active_publish(settings) -> None:
+        """활성 Publish가 있는 상황을 흉내 낸다."""
+        raise PublishInProgressError("active publish")
+
+    monkeypatch.setattr("src.rebaseline.inspect_rebaseline", lambda *args: "inventory")
+    monkeypatch.setattr("src.rebaseline.assert_no_active_publish", active_publish)
+    monkeypatch.setattr(
+        "src.rebaseline.acquire_source_mutation_lease",
+        lambda *args, **kwargs: calls.append("lease"),
+    )
+
+    with pytest.raises(PublishInProgressError):
+        run_rebaseline(
+            input_dir=tmp_path,
+            seeded_at=datetime(2026, 9, 3, tzinfo=UTC),
+            catalog_path=tmp_path / "warehouse.duckdb",
+            postgres=None,  # type: ignore[arg-type]
+            storage=None,  # type: ignore[arg-type]
+        )
+    assert calls == []

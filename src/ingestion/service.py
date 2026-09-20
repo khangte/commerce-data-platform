@@ -410,11 +410,10 @@ def _write_local_artifacts(
     rows_corrupted = 0
     try:
         for page in snapshot.pages():
-            records = tuple(
-                request.corruption_plan.apply(record, rows_extracted + index)
+            records = (
+                request.corruption_plan.apply_page(tuple(page.records), rows_extracted)
                 if request.corruption_plan is not None
-                else record
-                for index, record in enumerate(page.records)
+                else tuple(page.records)
             )
             if request.corruption_plan is not None:
                 rows_corrupted += sum(

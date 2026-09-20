@@ -22,6 +22,7 @@ from src.ingestion.service import TableIngestionRequest, ingest_table
 from src.ingestion.storage import SeaweedFSSettings, list_object_keys, seaweedfs_s3_client
 from src.ingestion.tables import TABLE_CONFIGS
 from src.seed.loader import parse_seeded_at, run_seed
+from src.warehouse.publish_metadata import assert_no_active_publish
 
 REBASELINE_DAG_ID = "membership_grain_rebaseline"
 REBASELINE_PREFIXES = ("bronze/", "quarantine/", "_staging/")
@@ -132,6 +133,7 @@ def run_rebaseline(
 ) -> RebaselineResult:
     """기존 상태를 지운 뒤 Seed·9개 Bronze Table·DuckDB Catalog를 순서대로 다시 만든다."""
     inventory = inspect_rebaseline(postgres, storage, catalog_path)
+    assert_no_active_publish(postgres)
     lease = acquire_source_mutation_lease(
         postgres, owner_type=WAREHOUSE_OWNER_TYPE, owner_id=uuid.uuid4()
     )

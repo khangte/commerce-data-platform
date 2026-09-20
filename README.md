@@ -2,7 +2,7 @@
 
 Olist 공개 데이터를 Seed로 사용해 신뢰성 있는 로컬 Batch Data Platform을 구축하는 프로젝트입니다.
 
-현재 기준 문서는 [PRD v1.11](PRD_v1.11.md)입니다.
+현재 기준 문서는 [PRD v1.13](PRD_v1.13.md)입니다.
 
 ## Phase 0 시작하기
 
@@ -66,6 +66,33 @@ uv run python -m src.seed --seeded-at 2026-09-03T00:00:00Z
 
 ```bash
 RUN_POSTGRES_INTEGRATION=1 uv run pytest tests/integration/test_seed_integration.py
+```
+
+## Phase 0~7 전체 검증
+
+새 Clone에서 Seed·Generator·Ingestion·Publish·Integration Test를 순서대로 실행합니다. 메인 Compose Stack을 먼저 내립니다.
+
+```bash
+docker compose down
+./scripts/verify_clean_clone.sh
+```
+
+로그 경로는 첫 줄에 출력됩니다. `VERIFY_LOG=/path/to/log`로 바꿀 수 있습니다.
+
+Warehouse Publish만 수동으로 실행하려면:
+
+```bash
+uv run python -m src.warehouse.publish
+uv run python -m src.warehouse.publish --recover-only
+```
+
+Publish는 `data/warehouse/build/`에서 dbt build와 Test를 마친 뒤에만 `data/warehouse/warehouse.duckdb`를 교체합니다. 실패한 Build는 `data/warehouse/failed/`에 최근 3개만 남습니다.
+
+실제 dbt로 Publish Gate를 검증하는 테스트는 별도 Flag가 필요합니다.
+
+```bash
+RUN_POSTGRES_INTEGRATION=1 RUN_SEAWEEDFS_INTEGRATION=1 RUN_DBT_PUBLISH_INTEGRATION=1 \
+  uv run pytest tests/integration/test_publish_gate_dbt_integration.py
 ```
 
 ## 로컬 데이터와 Secret

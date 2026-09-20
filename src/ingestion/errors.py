@@ -12,6 +12,14 @@ from src.ingestion.quarantine import RejectRateExceededError
 from src.ingestion.schema import SourceContractError as BronzeSchemaContractError
 from src.ingestion.validation import SourceContractError as BatchValidationContractError
 from src.ingestion.verification import BronzeCommitVerificationError
+from src.warehouse.errors import (
+    DBT_BUILD_ERROR,
+    DBT_TEST_ERROR,
+    UNKNOWN_ERROR,
+    PublishedWalError,
+    PublishInProgressError,
+    WarehouseBuildError,
+)
 
 SOURCE_CONNECTION_ERROR = "SOURCE_CONNECTION_ERROR"
 LEASE_UNAVAILABLE = "LEASE_UNAVAILABLE"
@@ -22,6 +30,7 @@ OBJECT_VERIFICATION_ERROR = "OBJECT_VERIFICATION_ERROR"
 WATERMARK_CONFLICT = "WATERMARK_CONFLICT"
 BATCH_IDENTITY_CONFLICT = "BATCH_IDENTITY_CONFLICT"
 LEASE_OWNERSHIP_LOST = "LEASE_OWNERSHIP_LOST"
+WAREHOUSE_ERROR_TYPES = frozenset({DBT_BUILD_ERROR, DBT_TEST_ERROR, UNKNOWN_ERROR})
 
 # 문서 "재시도 가능" 목록: 일시적 연결 오류와 다른 활성 실행 종료를 기다리는 LeaseUnavailableError.
 RETRYABLE_ERROR_TYPES = frozenset({SOURCE_CONNECTION_ERROR, LEASE_UNAVAILABLE})
@@ -35,6 +44,7 @@ _CONNECTION_EXCEPTION_TYPES: tuple[type[Exception], ...] = (
 _LEASE_UNAVAILABLE_EXCEPTION_TYPES: tuple[type[Exception], ...] = (
     LeaseUnavailableError,
     TableLeaseUnavailableError,
+    PublishInProgressError,
 )
 
 _LEASE_OWNERSHIP_LOST_EXCEPTION_TYPES: tuple[type[Exception], ...] = (
@@ -61,7 +71,11 @@ def classify_error(error: Exception) -> str:
         return WATERMARK_CONFLICT
     if isinstance(error, BatchIdentityConflictError):
         return BATCH_IDENTITY_CONFLICT
-    return CONFIGURATION_ERROR
+    if isinstance(error, WarehouseBuildError):
+        return error.error_type
+    if isinstance(error, PublishedWalError):
+        return CONFIGURATION_ERROR
+    return UNKNOWN_ERROR
 
 
 def is_retryable(error: Exception) -> bool:

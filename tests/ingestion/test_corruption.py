@@ -6,8 +6,11 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from types import MappingProxyType
 
+import pytest
+
 from src.ingestion.corruption import (
     BROKEN_REFERENCE,
+    DUPLICATE_PRIMARY_KEY,
     INVALID_STATUS,
     NEGATIVE_NUMERIC,
     NULL_PRIMARY_KEY,
@@ -66,6 +69,22 @@ def test_corruption_plan_keeps_source_unchanged_and_separates_input_corrupted_va
         ("NUMERIC_RANGE_INVALID",),
         ("BROKEN_REFERENCE",),
     ]
+
+
+def test_duplicate_primary_key_copies_the_previous_record_key() -> None:
+    """Duplicate Corruption은 직전 Record PK를 복사해 BATCH_DUPLICATE 하나만 만든다."""
+    base = datetime(2026, 9, 7, tzinfo=UTC)
+    orders = tuple(_order(base + timedelta(seconds=index), index) for index in range(3))
+    corrupted = CorruptionPlan({1: DUPLICATE_PRIMARY_KEY}).apply_page(orders, 0)
+    assert corrupted[1].values["order_id"] == orders[0].values["order_id"]
+    assert corrupted[1].cursor == orders[1].cursor
+
+
+def test_duplicate_needs_a_preceding_record_in_the_page() -> None:
+    """Page 첫 Record에는 복사할 직전 PK가 없으므로 Duplicate를 거부한다."""
+    record = _order(datetime(2026, 9, 7, tzinfo=UTC), 0)
+    with pytest.raises(ValueError, match="preceding record"):
+        CorruptionPlan({5: DUPLICATE_PRIMARY_KEY}).apply_page((record,), 5)
 
 
 def _order(timestamp: datetime, ordinal: int) -> SourceRecord:

@@ -1,9 +1,9 @@
 # Phase 7. Data Quality & Publish
 
-> 상태: Planned  
+> 상태: In Progress  
 > Milestone: 2 — Data Platform Core  
 > 선행 Phase: [Phase 6. Dimensional Modeling](phase-06-dimensional-modeling.md)  
-> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.11](../../PRD_v1.11.md), [Mart Grain 계약](../reference/mart-grain.md)
+> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.13](../../PRD_v1.13.md), [Mart Grain 계약](../reference/mart-grain.md)
 
 ## 목표
 
@@ -31,7 +31,7 @@ Phase 7의 Publish Workflow와 E2E 품질 Gate를 완료했다는 뜻은 아니�
 | `dbt/tests/fct_subscription_payment_missing_customer_key.sql` | 구독 결제 Fact의 고객 SCD2 Version 누락을 검증한다. |
 
 - [x] 구독 상태 전이·SCD2 구간 비중복·재가입·등급 규칙을 dbt Test로 검증한다.
-- [ ] Publish 경계, 실패 Build 격리와 마지막 성공 Mart 보존은 `P7-13` 이후 작업으로 남는다.
+- [x] Publish 경계, 실패 Build 격리와 마지막 성공 Mart 보존은 `P7-13` 이후 작업으로 닫았다.
 
 ## 선행 조건
 
@@ -53,21 +53,21 @@ Ingestion 계층 품질과 Publish 전환 메커니즘은 Mart 구성과 독립�
 
 ### 7-1-1. Ingestion Quality 통합
 
-- [ ] `P7-01` Ingestion Validation Rule Registry 정리
-- [ ] `P7-02` Row Error와 Batch Error 분류 검증
-- [ ] `P7-03` Freeze된 Parent Key 기준 Broken Reference 검증
-- [ ] `P7-04` Reject Rate 0/이하/초과 경계 테스트
-- [ ] `P7-05` Duplicate/NULL Key/Broken FK/Invalid Status/Negative Value Fixture
+- [x] `P7-01` Ingestion Validation Rule Registry 정리
+- [x] `P7-02` Row Error와 Batch Error 분류 검증
+- [x] `P7-03` Freeze된 Parent Key 기준 Broken Reference 검증
+- [x] `P7-04` Reject Rate 0/이하/초과 경계 테스트
+- [x] `P7-05` Duplicate/NULL Key/Broken FK/Invalid Status/Negative Value Fixture
 
 검증 순서와 Error Code가 Phase 3 문서 및 PRD Section 11과 일치해야 한다.
 
 ### 7-1-2. Publish Safety
 
-- [ ] `P7-13` Build 대상과 Published Mart의 물리적 경계 정의
-- [ ] `P7-14` Build → Test → Publish 전환 구현
-- [ ] `P7-15` Publish 전환을 단일 Transaction 또는 복구 가능한 단위로 처리
-- [ ] `P7-16` dbt Build/Test 실패 시 이전 Published Mart 유지
-- [ ] `P7-17` Publish Run ID, Invocation ID, Hash, 상태 기록
+- [x] `P7-13` Build 대상과 Published Mart의 물리적 경계 정의
+- [x] `P7-14` Build → Test → Publish 전환 구현
+- [x] `P7-15` Publish 전환을 단일 Transaction 또는 복구 가능한 단위로 처리
+- [x] `P7-16` dbt Build/Test 실패 시 이전 Published Mart 유지
+- [x] `P7-17` Publish Run ID, Invocation ID, Hash, 상태 기록
 
 기본 의미:
 
@@ -87,7 +87,7 @@ DuckDB 제약을 관측한 뒤 Build Schema → Test → Swap 또는 별도 Ware
 
 ### 7-1-3. Metadata 조회
 
-- [ ] `P7-19` 성공/빈/실패/재실행 Metadata 조회 SQL
+- [x] `P7-19` 성공/빈/실패/재실행 Metadata 조회 SQL
 
 ## 7-2. 적용: Phase 6 완료 후 진행
 
@@ -95,13 +95,14 @@ Mart Model 이름과 Grain이 확정돼야 작성할 수 있는 Test와 검증�
 
 ### 7-2-1. Warehouse Quality
 
-- [ ] `P7-06` dbt Generic Test 구성: `unique`, `not_null`, `relationships`, `accepted_values`
-- [ ] `P7-07` 금액 Non-negative Custom Test
-- [ ] `P7-08` 주문 Timestamp 순서 Custom Test
-- [ ] `P7-09` 이력 Version 구간 Overlap/Current Custom Test
-- [ ] `P7-10` Fact FK Missing/Business Key Duplicate Test
+- [x] `P7-06` dbt Generic Test 구성: `unique`, `not_null`, `relationships`, `accepted_values`
+- [x] `P7-07` 금액 Non-negative Custom Test
+- [x] `P7-08` 주문 Timestamp 순서 Custom Test
+- [x] `P7-09` 이력 Version 구간 Overlap/Current Custom Test
+- [x] `P7-10` Fact FK Missing/Business Key Duplicate Test
 - [ ] `P7-11` 정상 E2E Unknown Key 0 Test
-- [ ] `P7-12` Fact Measure/Fan-out 회귀 Test
+  - 미완료 사유: 정상 E2E는 통과했지만 Unknown Key 0만을 직접 고정하는 전용 단언은 아직 없다.
+- [x] `P7-12` Fact Measure/Fan-out 회귀 Test
 
 필수 Custom Contract:
 
@@ -122,9 +123,10 @@ Normal E2E Unknown Key = 0
 
 ### 7-2-2. E2E 품질 Gate
 
-- [ ] `P7-18` Source→Bronze Catalog→Fact Count/Key 추적
+- [x] `P7-18` Source→Bronze Catalog→Fact Count/Key 추적
 - [ ] `P7-20` 새 Clone에서 Seed→Generator→Ingestion→dbt Test 재현
-- [ ] `P7-21` Phase 0~7 통합 검증 명령을 README에 반영
+  - 미완료 사유: `./scripts/verify_clean_clone.sh` 실행은 `/tmp/cdp-clean-clone-20260920T075558Z.log`에서 seed 단계 Raw CSV 경로 오류로 중단됐다. `data/raw/.` 복사 방식으로 Script를 수정했지만, 현재 Phase 7 산출물이 Git HEAD에 들어가기 전이라 순수 `git clone` 재현 완료 근거는 아직 없다.
+- [x] `P7-21` Phase 0~7 통합 검증 명령을 README에 반영
 
 ## 범위 밖
 
@@ -186,12 +188,15 @@ Normal E2E Unknown Key = 0
 ## Definition of Done
 
 - [ ] 모든 `P6-*` Task가 완료됐다.
-- [ ] 5종 Corruption을 기대 계층에서 정확히 탐지한다.
+  - 미완료 사유: Phase 7 Gate에서 P6 전체 완료 증빙을 별도로 재검증하지 않았다.
+- [x] 5종 Corruption을 기대 계층에서 정확히 탐지한다.
 - [ ] 정상 데이터 False Positive가 0이다.
-- [ ] Warehouse 실패가 Bronze/Watermark를 변경하지 않는다.
-- [ ] Build/Test 실패 뒤 마지막 성공 Mart의 Count/Hash가 유지된다.
+  - 미완료 사유: 정상 E2E와 dbt Test는 통과했지만 전체 정상 Fixture False Positive 0을 별도 집계하지 않았다.
+- [x] Warehouse 실패가 Bronze/Watermark를 변경하지 않는다.
+- [x] Build/Test 실패 뒤 마지막 성공 Mart의 Count/Hash가 유지된다.
 - [ ] AC-01, 08, 12, 13, 16이 통과한다.
-- [ ] Publish 전략과 관측 근거가 ADR에 기록됐다.
+  - 미완료 사유: AC-08과 AC-13은 통과했지만 AC-16 새 Clone 재현 완료 증빙이 아직 없다.
+- [x] Publish 전략과 관측 근거가 ADR에 기록됐다.
 
 ## Portfolio Evidence
 
@@ -200,6 +205,39 @@ Normal E2E Unknown Key = 0
 - 실패한 dbt Build 전후 Published Mart Hash
 - Source→Bronze→Fact 단일 Record 추적
 - 새 Clone 재현 로그
+
+### Corruption Matrix 실행 근거
+
+- `RUN_POSTGRES_INTEGRATION=1 uv run pytest tests/integration/test_child_parent_references_integration.py -v`: `3 passed`.
+- `RUN_POSTGRES_INTEGRATION=1 RUN_SEAWEEDFS_INTEGRATION=1 uv run pytest tests/integration/test_corruption_matrix_integration.py -v`: `5 passed`.
+- 5종 결과: Duplicate `BATCH_DUPLICATE=1`, NULL Key `REQUIRED_NULL=1`·`KEY_NULL=1`, Broken FK `BROKEN_REFERENCE=1`, Invalid Status `STATUS_DOMAIN_INVALID=1`, Negative Value `NUMERIC_RANGE_INVALID=1`.
+
+### Observability SQL 실행 근거
+
+- `RUN_POSTGRES_INTEGRATION=1 uv run pytest tests/integration/test_observability_run_status_integration.py -v`: `1 passed`.
+
+### Publish Gate 실행 근거
+
+- 실패 Run `f7b2b395-0d47-4acb-9a51-357e2ebe31a9`는 구독 결제 상태 Test 대소문자 회귀로 `DBT_TEST_ERROR`가 발생했고 Build를 `failed/`에 격리했다.
+- 성공 Run `53f2c77c-77fb-44c0-a24a-f4fcc2e41531`는 E2E Fixture와 전역 PUBLISHED Chain Test 보정 후 `PUBLISHED`로 완료했다. 직전 성공 Run은 `5a15484a-b831-4535-904d-1d9a6709228b`로 연결됐다.
+
+## 파일·폴더별 변경 요약
+
+| 경로 | 구분 | 변경 내용 |
+| ---- | ---- | --------- |
+| `src/warehouse/errors.py`, `src/ingestion/errors.py` | 생성·수정 | Warehouse 오류 분류와 기본 `UNKNOWN_ERROR`를 추가했다. |
+| `sql/metadata/005_create_mart_publish_runs.sql`, `src/warehouse/publish_metadata.py` | 생성 | Publish 상태 전이와 활성 실행 Mutex를 구현했다. |
+| `src/warehouse/dbt_runner.py`, `src/warehouse/publish.py` | 생성 | 격리 Build, dbt 결과 분류, 원자 파일 교체, 복구 CLI를 구현했다. |
+| `tests/integration/test_corruption_matrix_integration.py`, `tests/integration/test_child_parent_references_integration.py` | 생성·수정 | Corruption Matrix 5종과 Snapshot 이후 Parent Commit 비가시성 검증을 추가했다. |
+| `tests/integration/test_observability_run_status_integration.py` | 생성 | Batch별 성공·빈·실패·재실행·Publish 실패 상태를 관측 SQL로 검증한다. |
+| `tests/integration/test_publish_gate_dbt_integration.py` | 생성 | 실제 dbt Canary 실패가 Published Warehouse Hash와 Row Count를 바꾸지 못함을 검증한다. |
+| `src/warehouse/mart_hash.py` | 수정 | Mart별 행 수 계산을 추가했다. |
+| `airflow/dags/warehouse_pipeline_dag.py`, `src/rebaseline.py` | 수정 | DAG Publish Task 체인과 Rebaseline 활성 Publish 방어를 추가했다. |
+| `src/ingestion/rules.py`, `src/ingestion/validation.py`, `src/ingestion/corruption.py`, `src/ingestion/service.py` | 생성·수정 | 검증 규칙 등록부와 Page 단위 PK 중복 오염을 추가했다. |
+| `dbt/tests/`, `dbt/models/marts/facts/schema.yml` | 생성·수정 | 상태·FK·금액·시간·합계·Canary 품질 Gate를 추가했다. |
+| `sql/validation/observability_run_status.sql` | 생성 | Batch별 Ingestion·Publish 상태 단일 조회를 추가했다. |
+| `scripts/verify_clean_clone.sh`, `README.md` | 생성·수정 | 새 Clone 재현 및 수동 Publish 절차를 추가했다. |
+| `tests/` | 생성·수정 | 오류, 메타데이터, Publish, 규칙, 품질 계약 테스트를 추가했다. |
 
 ## 권장 Commit
 

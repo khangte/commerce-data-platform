@@ -18,6 +18,7 @@ from src.warehouse.mart_hash import (
     describe_mart_difference,
     main,
     mart_logical_hash,
+    mart_row_counts,
     mismatched_relations,
     target_for,
 )
@@ -167,6 +168,18 @@ def test_main_prints_hashes_when_no_comparison_is_requested(tmp_path: Path, caps
 
     assert exit_code == 0
     assert "main.sample" in capsys.readouterr().out
+
+
+def test_mart_row_counts_counts_each_target(tmp_path: Path) -> None:
+    """대상 Relation별 Row 수를 Relation 이름 Key로 반환한다."""
+    warehouse_path = tmp_path / "warehouse.duckdb"
+    with duckdb.connect(str(warehouse_path)) as connection:
+        connection.execute("CREATE SCHEMA dimensions")
+        connection.execute(
+            "CREATE TABLE dimensions.dim_date AS SELECT range AS date_key FROM range(3)"
+        )
+    target = MartTarget("dimensions", "dim_date", ("date_key",))
+    assert mart_row_counts(warehouse_path, (target,)) == {"dimensions.dim_date": 3}
 
 
 def _sample_connection(rows: list[tuple[int, str]]) -> duckdb.DuckDBPyConnection:

@@ -67,11 +67,28 @@ def test_fixed_order_is_traceable_from_source_to_fact(tmp_path) -> None:
         assert mutation.payments_inserted == len(bundle.payments)
 
         _seed_watermarks(postgres, pipeline_name, bundle, ingested_at)
-        for source_table in ("customers", "customer_subscriptions", "customer_membership_tiers", "orders", "order_items", "order_payments"):
+        for source_table in (
+            "customers",
+            "customer_subscriptions",
+            "customer_membership_tiers",
+            "products",
+            "sellers",
+            "orders",
+            "order_items",
+            "order_payments",
+        ):
             results.append(
                 _ingest(postgres, storage, pipeline_name, source_table, FIXTURE_START, tmp_path, ingested_at)
             )
-        assert [result.row_count for result in results] == [1, 1, 1, 1, len(bundle.items), 1]
+        counts = {result.run.source_table: result.row_count for result in results}
+        assert counts["orders"] == 1
+        assert counts["order_items"] == len(bundle.items)
+        assert counts["order_payments"] == 1
+        assert counts["customers"] == 1
+        assert counts["customer_subscriptions"] == 1
+        assert counts["customer_membership_tiers"] == 1
+        assert counts["products"] > 0
+        assert counts["sellers"] > 0
 
         warehouse_path = tmp_path / "warehouse.duckdb"
         _create_fixture_catalog(postgres, warehouse_path, results)
@@ -115,11 +132,28 @@ def test_late_order_updates_the_past_business_date_mart(tmp_path) -> None:
         assert mutation.orders_inserted == 1
 
         _seed_watermarks(postgres, pipeline_name, bundle, ingested_at)
-        for source_table in ("customers", "customer_subscriptions", "customer_membership_tiers", "orders", "order_items", "order_payments"):
+        for source_table in (
+            "customers",
+            "customer_subscriptions",
+            "customer_membership_tiers",
+            "products",
+            "sellers",
+            "orders",
+            "order_items",
+            "order_payments",
+        ):
             results.append(
                 _ingest(postgres, storage, pipeline_name, source_table, mutation_time, tmp_path, ingested_at)
             )
-        assert [result.row_count for result in results] == [1, 1, 1, 1, len(bundle.items), 1]
+        counts = {result.run.source_table: result.row_count for result in results}
+        assert counts["orders"] == 1
+        assert counts["order_items"] == len(bundle.items)
+        assert counts["order_payments"] == 1
+        assert counts["customers"] == 1
+        assert counts["customer_subscriptions"] == 1
+        assert counts["customer_membership_tiers"] == 1
+        assert counts["products"] > 0
+        assert counts["sellers"] > 0
 
         warehouse_path = tmp_path / "warehouse.duckdb"
         _create_fixture_catalog(postgres, warehouse_path, results)
@@ -165,7 +199,7 @@ def _seed_watermarks(
     bundle: OrderBundle,
     now: datetime,
 ) -> None:
-    """Bundle 직전 시각으로 6개 Table Watermark를 세팅해 기존 Seed 데이터가 수집되지 않게 한다."""
+    """8개 Table 중 6개 Watermark를 세팅하고 Product·Seller는 전체 수집한다."""
     _set_watermark(
         postgres, pipeline_name, "customers",
         CursorPosition(bundle.customer.created_at - timedelta(microseconds=1), (bundle.customer.customer_id,)),

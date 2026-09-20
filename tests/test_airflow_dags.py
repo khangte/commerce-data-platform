@@ -264,15 +264,21 @@ def test_generator_failure_does_not_trigger_warehouse() -> None:
         _run_compose("down")
 
 
-def test_warehouse_pipeline_defines_the_dbt_build_boundary() -> None:
-    """Warehouse DAG는 Catalog 성공 뒤 dbt Build를 실행하고 실패를 Task 실패로 전파한다."""
+def test_warehouse_pipeline_publishes_through_build_then_swap() -> None:
+    """Warehouse DAG는 검증 뒤 Build 준비 → dbt build → Publish 순서로만 Mart를 교체한다."""
     dag_source = (PROJECT_ROOT / "airflow/dags/warehouse_pipeline_dag.py").read_text(
         encoding="utf-8"
     )
+    compile(dag_source, "warehouse_pipeline_dag.py", "exec")
 
-    assert re.search(r'@task\(trigger_rule="all_success"\)\s*\n\s*def dbt_build_task', dag_source)
-    assert '"dbt", "build", "--project-dir", str(DBT_PROJECT_DIR)' in dag_source
-    assert '"--profiles-dir", str(DBT_PROJECT_DIR)' in dag_source
-    assert re.search(r'raise AirflowFailException\(\s*\n\s*f"dbt build failed', dag_source)
-    assert "dbt_build = dbt_build_task(catalog)" in dag_source
-    assert "extract_results >> verification >> catalog >> dbt_build" in dag_source
+    for task_id in ("prepare_warehouse_build", "dbt_build", "publish_mart"):
+        pattern = rf'@task\(\s*task_id="{task_id}",\s*trigger_rule="all_success"'
+        assert re.search(pattern, dag_source)
+    for task_id in ("dbt_build", "publish_mart"):
+        pattern = rf'task_id="{task_id}",\s*trigger_rule="all_success",\s*retries=0'
+        assert re.search(pattern, dag_source)
+    assert "extract_results >> verification >> build >> dbt_result >> publish" in dag_source
+    assert "publish_run_summary(run_info, verification, build, publish)" in dag_source
+    assert "sync_bronze_catalog" not in dag_source
+    assert "subprocess" not in dag_source
+    assert "CATALOG_PATH" not in dag_source

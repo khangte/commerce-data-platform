@@ -49,12 +49,18 @@ def test_quarantine_writer_preserves_deterministic_id_raw_payload_and_error_coun
     assert artifact.error_counts == {"CURSOR_OUT_OF_RANGE": 1, "STATUS_DOMAIN_INVALID": 1}
 
 
-def test_reject_rate_allows_five_percent_and_rejects_more() -> None:
-    """5%는 허용하고 그 초과는 Watermark를 전진시키지 않을 Batch 오류로 만든다."""
+@pytest.mark.parametrize(("total_rows", "rejected_rows"), [(0, 0), (20, 0), (20, 1), (100, 5)])
+def test_reject_rate_allows_up_to_five_percent(total_rows: int, rejected_rows: int) -> None:
+    """빈 Batch, 0건, 정확히 5%까지는 Batch를 통과시킨다."""
     assert MAX_REJECT_RATE == 0.05
-    assert_reject_rate(total_rows=20, rejected_rows=1)
+    assert_reject_rate(total_rows=total_rows, rejected_rows=rejected_rows)
+
+
+@pytest.mark.parametrize(("total_rows", "rejected_rows"), [(20, 2), (100, 6), (1, 1)])
+def test_reject_rate_rejects_more_than_five_percent(total_rows: int, rejected_rows: int) -> None:
+    """5%를 넘으면 Watermark를 전진시키지 않을 Batch 오류로 만든다."""
     with pytest.raises(RejectRateExceededError, match="5%"):
-        assert_reject_rate(total_rows=20, rejected_rows=2)
+        assert_reject_rate(total_rows=total_rows, rejected_rows=rejected_rows)
 
 
 def _record() -> SourceRecord:
