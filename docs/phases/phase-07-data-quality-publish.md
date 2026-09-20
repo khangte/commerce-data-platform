@@ -56,8 +56,10 @@ Ingestion 계층 품질과 Publish 전환 메커니즘은 Mart 구성과 독립�
 - [x] `P7-01` Ingestion Validation Rule Registry 정리
 - [x] `P7-02` Row Error와 Batch Error 분류 검증
 - [x] `P7-03` Freeze된 Parent Key 기준 Broken Reference 검증
+  - 근거: `RUN_POSTGRES_INTEGRATION=1 uv run pytest tests/integration/test_child_parent_references_integration.py::test_parent_committed_after_snapshot_is_not_visible -v` → `1 passed`.
 - [x] `P7-04` Reject Rate 0/이하/초과 경계 테스트
 - [x] `P7-05` Duplicate/NULL Key/Broken FK/Invalid Status/Negative Value Fixture
+  - 근거: `RUN_POSTGRES_INTEGRATION=1 RUN_SEAWEEDFS_INTEGRATION=1 uv run pytest tests/integration/test_corruption_matrix_integration.py -v` → `5 passed`.
 
 검증 순서와 Error Code가 Phase 3 문서 및 PRD Section 11과 일치해야 한다.
 
@@ -88,6 +90,7 @@ DuckDB 제약을 관측한 뒤 Build Schema → Test → Swap 또는 별도 Ware
 ### 7-1-3. Metadata 조회
 
 - [x] `P7-19` 성공/빈/실패/재실행 Metadata 조회 SQL
+  - 근거: `RUN_POSTGRES_INTEGRATION=1 uv run pytest tests/integration/test_observability_run_status_integration.py::test_observability_query_distinguishes_run_outcomes -v` → `1 passed`.
 
 ## 7-2. 적용: Phase 6 완료 후 진행
 
@@ -100,8 +103,8 @@ Mart Model 이름과 Grain이 확정돼야 작성할 수 있는 Test와 검증�
 - [x] `P7-08` 주문 Timestamp 순서 Custom Test
 - [x] `P7-09` 이력 Version 구간 Overlap/Current Custom Test
 - [x] `P7-10` Fact FK Missing/Business Key Duplicate Test
-- [ ] `P7-11` 정상 E2E Unknown Key 0 Test
-  - 미완료 사유: 정상 E2E는 통과했지만 Unknown Key 0만을 직접 고정하는 전용 단언은 아직 없다.
+- [x] `P7-11` 정상 E2E Unknown Key 0 Test
+  - 근거: 정상 E2E 2건에서 `run_results.json`의 `relationships_` Test 노드 실행 수·`status=pass`·`failures=0`을 직접 단언했고 `RUN_POSTGRES_INTEGRATION=1 RUN_SEAWEEDFS_INTEGRATION=1 uv run pytest tests/integration/test_order_e2e_and_late_order_mart_integration.py -v` → `2 passed`.
 - [x] `P7-12` Fact Measure/Fan-out 회귀 Test
 
 필수 Custom Contract:
@@ -124,8 +127,8 @@ Normal E2E Unknown Key = 0
 ### 7-2-2. E2E 품질 Gate
 
 - [x] `P7-18` Source→Bronze Catalog→Fact Count/Key 추적
-- [ ] `P7-20` 새 Clone에서 Seed→Generator→Ingestion→dbt Test 재현
-  - 미완료 사유: `./scripts/verify_clean_clone.sh` 실행은 `/tmp/cdp-clean-clone-20260920T075558Z.log`에서 seed 단계 Raw CSV 경로 오류로 중단됐다. `data/raw/.` 복사 방식으로 Script를 수정했지만, 현재 Phase 7 산출물이 Git HEAD에 들어가기 전이라 순수 `git clone` 재현 완료 근거는 아직 없다.
+- [x] `P7-20` 새 Clone에서 Seed→Generator→Ingestion→dbt Test 재현
+  - 근거: Commit `dbf66fb` 기준 `./scripts/verify_clean_clone.sh` → `clean clone verification passed`, 로그 `/tmp/cdp-clean-clone-20260920T092930Z.log`.
 - [x] `P7-21` Phase 0~7 통합 검증 명령을 README에 반영
 
 ## 범위 밖
@@ -187,15 +190,24 @@ Normal E2E Unknown Key = 0
 
 ## Definition of Done
 
-- [ ] 모든 `P6-*` Task가 완료됐다.
-  - 미완료 사유: Phase 7 Gate에서 P6 전체 완료 증빙을 별도로 재검증하지 않았다.
+- [x] 모든 `P6-*` Task가 완료됐다.
+  - 근거: `5516261`(`docs: close phase6`)와 `d441323`(`fix: stabilize phase6 closure tests`)로 Phase 6 종료 근거를 남겼고, Phase 7 잔여 근거 보강 중 `uv run pytest -q` → `185 passed, 80 skipped`.
 - [x] 5종 Corruption을 기대 계층에서 정확히 탐지한다.
-- [ ] 정상 데이터 False Positive가 0이다.
-  - 미완료 사유: 정상 E2E와 dbt Test는 통과했지만 전체 정상 Fixture False Positive 0을 별도 집계하지 않았다.
+  - 근거: Corruption Matrix 5종 통합 테스트 `5 passed`.
+- [x] 정상 데이터 False Positive가 0이다.
+  - 근거: 정상 E2E 2건에서 relationships Test 노드가 모두 `status=pass`, `failures=0`임을 직접 단언했고 E2E 전체 `2 passed`.
 - [x] Warehouse 실패가 Bronze/Watermark를 변경하지 않는다.
 - [x] Build/Test 실패 뒤 마지막 성공 Mart의 Count/Hash가 유지된다.
-- [ ] AC-01, 08, 12, 13, 16이 통과한다.
-  - 미완료 사유: AC-08과 AC-13은 통과했지만 AC-16 새 Clone 재현 완료 증빙이 아직 없다.
+- [x] AC-01, 08, 12, 13, 16이 통과한다.
+  - 근거:
+
+    | AC | 근거 |
+    | -- | ---- |
+    | AC-01 | `tests/integration/test_order_e2e_and_late_order_mart_integration.py::test_fixed_order_is_traceable_from_source_to_fact` 포함 E2E `2 passed` |
+    | AC-08 | `tests/integration/test_corruption_matrix_integration.py` → `5 passed` |
+    | AC-12 | E2E `run_results.json` relationships Test 노드 실행·통과·`failures=0` 직접 단언 → `2 passed` |
+    | AC-13 | `tests/integration/test_observability_run_status_integration.py::test_observability_query_distinguishes_run_outcomes` → `1 passed` |
+    | AC-16 | `./scripts/verify_clean_clone.sh` → `clean clone verification passed` |
 - [x] Publish 전략과 관측 근거가 ADR에 기록됐다.
 
 ## Portfolio Evidence
@@ -216,6 +228,21 @@ Normal E2E Unknown Key = 0
 
 - `RUN_POSTGRES_INTEGRATION=1 uv run pytest tests/integration/test_observability_run_status_integration.py -v`: `1 passed`.
 
+### Clean Clone 실행 근거
+
+- 실행 일시: `2026-09-20T09:29:30Z`.
+- Commit `dbf66fb` 기준 `./scripts/verify_clean_clone.sh` 실행 완료.
+- 로그: `/tmp/cdp-clean-clone-20260920T092930Z.log`.
+- `uv sync --frozen`: 성공, 76개 Package 설치.
+- `uv run ruff check .`: `All checks passed!`.
+- `uv run pytest`: `185 passed, 80 skipped`.
+- Seed: `seed_run_id=174458da-ddb0-4d19-9f30-c98729f4720a`, Raw Checksum `e290791d496f2443eeb5f78e23f977adec618f82f843a265ed4362b76822ec33`.
+- Generator: `generator_run_id=3cfe794a-b2cf-4384-adfc-90ac97f21c92`, 주문 20건·Item 34건·Payment 20건 생성.
+- 9개 Table Ingestion: `customers`, `customer_membership_tiers`, `products`, `sellers`, `orders`, `order_items`, `order_payments`는 `SUCCESS`; `customer_subscriptions`, `subscription_payments`는 `SUCCESS_NO_DATA`; 거부 Row 0건.
+- Publish CLI: Warehouse Publish Run `03207743-a264-4cb1-a37a-84141d27f101` `PUBLISHED`.
+- Integration Gate: `75 passed, 1 skipped, 189 deselected`.
+- 마지막 줄: `clean clone verification passed`.
+
 ### Publish Gate 실행 근거
 
 - 실패 Run `f7b2b395-0d47-4acb-9a51-357e2ebe31a9`는 구독 결제 상태 Test 대소문자 회귀로 `DBT_TEST_ERROR`가 발생했고 Build를 `failed/`에 격리했다.
@@ -231,6 +258,8 @@ Normal E2E Unknown Key = 0
 | `tests/integration/test_corruption_matrix_integration.py`, `tests/integration/test_child_parent_references_integration.py` | 생성·수정 | Corruption Matrix 5종과 Snapshot 이후 Parent Commit 비가시성 검증을 추가했다. |
 | `tests/integration/test_observability_run_status_integration.py` | 생성 | Batch별 성공·빈·실패·재실행·Publish 실패 상태를 관측 SQL로 검증한다. |
 | `tests/integration/test_publish_gate_dbt_integration.py` | 생성 | 실제 dbt Canary 실패가 Published Warehouse Hash와 Row Count를 바꾸지 못함을 검증한다. |
+| `tests/integration/test_order_e2e_and_late_order_mart_integration.py` | 수정 | 정상 E2E 2건에서 dbt `relationships` Test 실행·통과·Failure 0건을 `run_results.json`으로 직접 검증한다. |
+| `scripts/verify_clean_clone.sh` | 수정 | Raw Dataset을 새 Clone의 `data/raw/` 아래에 정확히 복사하고 Phase 0~7 전체 검증 로그를 남긴다. |
 | `src/warehouse/mart_hash.py` | 수정 | Mart별 행 수 계산을 추가했다. |
 | `airflow/dags/warehouse_pipeline_dag.py`, `src/rebaseline.py` | 수정 | DAG Publish Task 체인과 Rebaseline 활성 Publish 방어를 추가했다. |
 | `src/ingestion/rules.py`, `src/ingestion/validation.py`, `src/ingestion/corruption.py`, `src/ingestion/service.py` | 생성·수정 | 검증 규칙 등록부와 Page 단위 PK 중복 오염을 추가했다. |
