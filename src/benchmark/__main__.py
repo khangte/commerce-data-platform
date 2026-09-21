@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import argparse
 import sys
+from collections.abc import Sequence
 from datetime import UTC, datetime
 
-from src.benchmark.config import RunConfig, new_benchmark_id, resolve_scale
+from src.benchmark.config import BenchmarkScenario, RunConfig, new_benchmark_id, resolve_scale
 from src.benchmark.experiments import SCENARIOS
 from src.benchmark.runner import has_invalid_runs, run_experiment
-from src.benchmark.store import load_runs, render_comparison
+from src.benchmark.store import BenchmarkRun, load_runs, median_duration, render_comparison
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -60,6 +61,8 @@ def _report_command(args: argparse.Namespace) -> int:
     scenario_name, _scale_name, _timestamp = args.benchmark_id.rsplit("-", 2)
     scenario = SCENARIOS[scenario_name]
     runs = load_runs(args.benchmark_id)
+    if len(scenario.arms) == 1:
+        return _report_single_arm(scenario, runs)
     baseline_arm, improved_arm = scenario.arms[0], scenario.arms[1]
     for is_cold_run, label in ((True, "cold"), (False, "warm")):
         baseline = [
@@ -78,6 +81,27 @@ def _report_command(args: argparse.Namespace) -> int:
             continue
         print(f"== {label} ==")
         print(render_comparison(baseline, improved))
+    return 0
+
+
+def _report_single_arm(scenario: BenchmarkScenario, runs: Sequence[BenchmarkRun]) -> int:
+    """Arm이 하나뿐인 Scenario(실험 D)의 Cold·Warm 모집단을 각각 따로 출력한다."""
+    arm = scenario.arms[0]
+    for is_cold_run, label in ((True, "cold"), (False, "warm")):
+        population = [
+            run
+            for run in runs
+            if run.scenario == f"{scenario.scenario}-{arm}" and run.is_cold_run == is_cold_run
+        ]
+        if not population:
+            continue
+        valid_runs = [run for run in population if run.status == "VALID"]
+        raw_values = [run.duration_seconds for run in valid_runs]
+        median = median_duration(population, is_cold_run=is_cold_run)
+        print(f"== {label} ==")
+        print(
+            f"{arm}: raw={raw_values} median={median} valid_runs={len(valid_runs)}/{len(population)}"
+        )
     return 0
 
 

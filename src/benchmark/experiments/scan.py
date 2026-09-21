@@ -90,6 +90,19 @@ def run_scan_experiment(config: RunConfig) -> Mapping[str, ArmResult]:
 EXPERIMENTS[SCAN_SCENARIO.scenario] = run_scan_experiment
 
 
+def run_filtered_scan_workload(current_rows: int) -> tuple[str, int]:
+    """Filtered Scan Arm과 동일한 Query를 한 번 실행해 Result Hash·Payload Byte 수를 낸다.
+
+    실험 D(Cache 효과)가 Full Scan Arm 없이 이 Workload 하나만 재사용할 수 있게
+    공개해 둔 진입점이다.
+    """
+    old_rows = current_rows * 20
+    with tempfile.TemporaryDirectory(prefix="bench-scan-workload-") as tmp:
+        old_path, current_path = _write_fixture(Path(tmp), old_rows, current_rows)
+        sql = _aggregate_sql(old_path, current_path)
+        return _run_and_hash(_connect(), sql)
+
+
 def profile_scan(
     connection: duckdb.DuckDBPyConnection, sql: str, params: Sequence[object] = ()
 ) -> tuple[int, int]:
