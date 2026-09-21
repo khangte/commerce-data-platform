@@ -1,7 +1,8 @@
 """Scenario 이름을 정의와 실행 함수에 연결하는 Registry.
 
 개별 실험 모듈(`extract`, `file_format`, `scan`, `cache_effect`)이 이 모듈을 import해
-자신의 `BenchmarkScenario`와 실행 함수를 `SCENARIOS`/`EXPERIMENTS`에 등록한다.
+자신의 `BenchmarkScenario`와 실행 함수를 `SCENARIOS`/`EXPERIMENTS`에 등록한다. 반복 밖에서
+원천을 미리 준비해야 하는 Scenario(예: `extract`)는 `PREPARE_HOOKS`에도 등록한다.
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ if TYPE_CHECKING:
 
 SCENARIOS: dict[str, BenchmarkScenario] = {}
 EXPERIMENTS: dict[str, Callable[[RunConfig], Mapping[str, ArmResult]]] = {}
+PREPARE_HOOKS: dict[str, Callable[[RunConfig], RunConfig]] = {}
 
 from src.benchmark.experiments import cache_effect as _cache_effect  # noqa: F401
 from src.benchmark.experiments import extract as _extract  # noqa: F401

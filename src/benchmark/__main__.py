@@ -8,7 +8,7 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 
 from src.benchmark.config import BenchmarkScenario, RunConfig, new_benchmark_id, resolve_scale
-from src.benchmark.experiments import SCENARIOS
+from src.benchmark.experiments import PREPARE_HOOKS, SCENARIOS
 from src.benchmark.runner import has_invalid_runs, run_experiment
 from src.benchmark.store import BenchmarkRun, load_runs, median_duration, render_comparison
 
@@ -51,6 +51,9 @@ def _run_command(args: argparse.Namespace) -> int:
         repeats=repeats,
         is_cold_run=is_cold_run,
     )
+    prepare = PREPARE_HOOKS.get(scenario.scenario)
+    if prepare is not None:
+        config = prepare(config)
     runs = run_experiment(scenario, config)
     print(f"benchmark_id={benchmark_id} runs={len(runs)}")
     return 1 if has_invalid_runs(runs) else 0

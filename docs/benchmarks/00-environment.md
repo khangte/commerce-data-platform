@@ -26,24 +26,14 @@ uv run python -m src.benchmark run --scenario cache_effect --scale S --warm
 
 ### Experiment A(Extract, Full vs Incremental)
 
-`extract` Scenario는 실행 전 `prepare_extract_fixture(RunConfig)`로 Watermark Anchor(t0/t_boundary/t1,
-[[035_phase9-extract-anchor-derivation]] 참조)를 먼저 산출해야 한다 — 일반 `run` Subcommand는 이 단계를
-호출하지 않아 그대로는 쓸 수 없다(CLI 배선 공백, 알려진 한계로 남겨둠). 실측 재현 절차:
+`extract` Scenario는 반복 시작 전 `prepare_extract_fixture`로 Watermark Anchor(t0/t_boundary/t1,
+[[035_phase9-extract-anchor-derivation]] 참조)를 먼저 산출해야 한다. `run` Subcommand는
+`src/benchmark/experiments/__init__.py`의 `PREPARE_HOOKS` Registry를 확인해 Scenario 이름이
+등록돼 있으면 `run_experiment` 전에 자동으로 호출한다(`extract`만 등록됨) — 다른 실험과 동일하게
+아래 한 줄로 재현한다.
 
-```python
-from datetime import UTC, datetime
-from src.benchmark.config import RunConfig, ScaleProfile, new_benchmark_id
-from src.benchmark.experiments.extract import EXTRACT_SCENARIO, prepare_extract_fixture
-from src.benchmark.runner import run_experiment
-
-scale = ScaleProfile(name="S", order_count=100_000, random_seed=20260921)
-benchmark_id = new_benchmark_id("extract", scale.name, datetime.now(UTC))
-raw_config = RunConfig(
-    scenario=EXTRACT_SCENARIO, scale=scale, benchmark_id=benchmark_id,
-    repeats=5, is_cold_run=False, parameters={"change_rate": 0.1},
-)
-config = prepare_extract_fixture(raw_config)  # t0/t_boundary/t1 산출 + 사전 조건 확인
-runs = run_experiment(EXTRACT_SCENARIO, config)
+```bash
+uv run python -m src.benchmark run --scenario extract --scale S
 ```
 
 ### Harness Overhead(측정 바닥값)
@@ -123,11 +113,11 @@ Experiment A Incremental Arm의 최소 관측 시간(S Scale, 5.77~5.94초)과 �
 | D(Cache Effect, Warm) | `cache_effect_warm-S-20260921T050505Z` | 5/5 VALID, hash `12393763410f` |
 | Harness Overhead | `harness_overhead-S-20260921T104453Z` | 5/5 VALID |
 
-Experiment A는 Watermark Anchor 산출 방식([[033_phase9-extract-watermark-and-change-rate]] →
-[[034_phase9-extract-watermark-noop-gate]] → [[035_phase9-extract-anchor-derivation]])을 3차례
-정정한 뒤 이 결과에 도달했다. 세부 경과는 `docs/architect-review/029`~`036`에 있다.
+Experiment A는 Watermark Anchor 산출 방식([[031_phase9-extract-watermark-and-change-rate]] →
+[[033_phase9-extract-t0-anchor-collision]] → [[034_phase9-extract-watermark-noop-gate]] →
+[[035_phase9-extract-anchor-derivation]])을 4차례 정정한 뒤 이 결과에 도달했다. 세부 경과는
+`docs/architect-review/029`~`036`에 있다.
 
 ## 7. 알려진 한계
 
-- CLI `run` Subcommand는 Extract Scenario의 Fixture 준비 단계(`prepare_extract_fixture`)를 호출하지 않는다 — 위 §1 절차로 대체 실행해야 한다.
-- Bronze Object 정리(Rebaseline)는 이번 Phase 범위에서 명시적으로 제외했다([[029_phase9-cache-reset-and-config-hash]] §5).
+- Bronze Object 정리(Rebaseline)는 이번 Phase 범위에서 명시적으로 제외했다([[032_phase9-shared-source-accumulation]] §5).

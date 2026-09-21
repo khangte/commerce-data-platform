@@ -23,7 +23,7 @@ import duckdb
 
 from src.benchmark.config import BenchmarkScenario, RunConfig
 from src.benchmark.duckdb_s3 import configure_s3
-from src.benchmark.experiments import EXPERIMENTS, SCENARIOS
+from src.benchmark.experiments import EXPERIMENTS, PREPARE_HOOKS, SCENARIOS
 from src.benchmark.measure import RowCounts, measure
 from src.benchmark.runner import ArmResult
 from src.common.database import PostgresSettings
@@ -62,7 +62,7 @@ def prepare_extract_fixture(config: RunConfig) -> RunConfig:
     """
     postgres = PostgresSettings.from_environment()
     storage = SeaweedFSSettings.from_environment()
-    change_rate_target = config.parameters["change_rate"]
+    change_rate_target = config.parameters.get("change_rate", 0.1)
     order_count_t0 = config.scale.order_count
     # T1 Generator 호출의 order_count는 총량이 아니라 이번 호출이 새로 넣을 건수다.
     # 결정적 ID가 (order_count, logical_date)를 Hash 입력에 포함하므로, 총량을 넘기면
@@ -189,6 +189,7 @@ def run_extract_experiment(config: RunConfig) -> Mapping[str, ArmResult]:
 
 
 EXPERIMENTS[EXTRACT_SCENARIO.scenario] = run_extract_experiment
+PREPARE_HOOKS[EXTRACT_SCENARIO.scenario] = prepare_extract_fixture
 
 
 def _ensure_watermark_at(
