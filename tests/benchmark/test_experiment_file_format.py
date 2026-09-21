@@ -12,6 +12,7 @@ from src.benchmark.experiments.file_format import (
     FILE_FORMAT_SCENARIO,
     run_file_format_experiment,
 )
+from src.benchmark.runner import has_invalid_runs, run_experiment
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("RUN_SEAWEEDFS_INTEGRATION") != "1",
@@ -20,8 +21,12 @@ pytestmark = pytest.mark.skipif(
 
 
 def test_csv_and_parquet_arms_match_hash_with_different_file_sizes() -> None:
-    """같은 고정 Row를 두 형식으로 읽으면 Result Hash는 같고 Byte 수는 다르다."""
-    scale = ScaleProfile(name="S", order_count=200, random_seed=20260921)
+    """같은 고정 Row를 두 형식으로 읽으면 Result Hash는 같고 Byte 수는 다르다.
+
+    Fixture는 이제 Scale 이름으로 재사용되므로, 실제 S/M/L 측정과 겹치지 않게
+    Test 전용 Scale 이름을 쓴다.
+    """
+    scale = ScaleProfile(name="TEST-FMT-A", order_count=200, random_seed=20260921)
     benchmark_id = new_benchmark_id("file_format", scale.name, datetime.now(UTC))
     config = RunConfig(
         scenario=FILE_FORMAT_SCENARIO,
@@ -36,3 +41,26 @@ def test_csv_and_parquet_arms_match_hash_with_different_file_sizes() -> None:
     assert arms["csv"].result_hash == arms["parquet"].result_hash
     assert arms["csv"].counts.rows_scanned == arms["parquet"].counts.rows_scanned == 200
     assert arms["csv"].counts.input_bytes != arms["parquet"].counts.input_bytes
+
+
+def test_run_experiment_survives_five_repeats_with_same_benchmark_id() -> None:
+    """`run_experiment`의 반복 5회는 매번 같은 Object Key로 Fixture를 다시 올리지 않는다.
+
+    Object Key가 Scale에 묶여 있지 않고 benchmark_id에 묶여 있으면, 이미 있는
+    Key에 다시 올리는 순간 `upload_new_file`의 불변 Key 검사가 두 번째 회차부터
+    FileExistsError를 낸다. 실제 S/M/L 측정과 겹치지 않게 Test 전용 Scale 이름을 쓴다.
+    """
+    scale = ScaleProfile(name="TEST-FMT-B", order_count=50, random_seed=20260921)
+    benchmark_id = new_benchmark_id("file_format", scale.name, datetime.now(UTC))
+    config = RunConfig(
+        scenario=FILE_FORMAT_SCENARIO,
+        scale=scale,
+        benchmark_id=benchmark_id,
+        repeats=5,
+        is_cold_run=False,
+    )
+
+    runs = run_experiment(FILE_FORMAT_SCENARIO, config)
+
+    assert len(runs) == 10
+    assert not has_invalid_runs(runs)

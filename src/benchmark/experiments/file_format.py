@@ -17,6 +17,7 @@ from pathlib import Path
 import duckdb
 import pyarrow as pa
 import pyarrow.parquet as pq
+from botocore.exceptions import ClientError
 
 from src.benchmark.config import BenchmarkScenario, RunConfig
 from src.benchmark.duckdb_s3 import configure_s3
@@ -29,6 +30,7 @@ from src.ingestion.storage import (
     SeaweedFSSettings,
     StoredObject,
     ensure_bucket,
+    stored_object_from_head,
     upload_new_file,
 )
 from src.ingestion.tables import table_config
@@ -57,8 +59,8 @@ def run_file_format_experiment(config: RunConfig) -> Mapping[str, ArmResult]:
     with tempfile.TemporaryDirectory(prefix="bench-file-format-") as tmp:
         tmp_path = Path(tmp)
         catalog_path = tmp_path / "catalog.duckdb"
-        object_key = f"benchmark/file_format/{config.benchmark_id}/{FIXTURE_TABLE}.parquet"
-        stored = _upload_fixture(storage, tmp_path, object_key, row_count)
+        object_key = f"benchmark/file_format/{config.scale.name}/{FIXTURE_TABLE}.parquet"
+        stored = _ensure_fixture(storage, tmp_path, object_key, row_count)
         _write_catalog(catalog_path, object_key)
         csv_path = export_csv_mirror(
             catalog_path,
@@ -106,10 +108,22 @@ def run_file_format_experiment(config: RunConfig) -> Mapping[str, ArmResult]:
 EXPERIMENTS[FILE_FORMAT_SCENARIO.scenario] = run_file_format_experiment
 
 
-def _upload_fixture(
+def _ensure_fixture(
     storage: SeaweedFSSettings, tmp_path: Path, object_key: str, row_count: int
 ) -> StoredObject:
-    """`sellers` Schema로 결정적 고정 Row Parquet Fixture를 만들어 S3에 올린다."""
+    """Scale별 `sellers` Fixture를 한 번만 올리고, 있으면 그대로 재사용한다.
+
+    Object Key를 Scale에 묶어 두므로 반복 회차마다 다시 올리면 두 번째 회차부터
+    `upload_new_file`의 불변 Key 검사에 걸린다. HEAD로 존재를 먼저 확인하고
+    없을 때만 새로 만들어 올린다.
+    """
+    ensure_bucket(storage)
+    try:
+        return stored_object_from_head(storage, object_key)
+    except ClientError as error:
+        error_code = error.response.get("Error", {}).get("Code")
+        if error_code not in {"404", "NoSuchKey", "NotFound"}:
+            raise
     config = table_config(FIXTURE_TABLE)
     schema = pa.schema([column.field for column in config.source_columns])
     base = datetime(2024, 1, 1, tzinfo=UTC)
@@ -125,7 +139,6 @@ def _upload_fixture(
     )
     local_path = tmp_path / "fixture.parquet"
     pq.write_table(table, local_path)
-    ensure_bucket(storage)
     return upload_new_file(storage, object_key, local_path)
 
 

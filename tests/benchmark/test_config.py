@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 
@@ -80,6 +81,43 @@ def test_scenario_config_hash_changes_when_scale_changes() -> None:
     )
 
     assert scenario_config_hash(scenario, small) != scenario_config_hash(scenario, medium)
+
+
+def test_scenario_config_hash_ignores_cache_reset_paths() -> None:
+    """cache_reset_paths는 Cold 배선용 값이라 Cold/Warm Hash를 갈라놓으면 안 된다."""
+    scenario = BenchmarkScenario(
+        scenario="cache_effect", experiment="D", arms=("cold", "warm"), cold=True,
+        description="Cold vs warm cache",
+    )
+    cold = RunConfig(
+        scenario=scenario, scale=SCALE_PROFILES["S"], benchmark_id="cache_effect_cold-S-1",
+        repeats=5, is_cold_run=True,
+        parameters={"cache_reset_paths": (Path("/tmp/a.parquet"), Path("/tmp/b.parquet"))},
+    )
+    warm = RunConfig(
+        scenario=scenario, scale=SCALE_PROFILES["S"], benchmark_id="cache_effect_warm-S-1",
+        repeats=5, is_cold_run=False, parameters={},
+    )
+
+    assert scenario_config_hash(scenario, cold) == scenario_config_hash(scenario, warm)
+
+
+def test_scenario_config_hash_ignores_run_number() -> None:
+    """run_number는 실행 배선 값이라 반복마다 달라져도 같은 Hash를 내야 한다."""
+    scenario = BenchmarkScenario(
+        scenario="scan", experiment="C", arms=("full_scan", "filtered_scan"), cold=False,
+        description="Full vs filtered scan",
+    )
+    first = RunConfig(
+        scenario=scenario, scale=SCALE_PROFILES["S"], benchmark_id="scan-S-1",
+        repeats=5, is_cold_run=False, run_number=1,
+    )
+    third = RunConfig(
+        scenario=scenario, scale=SCALE_PROFILES["S"], benchmark_id="scan-S-1",
+        repeats=5, is_cold_run=False, run_number=3,
+    )
+
+    assert scenario_config_hash(scenario, first) == scenario_config_hash(scenario, third)
 
 
 def test_run_config_rejects_fewer_than_five_repeats() -> None:

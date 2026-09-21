@@ -13,13 +13,17 @@ from src.benchmark.store import load_runs, median_duration
 
 
 def test_cold_and_warm_populations_are_recorded_separately() -> None:
-    """Cold 5회·Warm 5회가 서로 다른 Benchmark ID Median으로 따로 집계된다."""
-    scale = ScaleProfile(name="S", order_count=50, random_seed=20260921)
+    """Cold 5회·Warm 5회가 서로 다른 Benchmark ID Median으로 따로 집계된다.
+
+    Fixture는 Scale 이름으로 재사용되므로, 실제 S/M/L 측정과 겹치지 않게
+    Test 전용 Scale 이름("TEST-SCAN")을 쓴다.
+    """
+    scale = ScaleProfile(name="TEST-SCAN", order_count=50, random_seed=20260921)
     now = datetime.now(UTC)
     cold_id = new_benchmark_id("cache_effect", scale.name, now)
     warm_id = new_benchmark_id("cache_effect", scale.name, now + timedelta(seconds=1))
 
-    # test_experiment_scan.py와 같은 Scale "S" Fixture를 공유하니 두 값을 맞춰 둔다.
+    # test_experiment_scan.py와 같은 Scale "TEST-SCAN" Fixture를 공유하니 두 값을 맞춰 둔다.
     fixture_params = {"fixture_old_rows": 2000, "fixture_current_rows": 100}
     cold_config = RunConfig(
         scenario=CACHE_EFFECT_SCENARIO,

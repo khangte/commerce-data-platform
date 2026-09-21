@@ -36,7 +36,7 @@ class BenchmarkRun:
     input_bytes: int | None
     output_bytes: int | None
     result_hash: str
-    cache_reset_method: Literal["drop_caches", "process_restart_only"] | None
+    cache_reset_method: Literal["drop_caches", "fadvise_dontneed", "process_restart_only"] | None
     change_rate: float | None
     cursor_range: str | None
     scenario_config_hash: str
@@ -82,9 +82,7 @@ def median_duration(runs: Sequence[BenchmarkRun], *, is_cold_run: bool) -> float
     return statistics.median(durations)
 
 
-def render_comparison(
-    baseline: Sequence[BenchmarkRun], improved: Sequence[BenchmarkRun]
-) -> str:
+def render_comparison(baseline: Sequence[BenchmarkRun], improved: Sequence[BenchmarkRun]) -> str:
     """두 Run 집합의 Raw 값·Median·Result Hash·증감률을 Phase 9 결과 문서 형식으로 만든다."""
     baseline_block = _render_arm("baseline", baseline)
     improved_block = _render_arm("improved", improved)

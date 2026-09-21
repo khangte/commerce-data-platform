@@ -12,6 +12,10 @@ from typing import Literal
 FIXED_RANDOM_SEED = 20260921
 MIN_REPEATS = 5
 
+_NON_DEFINING_PARAMETERS = frozenset(
+    {"cache_reset_paths", "t0", "t_boundary", "t1", "t0_incremental_results", "change_stats"}
+)
+
 
 @dataclass(frozen=True)
 class ScaleProfile:
@@ -43,7 +47,7 @@ class BenchmarkScenario:
     """실험 하나의 정의 — 어떤 Arm을 몇 번 반복하고 Cache를 어떻게 다루는지를 담는다."""
 
     scenario: str
-    experiment: Literal["A", "B", "C", "D"]
+    experiment: Literal["A", "B", "C", "D", "OVERHEAD"]
     arms: tuple[str, ...]
     cold: bool
     description: str
@@ -65,6 +69,7 @@ class RunConfig:
     repeats: int
     is_cold_run: bool
     parameters: Mapping[str, object] = field(default_factory=dict)
+    run_number: int = 0  # 실행 배선 값. parameters Dict가 아니라 Hash 대상 밖이다.
 
     def __post_init__(self) -> None:
         """반복 횟수가 대표값(Median) 산출에 필요한 최소치를 만족하는지 확인한다."""
@@ -82,7 +87,9 @@ def scenario_config_hash(scenario: BenchmarkScenario, config: RunConfig) -> str:
     """Scenario 정의와 Scale·Parameter를 SHA-256으로 묶어 같은 조건 측정임을 증명한다.
 
     `benchmark_id`와 실행 시각은 대상에서 제외해, 같은 Scenario 정의로 실행한
-    서로 다른 시점의 두 실행이 같은 Hash를 갖게 한다.
+    서로 다른 시점의 두 실행이 같은 Hash를 갖게 한다. `_NON_DEFINING_PARAMETERS`에
+    속한 Key(예: `cache_reset_paths`)도 제외한다 — Cold Run 배선용 값이라 Cold/Warm
+    Hash가 갈리고, 절대 경로라 장비마다 값이 달라지기 때문이다.
     """
     payload = {
         "scenario": scenario.scenario,
@@ -94,7 +101,11 @@ def scenario_config_hash(scenario: BenchmarkScenario, config: RunConfig) -> str:
         "scale_name": config.scale.name,
         "scale_order_count": config.scale.order_count,
         "scale_random_seed": config.scale.random_seed,
-        "parameters": dict(config.parameters),
+        "parameters": {
+            key: value
+            for key, value in config.parameters.items()
+            if key not in _NON_DEFINING_PARAMETERS
+        },
     }
     canonical = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()

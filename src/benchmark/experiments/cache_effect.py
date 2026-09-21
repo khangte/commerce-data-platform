@@ -8,6 +8,7 @@ Warm 5회를 서로 다른 Benchmark ID로 따로 기록해 두 Cache 상태의 
 
 from __future__ import annotations
 
+import dataclasses
 from collections.abc import Mapping
 
 from src.benchmark.cache import warm_up
@@ -76,10 +77,18 @@ def run_cold_warm_populations(
     매 회차 전에 `reset_caches()`를 부르므로, Fixture가 그 앞에서 이미
     디스크에 있어야 Cold 회차가 진짜 Cold Read가 된다. Warm은 측정에 넣지
     않는 예열 1회를 먼저 버린 뒤 5회를 측정한다.
+
+    `drop_caches`가 막혀 있으면 Runner가 Fixture 두 파일에 `posix_fadvise
+    (DONTNEED)`를 걸어 File 단위로 Clean Page Cache를 비운다. 이 대상 경로를
+    `cache_reset_paths`로 Cold Config에 심어 둔다.
     """
     old_rows = int(cold_config.parameters["fixture_old_rows"])
     current_rows = int(cold_config.parameters["fixture_current_rows"])
-    ensure_scan_fixture(cold_config.scale.name, old_rows, current_rows)
+    old_path, current_path = ensure_scan_fixture(cold_config.scale.name, old_rows, current_rows)
+    cold_config = dataclasses.replace(
+        cold_config,
+        parameters={**cold_config.parameters, "cache_reset_paths": (old_path, current_path)},
+    )
 
     cold_runs = run_experiment(CACHE_EFFECT_SCENARIO, cold_config)
     warm_up(lambda: run_cache_experiment(warm_config))

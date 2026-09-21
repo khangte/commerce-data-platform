@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -21,6 +22,7 @@ class ArmResult:
     measurement: Measurement
     counts: RowCounts
     result_hash: str
+    cursor_range: str | None = None
 
 
 def run_experiment(scenario: BenchmarkScenario, config: RunConfig) -> tuple[BenchmarkRun, ...]:
@@ -36,8 +38,12 @@ def run_experiment(scenario: BenchmarkScenario, config: RunConfig) -> tuple[Benc
     config_hash = scenario_config_hash(scenario, config)
     runs: list[BenchmarkRun] = []
     for run_number in range(1, config.repeats + 1):
-        cache_reset_method = reset_caches().method if config.is_cold_run else None
-        arm_results = experiment_fn(config)
+        run_config = dataclasses.replace(config, run_number=run_number)
+        cache_reset_paths = run_config.parameters.get("cache_reset_paths", ())
+        cache_reset_method = (
+            reset_caches(paths=cache_reset_paths).method if run_config.is_cold_run else None
+        )
+        arm_results = experiment_fn(run_config)
         hashes = {arm: result.result_hash for arm, result in arm_results.items()}
         try:
             assert_arms_match(hashes)
@@ -68,7 +74,11 @@ def run_experiment(scenario: BenchmarkScenario, config: RunConfig) -> tuple[Benc
                 result_hash=result.result_hash,
                 cache_reset_method=cache_reset_method,
                 change_rate=config.parameters.get("change_rate"),
-                cursor_range=config.parameters.get("cursor_range"),
+                cursor_range=(
+                    result.cursor_range
+                    if result.cursor_range is not None
+                    else config.parameters.get("cursor_range")
+                ),
                 scenario_config_hash=config_hash,
                 status=status,
             )

@@ -20,4 +20,5 @@ EXPERIMENTS: dict[str, Callable[[RunConfig], Mapping[str, ArmResult]]] = {}
 from src.benchmark.experiments import cache_effect as _cache_effect  # noqa: F401
 from src.benchmark.experiments import extract as _extract  # noqa: F401
 from src.benchmark.experiments import file_format as _file_format  # noqa: F401
+from src.benchmark.experiments import harness_overhead as _harness_overhead  # noqa: F401
 from src.benchmark.experiments import scan as _scan  # noqa: F401

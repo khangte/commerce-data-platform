@@ -9,10 +9,14 @@ from src.benchmark.experiments.scan import SCAN_SCENARIO, run_scan_experiment
 
 
 def test_full_and_filtered_arms_match_hash_with_fewer_scanned_rows() -> None:
-    """Filtered Arm은 Full Arm과 같은 집계를 내면서 더 적은 Row를 Scan한다."""
-    scale = ScaleProfile(name="S", order_count=100, random_seed=20260921)
+    """Filtered Arm은 Full Arm과 같은 집계를 내면서 더 적은 Row를 Scan한다.
+
+    Fixture는 Scale 이름으로 재사용되므로, 실제 S/M/L 측정과 겹치지 않게
+    Test 전용 Scale 이름("TEST-SCAN")을 쓴다.
+    """
+    scale = ScaleProfile(name="TEST-SCAN", order_count=100, random_seed=20260921)
     benchmark_id = new_benchmark_id("scan", scale.name, datetime.now(UTC))
-    # test_experiment_cache_effect.py도 Scale "S" Fixture를 공유하니 두 값을 맞춰 둔다.
+    # test_experiment_cache_effect.py도 Scale "TEST-SCAN" Fixture를 공유하니 두 값을 맞춰 둔다.
     config = RunConfig(
         scenario=SCAN_SCENARIO,
         scale=scale,
