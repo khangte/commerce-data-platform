@@ -18,3 +18,4 @@ SCENARIOS: dict[str, BenchmarkScenario] = {}
 EXPERIMENTS: dict[str, Callable[[RunConfig], Mapping[str, ArmResult]]] = {}
 
 from src.benchmark.experiments import extract as _extract  # noqa: F401
+from src.benchmark.experiments import file_format as _file_format  # noqa: F401

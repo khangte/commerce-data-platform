@@ -16,6 +16,7 @@ from pathlib import Path
 import duckdb
 
 from src.benchmark.config import BenchmarkScenario, RunConfig
+from src.benchmark.duckdb_s3 import configure_s3
 from src.benchmark.experiments import EXPERIMENTS, SCENARIOS
 from src.benchmark.measure import RowCounts, measure
 from src.benchmark.runner import ArmResult
@@ -221,27 +222,10 @@ def bronze_logical_hash(catalog_path: Path, table: str) -> tuple[str, int]:
         ]
         if not object_keys:
             return hashlib.sha256(b"").hexdigest(), 0
-        _configure_s3(connection, storage)
+        configure_s3(connection, storage)
         paths = ", ".join(f"'s3://{storage.bucket}/{key}'" for key in object_keys)
         cursor = connection.execute(
             f"SELECT {column_list} FROM read_parquet([{paths}], union_by_name=true) "
             f"ORDER BY {order_by}"
         )
         return hash_cursor_rows(cursor)
-
-
-def _configure_s3(connection: duckdb.DuckDBPyConnection, storage: SeaweedFSSettings) -> None:
-    """SeaweedFS S3 API를 읽기 위한 DuckDB httpfs 설정을 적용한다."""
-
-    def _escaped(value: str) -> str:
-        """SQL 문자열 리터럴에 넣을 수 있게 홑따옴표를 이스케이프한다."""
-        return value.replace("'", "''")
-
-    connection.execute("INSTALL httpfs")
-    connection.execute("LOAD httpfs")
-    connection.execute(f"SET s3_endpoint='{_escaped(f'{storage.host}:{storage.port}')}'")
-    connection.execute("SET s3_region='us-east-1'")
-    connection.execute("SET s3_url_style='path'")
-    connection.execute("SET s3_use_ssl=false")
-    connection.execute(f"SET s3_access_key_id='{_escaped(storage.access_key)}'")
-    connection.execute(f"SET s3_secret_access_key='{_escaped(storage.secret_key)}'")
