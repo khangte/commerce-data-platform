@@ -29,6 +29,7 @@ markers = [
     "integration: requires the Phase 1 PostgreSQL container and raw Olist dataset",
     "reliability: runs a Phase 8 reproducibility and recovery scenario",
     "airflow: requires the airflow Compose profile (builds and runs the Airflow image)",
+    "benchmark: runs a Phase 9 benchmark scenario against real infrastructure",
 ]
 
 [tool.ruff]
