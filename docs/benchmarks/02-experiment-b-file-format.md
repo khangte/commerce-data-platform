@@ -1,9 +1,9 @@
 # 02. 실험 B — File Format(CSV vs Parquet)
 
-버전 1. Task 14(M Scale Baseline) 결과.
+버전 2. Task 15(L Scale) 결과 추가.
 
-> Scenario: `file_format` · Scale: M(1,000,000 주문) · Repeats: 5 · Cold: 아니오(Warm)
-> Benchmark ID: `file_format-M-20260921T134121Z`
+> M Scale — Benchmark ID: `file_format-M-20260921T134121Z` (Repeats 5, Cold: 아니오)
+> L Scale — Benchmark ID: `file_format-L-20260921T140402Z` (Repeats 5, Cold: 아니오)
 
 ## 가설·측정 범위
 
@@ -33,9 +33,11 @@
 ```bash
 uv run python -m src.benchmark run --scenario file_format --scale M
 uv run python -m src.benchmark report --benchmark-id file_format-M-20260921T134121Z
+uv run python -m src.benchmark run --scenario file_format --scale L
+uv run python -m src.benchmark report --benchmark-id file_format-L-20260921T140402Z
 ```
 
-## 결과
+## 결과 — M Scale
 
 ```
 baseline(csv):     raw=[19.910847433, 19.916478154, 20.211880747, 19.772287507, 19.796481632]
@@ -55,6 +57,37 @@ Fixture 실측 On-disk Byte 크기(M Scale, 1,000,000 Row 동일 내용):
 | CSV | `data/benchmarks/file_format-M-20260921T134121Z/csv_mirror/sellers.csv` | 71,500,057 bytes (68.2 MB) |
 | Parquet | SeaweedFS `benchmark/file_format/M/sellers.parquet` | 19,699,382 bytes (18.8 MB) |
 
+## 결과 — L Scale
+
+```
+baseline(csv):     raw=[96.4794046379975, 93.72700138899381, 93.7623935760057, 94.771024821006, 93.73653949599247]
+                    median=93.7623935760057
+improved(parquet): raw=[112.15481100400211, 94.71081389399478, 93.12747174101241, 93.35696254199138, 93.81883751899295]
+                    median=93.81883751899295
+result_hash(양쪽 동일): 89142b501fd8c569a76843b051f3b5afc135884bf8d3e8e94f2fd3c187dfc8d7
+change: +0.1% (baseline median -> improved median)
+```
+
+5/5 `VALID`, 두 Arm `result_hash` 일치.
+
+Fixture 실측 On-disk Byte 크기(L Scale, 5,000,000 Row 동일 내용):
+
+| 형식 | 경로 | 크기 |
+| --- | --- | --- |
+| CSV | `data/benchmarks/file_format-L-20260921T140402Z/csv_mirror/sellers.csv` | 361,500,057 bytes (344.8 MB) |
+| Parquet | SeaweedFS `benchmark/file_format/L/sellers.parquet` | 30,633,598 bytes (29.2 MB) |
+
+L Scale에서 CSV/Parquet 크기 비는 약 11.8배로, M Scale의 약 3.6배보다 크게
+벌어졌다. 이는 Parquet Column 압축 효율 때문으로 보인다 — Fixture 생성 코드가
+`created_at`/`updated_at`을 `timedelta(days=index % 3650)`로 3650일 주기로
+순환시키는데(`src/benchmark/experiments/file_format.py:135-138`, L Scale
+`OverflowError` 수정으로 도입된 Bound), M Scale(1,000,000 Row)은 이 주기가
+약 274회 반복되지만 L Scale(5,000,000 Row)은 약 1,370회 반복돼 Dictionary
+Encoding 대상 고유값 밀도가 더 낮아진다. CSV는 이런 반복 압축 이득이 없어
+Byte 수가 Row 수에 선형으로만 늘어난다. 즉 이 비율 증가는 실제 두 형식의
+본질적 차이가 아니라 이 Fixture의 날짜 순환 주기 Bound에서 나온 인공물이다
+— File Format 실험의 결론(고정 비용에 가려 분해되지 않는다)과는 별개다.
+
 ## 관찰
 
 **이 측정 구간에서는 형식 차이가 고정 비용에 가려 분해되지 않았다.** CSV가
@@ -68,6 +101,10 @@ Parser 오버헤드 등)에 지배되는 것으로 보이지만, 이 실험 설�
 S Scale 결과와 직접 비교하지 않는다 — S Scale `file_format` 실행 시점의
 On-disk 크기를 이 작성 시점에 재확인하지 않았고, 두 실행의 절대 비교가
 이 문서의 목적이 아니다.
+
+L Scale(+0.1%)도 M Scale(+0.4%)과 같은 Null 결과다 — On-disk 크기 차이가
+M보다 더 벌어졌는데도(위 §L Scale 결과 참조) 읽기 시간 차이는 오히려 더
+작다. 이는 두 Arm 모두 고정 비용 지배 가설을 더 강하게 뒷받침한다.
 
 ## 한계
 

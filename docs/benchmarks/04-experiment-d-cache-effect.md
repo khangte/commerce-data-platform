@@ -1,11 +1,13 @@
 # 04. 실험 D — Cache 효과(Cold vs Warm)
 
-버전 2. [[037_phase9-task14-review-and-median-correction]] 검수 반영 —
-결론 귀속 정정, 대조군 2종(대조군 A·교차 실행) 실측 추가.
+버전 3. Task 15(L Scale) 결과 추가.
 
-> Scenario: `cache_effect` · Scale: M · Repeats: 5(Cold)+5(Warm)
+> M Scale · Repeats: 5(Cold)+5(Warm)
 > Cold Benchmark ID: `cache_effect-M-20260921T134502Z`
 > Warm Benchmark ID: `cache_effect-M-20260921T134505Z`
+> L Scale · Repeats: 5(Cold)+5(Warm)
+> Cold Benchmark ID: `cache_effect-L-20260921T142746Z`
+> Warm Benchmark ID: `cache_effect-L-20260921T142752Z`
 
 ## 가설·측정 범위
 
@@ -106,6 +108,30 @@ Scenario로 등록하지 않았다).
 적을 수 있다. 대조군 A는 Warm에 가깝지만 교차 실행에서 분리가 무너졌으므로
 조건을 만족하지 못한다 — [[029_phase9-cache-reset-and-config-hash]]가 예고한
 대로 "이 환경에서는 Cache 효과를 분해할 수 없었다"로 닫는다.
+
+## L Scale 결과
+
+```
+Cold: raw=[0.038781000, 0.039863487, 0.041221464, 0.041856500, 0.053842433]
+      median=0.041221464
+Warm: raw=[0.028627063, 0.031761185, 0.033184949, 0.034307656, 0.035779098]
+      median=0.033184949
+result_hash(양쪽 동일): d70750ab6d096a880e5529163119f3aa99ac5fe8f8ec582b450ade9c2fb2e899
+```
+
+5/5 `VALID` 양쪽 모두, `result_hash` 일치(실험 C의 L Scale `filtered_scan`과
+같은 Query·Fixture라 Hash도 같다).
+
+Median 기준 Cold가 Warm보다 0.008037초(24.2%) 느리고, Raw 정렬 기준으로도
+Cold 최솟값(0.038781)이 Warm 최댓값(0.035779)보다 커서 M Scale과 같은
+비중첩 형태가 다시 나타난다. 하지만 이 실험의 귀속 판정은 이미 위
+§대조군 실측에서 닫혔다 — 대조군 A·교차 실행 실측 결과 M Scale의 비중첩은
+Page Cache 재적재가 아니라 Arm/시간 순서 교락(순차 블록 실행)에서 나온다는
+것이 확인됐고, L Scale도 Cold를 먼저, Warm을 나중에 돌리는 같은 순차 블록
+구조로 실행했다. 대조군을 L에서 다시 실측하지 않았으므로(037은 이 진단을
+M Scale 1회로 요청했다), L의 비중첩을 독립적 증거로 쓰지 않는다 — 같은
+구조적 교락을 가진 반복 관측으로만 기록한다. 결론은 바뀌지 않는다: "이
+환경에서는 Cache 효과를 분해할 수 없었다."
 
 ## 한계
 

@@ -1,9 +1,10 @@
 # 03. 실험 C — Full Scan vs Filtered Scan
 
-버전 2. Task 14(M Scale Baseline) 결과 추가.
+버전 3. Task 15(L Scale) 결과 추가.
 
 > S Scale — Benchmark ID: `scan-S-20260921T044215Z` (Repeats 5, Cold: 아니오)
 > M Scale — Benchmark ID: `scan-M-20260921T134454Z` (Repeats 5, Cold: 아니오)
+> L Scale — Benchmark ID: `scan-L-20260921T142352Z` (Repeats 5, Cold: 아니오)
 
 ## 가설·측정 대상
 
@@ -42,6 +43,11 @@ Parquet Fixture**를 직접 만들어 쓰며, `WHERE bucket = 'current'`로 최�
 | --- | --- | --- | --- | --- |
 | S | 2,000 | 100 | (미기록, S 실행 시점) | (미기록, S 실행 시점) |
 | M | 5,000,000 | 1,000,000 | 39.6 MB (41,528,819 bytes 추정치와 동일 계열) | 7.9 MB |
+| L | 25,000,000 | 5,000,000 | 200.0 MB | 40.5 MB |
+
+L Scale 값은 M의 5배로, architect의 Byte 수 추산("200MB대")과 그대로
+일치한다 — M 때와 같은 비율(`old_rows = current_rows * 5`)을 그대로 늘린
+값이다.
 
 M Scale 값은 S 그대로 키우면(2,000/100 → 논리상 20,000/1,000 정도) 실질
 Byte 수가 여전히 너무 작아 실험 D의 Cache 효과가 노이즈에 묻힐 가능성이 커서,
@@ -92,6 +98,33 @@ S Scale(-7.8%)보다 M Scale(-22.2%)에서 Pushdown Arm의 상대적 이득이 �
 측정됐다 — Fixture가 커질수록 건너뛰는 Row 비중(83%, `old.parquet` 5,000,000
 Row)이 절대 시간에서 차지하는 비중도 커진 것으로 보인다.
 
+## 결과 — L Scale
+
+```
+baseline(full_scan):     raw=[0.10846734400547575, 0.11097985199012328, 0.13056513099581935, 0.12421989599533845, 0.13686465300270356]
+                          median=0.12421989599533845 result_hash=d70750ab...9163119f
+improved(filtered_scan): raw=[0.03519261800101958, 0.03600916499271989, 0.03493778900883626, 0.042056734004290774, 0.045470615004887804]
+                          median=0.03600916499271989 result_hash=d70750ab...9163119f
+change: -71.0% (baseline median -> improved median)
+```
+
+5/5 `VALID`, 두 Arm `result_hash` 일치.
+
+| Arm | rows_scanned | input_bytes |
+| --- | --- | --- |
+| `filtered_scan` (Pushdown 켜짐) | 5,000,000 | 92,472 |
+| `full_scan` (Pushdown 꺼짐) | 30,000,000 | 485,949 |
+
+`filtered_scan`의 `rows_scanned`(5,000,000)는 `fixture_current_rows`와
+정확히 일치한다 — M과 같은 Pruning 패턴이 L에서도 그대로 나타난다.
+`full_scan`은 두 파일 전체(25,000,000 + 5,000,000 = 30,000,000 Row)를 읽는다.
+
+S(-7.8%) → M(-22.2%) → L(-71.0%)로 Pushdown Arm의 상대적 이득이 Scale이
+커질수록 더 크게 측정됐다 — 건너뛰는 Row 비중이 M과 L에서 같은 83%인데도
+이득 폭이 더 벌어진 것은, Full Scan Arm이 절대적으로 더 많은 Row(L은
+30,000,000)를 읽는 데 드는 시간이 고정 비용 대비 비중이 커져 Duration
+차이가 더 뚜렷하게 드러나기 때문으로 보인다.
+
 ## 재현
 
 ```bash
@@ -100,6 +133,8 @@ uv run python -m src.benchmark run --scenario scan --scale S \
   --fixture-old-rows 2000 --fixture-current-rows 100
 uv run python -m src.benchmark run --scenario scan --scale M \
   --fixture-old-rows 5000000 --fixture-current-rows 1000000
+uv run python -m src.benchmark run --scenario scan --scale L \
+  --fixture-old-rows 25000000 --fixture-current-rows 5000000
 uv run python -m src.benchmark report --benchmark-id <benchmark_id>
 ```
 
