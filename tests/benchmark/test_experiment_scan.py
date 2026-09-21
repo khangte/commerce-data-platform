@@ -12,12 +12,14 @@ def test_full_and_filtered_arms_match_hash_with_fewer_scanned_rows() -> None:
     """Filtered Arm은 Full Arm과 같은 집계를 내면서 더 적은 Row를 Scan한다."""
     scale = ScaleProfile(name="S", order_count=100, random_seed=20260921)
     benchmark_id = new_benchmark_id("scan", scale.name, datetime.now(UTC))
+    # test_experiment_cache_effect.py도 Scale "S" Fixture를 공유하니 두 값을 맞춰 둔다.
     config = RunConfig(
         scenario=SCAN_SCENARIO,
         scale=scale,
         benchmark_id=benchmark_id,
         repeats=5,
         is_cold_run=False,
+        parameters={"fixture_old_rows": 2000, "fixture_current_rows": 100},
     )
 
     arms = run_scan_experiment(config)

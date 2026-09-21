@@ -23,9 +23,11 @@ from src.benchmark.config import BenchmarkScenario, RunConfig
 from src.benchmark.experiments import EXPERIMENTS, SCENARIOS
 from src.benchmark.measure import RowCounts, measure
 from src.benchmark.runner import ArmResult
+from src.benchmark.store import BENCHMARK_DATA_ROOT
 from src.common.row_hash import canonical_row_json
 
 _NO_PUSHDOWN_OPTIMIZERS = "filter_pushdown,row_group_pruner,unused_columns,column_lifetime"
+_FIXTURE_ROOT = BENCHMARK_DATA_ROOT / "fixtures"
 
 SCAN_SCENARIO = BenchmarkScenario(
     scenario="scan",
@@ -42,24 +44,23 @@ def run_scan_experiment(config: RunConfig) -> Mapping[str, ArmResult]:
 
     두 Arm은 완전히 같은 SQL로 같은 집계를 낸다. Full Scan Arm만 Pushdown 관련
     Optimizer를 꺼서 Predicate/Projection Pushdown이 없던 경우를 재현한다.
+    Fixture는 Scale별로 한 번만 만들고 재사용한다.
     """
-    current_rows = config.scale.order_count
-    old_rows = current_rows * 20
+    old_rows = int(config.parameters["fixture_old_rows"])
+    current_rows = int(config.parameters["fixture_current_rows"])
+    old_path, current_path = ensure_scan_fixture(config.scale.name, old_rows, current_rows)
+    sql = _aggregate_sql(old_path, current_path)
 
-    with tempfile.TemporaryDirectory(prefix="bench-scan-") as tmp:
-        old_path, current_path = _write_fixture(Path(tmp), old_rows, current_rows)
-        sql = _aggregate_sql(old_path, current_path)
+    filtered_rows, filtered_bytes = profile_scan(_connect(), sql)
+    full_rows, full_bytes = profile_scan(_connect(_NO_PUSHDOWN_OPTIMIZERS), sql)
 
-        filtered_rows, filtered_bytes = profile_scan(_connect(), sql)
-        full_rows, full_bytes = profile_scan(_connect(_NO_PUSHDOWN_OPTIMIZERS), sql)
+    with measure() as collector:
+        filtered_hash, filtered_output_bytes = _run_and_hash(_connect(), sql)
+    filtered_measurement = collector.result()
 
-        with measure() as collector:
-            filtered_hash, filtered_output_bytes = _run_and_hash(_connect(), sql)
-        filtered_measurement = collector.result()
-
-        with measure() as collector:
-            full_hash, full_output_bytes = _run_and_hash(_connect(_NO_PUSHDOWN_OPTIMIZERS), sql)
-        full_measurement = collector.result()
+    with measure() as collector:
+        full_hash, full_output_bytes = _run_and_hash(_connect(_NO_PUSHDOWN_OPTIMIZERS), sql)
+    full_measurement = collector.result()
 
     return {
         "filtered_scan": ArmResult(
@@ -90,17 +91,32 @@ def run_scan_experiment(config: RunConfig) -> Mapping[str, ArmResult]:
 EXPERIMENTS[SCAN_SCENARIO.scenario] = run_scan_experiment
 
 
-def run_filtered_scan_workload(current_rows: int) -> tuple[str, int]:
+def run_filtered_scan_workload(
+    scale_name: str, old_rows: int, current_rows: int
+) -> tuple[str, int]:
     """Filtered Scan Arm과 동일한 Query를 한 번 실행해 Result Hash·Payload Byte 수를 낸다.
 
     실험 D(Cache 효과)가 Full Scan Arm 없이 이 Workload 하나만 재사용할 수 있게
-    공개해 둔 진입점이다.
+    공개해 둔 진입점이다. Fixture는 새로 쓰지 않고 기존 것을 그대로 읽는다.
     """
-    old_rows = current_rows * 20
-    with tempfile.TemporaryDirectory(prefix="bench-scan-workload-") as tmp:
-        old_path, current_path = _write_fixture(Path(tmp), old_rows, current_rows)
-        sql = _aggregate_sql(old_path, current_path)
-        return _run_and_hash(_connect(), sql)
+    old_path, current_path = ensure_scan_fixture(scale_name, old_rows, current_rows)
+    sql = _aggregate_sql(old_path, current_path)
+    return _run_and_hash(_connect(), sql)
+
+
+def ensure_scan_fixture(scale_name: str, old_rows: int, current_rows: int) -> tuple[Path, Path]:
+    """Scale별 Scan Fixture를 한 번만 만들고, 있으면 그대로 재사용한다.
+
+    반복 회차마다 다시 쓰면 방금 쓴 파일이 Page Cache에 올라가 Cold 측정이
+    깨지므로, 존재 여부만 확인하고 없을 때만 새로 만든다.
+    """
+    fixture_dir = _FIXTURE_ROOT / scale_name
+    old_path = fixture_dir / "old.parquet"
+    current_path = fixture_dir / "current.parquet"
+    if old_path.exists() and current_path.exists():
+        return old_path, current_path
+    fixture_dir.mkdir(parents=True, exist_ok=True)
+    return _write_fixture(fixture_dir, old_rows, current_rows)
 
 
 def profile_scan(

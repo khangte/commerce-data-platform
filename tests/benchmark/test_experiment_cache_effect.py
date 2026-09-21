@@ -19,12 +19,15 @@ def test_cold_and_warm_populations_are_recorded_separately() -> None:
     cold_id = new_benchmark_id("cache_effect", scale.name, now)
     warm_id = new_benchmark_id("cache_effect", scale.name, now + timedelta(seconds=1))
 
+    # test_experiment_scan.py와 같은 Scale "S" Fixture를 공유하니 두 값을 맞춰 둔다.
+    fixture_params = {"fixture_old_rows": 2000, "fixture_current_rows": 100}
     cold_config = RunConfig(
         scenario=CACHE_EFFECT_SCENARIO,
         scale=scale,
         benchmark_id=cold_id,
         repeats=5,
         is_cold_run=True,
+        parameters=fixture_params,
     )
     warm_config = RunConfig(
         scenario=CACHE_EFFECT_SCENARIO,
@@ -32,6 +35,7 @@ def test_cold_and_warm_populations_are_recorded_separately() -> None:
         benchmark_id=warm_id,
         repeats=5,
         is_cold_run=False,
+        parameters=fixture_params,
     )
 
     cold_runs, warm_runs = run_cold_warm_populations(cold_config, warm_config)
@@ -45,3 +49,7 @@ def test_cold_and_warm_populations_are_recorded_separately() -> None:
     warm_median = median_duration(load_runs(warm_id), is_cold_run=False)
     assert cold_median is not None
     assert warm_median is not None
+    # cache_reset_method가 process_restart_only면 Page Cache가 실제로 비워지지
+    # 않으므로 Cold/Warm 차이가 작거나 없을 수 있다 — 실패 조건이 아니라 관측 사실이다.
+    reset_method = cold_runs[0].cache_reset_method
+    print(f"cache_reset_method={reset_method} cold_median={cold_median} warm_median={warm_median}")
