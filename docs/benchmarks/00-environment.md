@@ -13,16 +13,35 @@ uv run python -m src.benchmark report --benchmark-id <benchmark_id>
 
 실행(run) 명령은 실험별로 다르다.
 
-### Experiment B(File Format) / C(Scan) / D(Cache Effect)
+### Experiment B(File Format)
 
-Fixture가 CLI 자체에서 준비되므로 바로 실행한다.
+Fixture 크기가 `--scale`의 `order_count`에서 그대로 나오므로 바로 실행한다.
 
 ```bash
 uv run python -m src.benchmark run --scenario file_format --scale S
-uv run python -m src.benchmark run --scenario scan --scale S
-uv run python -m src.benchmark run --scenario cache_effect --scale S --cold
-uv run python -m src.benchmark run --scenario cache_effect --scale S --warm
 ```
+
+### Experiment C(Scan) / D(Cache Effect)
+
+두 실험의 Fixture 크기는 `ScaleProfile.order_count`와 무관하게 호출자가 명시적으로
+정한다([[028_phase9-batch2-experiment-method]] — `old_rows = current_rows * 20` 같은
+고정 배수를 Scale 표와 어긋난다는 이유로 제외했다). `--fixture-old-rows`/
+`--fixture-current-rows`로 넘긴다. `cache_effect`는 `run` Subcommand 실행 전
+`PREPARE_HOOKS`에 등록된 `prepare_cache_effect_fixture`가 Fixture를 반복 밖에서
+먼저 만들고(Cold 회차 안에서 처음 쓰이는 걸 막음), Cold Config에는
+`cache_reset_paths`를, Warm Config에는 측정에 넣지 않는 예열 1회를 심어 둔다.
+
+```bash
+uv run python -m src.benchmark run --scenario scan --scale S \
+  --fixture-old-rows 2000 --fixture-current-rows 100
+uv run python -m src.benchmark run --scenario cache_effect --scale S --cold \
+  --fixture-old-rows 2000 --fixture-current-rows 100
+uv run python -m src.benchmark run --scenario cache_effect --scale S --warm \
+  --fixture-old-rows 2000 --fixture-current-rows 100
+```
+
+Fixture는 `{scale.name}`별로 한 번만 쓰고 재사용한다(`data/benchmarks/fixtures/<scale>/`) —
+이미 있으면 위 Row 수 인자는 무시되고 기존 파일을 그대로 쓴다.
 
 ### Experiment A(Extract, Full vs Incremental)
 

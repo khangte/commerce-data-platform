@@ -27,6 +27,10 @@ def main(argv: list[str] | None = None) -> int:
     cache_group.add_argument("--cold", dest="cold", action="store_true", default=None)
     cache_group.add_argument("--warm", dest="cold", action="store_false")
     run_parser.add_argument("--repeats", type=int, default=None)
+    run_parser.add_argument("--fixture-old-rows", dest="fixture_old_rows", type=int, default=None)
+    run_parser.add_argument(
+        "--fixture-current-rows", dest="fixture_current_rows", type=int, default=None
+    )
 
     report_parser = subparsers.add_parser("report", help="Benchmark 비교표를 출력한다")
     report_parser.add_argument("--benchmark-id", dest="benchmark_id", required=True)
@@ -44,12 +48,18 @@ def _run_command(args: argparse.Namespace) -> int:
     is_cold_run = scenario.cold if args.cold is None else args.cold
     repeats = scenario.repeats if args.repeats is None else args.repeats
     benchmark_id = new_benchmark_id(scenario.scenario, scale.name, datetime.now(UTC))
+    parameters: dict[str, object] = {}
+    if args.fixture_old_rows is not None:
+        parameters["fixture_old_rows"] = args.fixture_old_rows
+    if args.fixture_current_rows is not None:
+        parameters["fixture_current_rows"] = args.fixture_current_rows
     config = RunConfig(
         scenario=scenario,
         scale=scale,
         benchmark_id=benchmark_id,
         repeats=repeats,
         is_cold_run=is_cold_run,
+        parameters=parameters,
     )
     prepare = PREPARE_HOOKS.get(scenario.scenario)
     if prepare is not None:

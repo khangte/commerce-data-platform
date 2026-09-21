@@ -13,7 +13,7 @@ from collections.abc import Mapping
 
 from src.benchmark.cache import warm_up
 from src.benchmark.config import BenchmarkScenario, RunConfig
-from src.benchmark.experiments import EXPERIMENTS, SCENARIOS
+from src.benchmark.experiments import EXPERIMENTS, PREPARE_HOOKS, SCENARIOS
 from src.benchmark.experiments.scan import (
     _aggregate_sql,
     _connect,
@@ -68,29 +68,37 @@ def run_cache_experiment(config: RunConfig) -> Mapping[str, ArmResult]:
 EXPERIMENTS[CACHE_EFFECT_SCENARIO.scenario] = run_cache_experiment
 
 
+def prepare_cache_effect_fixture(config: RunConfig) -> RunConfig:
+    """`run_experiment` 반복 밖에서 Fixture 존재와 Cache 상태를 미리 맞춘다.
+
+    Fixture가 없으면 여기서 만든다 — `run_experiment` 첫 Cold 회차 안에서 처음
+    만들어지면, 방금 쓴 파일이라 이미 Page Cache에 올라간 채로 "Cold" 측정이
+    시작되는 문제(028 Task 12)가 생긴다. Cold Config는 `reset_caches()`가
+    File 단위 fadvise로 대체될 때 쓸 `cache_reset_paths`를 심어 둔다. Warm
+    Config는 측정에 넣지 않는 예열 1회를 먼저 버려, 직전 Cold 실행이 fadvise로
+    비워 둔 Page Cache를 Warm 회차 시작 전에 다시 채운다.
+    """
+    old_rows = int(config.parameters["fixture_old_rows"])
+    current_rows = int(config.parameters["fixture_current_rows"])
+    old_path, current_path = ensure_scan_fixture(config.scale.name, old_rows, current_rows)
+    if config.is_cold_run:
+        return dataclasses.replace(
+            config,
+            parameters={**config.parameters, "cache_reset_paths": (old_path, current_path)},
+        )
+    warm_up(lambda: run_cache_experiment(config))
+    return config
+
+
+PREPARE_HOOKS[CACHE_EFFECT_SCENARIO.scenario] = prepare_cache_effect_fixture
+
+
 def run_cold_warm_populations(
     cold_config: RunConfig, warm_config: RunConfig
 ) -> tuple[tuple[BenchmarkRun, ...], tuple[BenchmarkRun, ...]]:
-    """Cold 모집단과 Warm 모집단을 서로 다른 Benchmark ID로 따로 실행하고 기록한다.
-
-    Fixture를 `run_experiment` 호출 전에 미리 만들어 둔다. `run_experiment`는
-    매 회차 전에 `reset_caches()`를 부르므로, Fixture가 그 앞에서 이미
-    디스크에 있어야 Cold 회차가 진짜 Cold Read가 된다. Warm은 측정에 넣지
-    않는 예열 1회를 먼저 버린 뒤 5회를 측정한다.
-
-    `drop_caches`가 막혀 있으면 Runner가 Fixture 두 파일에 `posix_fadvise
-    (DONTNEED)`를 걸어 File 단위로 Clean Page Cache를 비운다. 이 대상 경로를
-    `cache_reset_paths`로 Cold Config에 심어 둔다.
-    """
-    old_rows = int(cold_config.parameters["fixture_old_rows"])
-    current_rows = int(cold_config.parameters["fixture_current_rows"])
-    old_path, current_path = ensure_scan_fixture(cold_config.scale.name, old_rows, current_rows)
-    cold_config = dataclasses.replace(
-        cold_config,
-        parameters={**cold_config.parameters, "cache_reset_paths": (old_path, current_path)},
-    )
-
+    """Cold 모집단과 Warm 모집단을 서로 다른 Benchmark ID로 따로 실행하고 기록한다."""
+    cold_config = prepare_cache_effect_fixture(cold_config)
     cold_runs = run_experiment(CACHE_EFFECT_SCENARIO, cold_config)
-    warm_up(lambda: run_cache_experiment(warm_config))
+    warm_config = prepare_cache_effect_fixture(warm_config)
     warm_runs = run_experiment(CACHE_EFFECT_SCENARIO, warm_config)
     return cold_runs, warm_runs
