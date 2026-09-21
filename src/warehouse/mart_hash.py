@@ -3,19 +3,20 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import sys
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
-from decimal import Decimal
 from pathlib import Path
-from uuid import UUID
 
 import duckdb
 
-ROW_BATCH_SIZE = 10_000
+from src.common.row_hash import canonical_row_json, hash_cursor_rows, json_default
+
 DIFF_LIMIT = 20
+
+# 기존 호출부·테스트가 쓰던 사설 이름을 공유 모듈로 그대로 연결한다.
+_canonical_row_json = canonical_row_json
+_json_default = json_default
 
 
 @dataclass(frozen=True)
@@ -49,17 +50,8 @@ def mart_logical_hash(connection: duckdb.DuckDBPyConnection, target: MartTarget)
     """Mart 한 개를 Key 정렬 Canonical JSON 누적 SHA-256 Hash로 변환한다."""
     order_by = ", ".join(f'"{column}"' for column in target.order_by)
     cursor = connection.execute(f"SELECT * FROM {target.relation} ORDER BY {order_by}")
-    column_names = [descriptor[0] for descriptor in cursor.description]
-    digest = hashlib.sha256()
-    while True:
-        rows = cursor.fetchmany(ROW_BATCH_SIZE)
-        if not rows:
-            break
-        for row in rows:
-            payload = _canonical_row_json(dict(zip(column_names, row, strict=True)))
-            digest.update(payload.encode("utf-8"))
-            digest.update(b"\n")
-    return digest.hexdigest()
+    digest, _ = hash_cursor_rows(cursor)
+    return digest
 
 
 def mart_logical_hashes(
@@ -150,36 +142,6 @@ def _format_keys(keys: list[tuple[str, ...]], limit: int) -> str:
 def _format_key(key: tuple[str, ...]) -> str:
     """Key Tuple을 사람이 읽을 한 덩어리 문자열로 만든다."""
     return "|".join(key)
-
-
-def _canonical_row_json(row: dict[str, object]) -> str:
-    """컬럼 이름을 정렬하고 값 표현을 고정한 행 JSON을 반환한다."""
-    return json.dumps(
-        row,
-        default=_json_default,
-        ensure_ascii=False,
-        separators=(",", ":"),
-        sort_keys=True,
-    )
-
-
-def _json_default(value: object) -> str:
-    """JSON 기본 형식에 없는 Warehouse 값의 결정적 문자열 표현을 반환한다."""
-    if isinstance(value, datetime):
-        if value.tzinfo is None or value.utcoffset() is None:
-            if value == datetime.min:  # noqa: DTZ901
-                return "-infinity"
-            if value == datetime.max:  # noqa: DTZ901
-                return "infinity"
-            raise ValueError("Mart timestamp must include a UTC offset")
-        return value.astimezone(UTC).isoformat()
-    if isinstance(value, date):
-        return value.isoformat()
-    if isinstance(value, Decimal):
-        return format(value, "f")
-    if isinstance(value, UUID):
-        return str(value)
-    raise TypeError(f"Unsupported mart value: {type(value).__name__}")
 
 
 def main(
