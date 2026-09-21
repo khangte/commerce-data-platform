@@ -16,3 +16,5 @@ if TYPE_CHECKING:
 
 SCENARIOS: dict[str, BenchmarkScenario] = {}
 EXPERIMENTS: dict[str, Callable[[RunConfig], Mapping[str, ArmResult]]] = {}
+
+from src.benchmark.experiments import extract as _extract  # noqa: F401
