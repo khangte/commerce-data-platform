@@ -132,8 +132,10 @@ def _ensure_fixture(
             "seller_id": [f"seller-{index:06d}" for index in range(row_count)],
             "seller_city": [f"city-{index % 20}" for index in range(row_count)],
             "seller_state": [f"ST{index % 5}" for index in range(row_count)],
-            "created_at": [base + timedelta(days=index) for index in range(row_count)],
-            "updated_at": [base + timedelta(days=index, hours=1) for index in range(row_count)],
+            "created_at": [base + timedelta(days=index % 3650) for index in range(row_count)],
+            "updated_at": [
+                base + timedelta(days=index % 3650, hours=1) for index in range(row_count)
+            ],
         },
         schema=schema,
     )
