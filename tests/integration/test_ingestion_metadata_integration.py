@@ -10,6 +10,7 @@ import pytest
 
 from src.common.database import PostgresSettings
 from src.generator.ids import logical_hash
+from src.ingestion.lease import acquire_table_lease
 from src.ingestion.metadata import (
     CursorPosition,
     PipelineRun,
@@ -42,6 +43,14 @@ def test_table_commit_moves_object_run_and_watermark_together() -> None:
     try:
         initial = get_or_create_watermark(settings, run.pipeline_name, run.source_table, now=now)
         assert initial.cursor == CursorPosition(None)
+        lease = acquire_table_lease(
+            settings,
+            pipeline_name=run.pipeline_name,
+            source_table=run.source_table,
+            owner_id=uuid.uuid4(),
+            now=now,
+            ttl=timedelta(minutes=30),
+        )
         record_started_run(settings, run, now=now)
         commit_table_run(
             settings,
@@ -53,6 +62,7 @@ def test_table_commit_moves_object_run_and_watermark_together() -> None:
                 rows_valid=3,
                 rows_rejected=0,
                 rows_loaded=3,
+                lease_owner=lease.owner_id,
             ),
             now=now + timedelta(minutes=1),
         )
@@ -114,6 +124,14 @@ def test_watermark_conflict_rolls_back_object_and_success_state() -> None:
     ensure_ingestion_metadata(settings)
     try:
         initial = get_or_create_watermark(settings, run.pipeline_name, run.source_table, now=now)
+        lease = acquire_table_lease(
+            settings,
+            pipeline_name=run.pipeline_name,
+            source_table=run.source_table,
+            owner_id=uuid.uuid4(),
+            now=now,
+            ttl=timedelta(minutes=30),
+        )
         record_started_run(settings, run, now=now)
         with settings.pipeline_connection() as connection:
             connection.execute(
@@ -137,6 +155,7 @@ def test_watermark_conflict_rolls_back_object_and_success_state() -> None:
                     rows_valid=3,
                     rows_rejected=0,
                     rows_loaded=3,
+                    lease_owner=lease.owner_id,
                 ),
                 now=now + timedelta(minutes=1),
             )

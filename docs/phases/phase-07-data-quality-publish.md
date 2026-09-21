@@ -3,7 +3,7 @@
 > 상태: In Progress  
 > Milestone: 2 — Data Platform Core  
 > 선행 Phase: [Phase 6. Dimensional Modeling](phase-06-dimensional-modeling.md)  
-> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.13](../../PRD_v1.13.md), [Mart Grain 계약](../reference/mart-grain.md)
+> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.14](../../PRD_v1.14.md), [Mart Grain 계약](../reference/mart-grain.md)
 
 ## 목표
 

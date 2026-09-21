@@ -157,6 +157,7 @@ class TableCommit:
     rows_valid: int
     rows_rejected: int
     rows_loaded: int
+    lease_owner: uuid.UUID
     quarantine: QuarantineBatch | None = None
 
     def __post_init__(self) -> None:
@@ -291,6 +292,20 @@ def commit_table_run(
     """Object·성공 Run·Watermark CAS를 하나의 Metadata Transaction으로 Commit한다."""
     current_time = _utc_now(now)
     with settings.pipeline_connection() as connection, connection.transaction():
+        lease_row = connection.execute(
+            """
+            SELECT lease_owner, lease_expires_at FROM watermarks
+            WHERE pipeline_name = %s AND source_table = %s
+            FOR UPDATE
+            """,
+            (commit.expected_watermark.pipeline_name, commit.expected_watermark.source_table),
+        ).fetchone()
+        if (
+            lease_row is None
+            or lease_row[0] != commit.lease_owner
+            or lease_row[1] <= current_time
+        ):
+            raise TableLeaseOwnershipLostError("Table lease ownership was lost before metadata commit")
         if commit.quarantine is not None:
             connection.execute(
                 """

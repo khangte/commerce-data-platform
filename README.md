@@ -2,7 +2,7 @@
 
 Olist 공개 데이터를 Seed로 사용해 신뢰성 있는 로컬 Batch Data Platform을 구축하는 프로젝트입니다.
 
-현재 기준 문서는 [PRD v1.13](PRD_v1.13.md)입니다.
+현재 기준 문서는 [PRD v1.14](PRD_v1.14.md)입니다.
 
 ## Phase 0 시작하기
 
@@ -94,6 +94,21 @@ Publish는 `data/warehouse/build/`에서 dbt build와 Test를 마친 뒤에만 `
 RUN_POSTGRES_INTEGRATION=1 RUN_SEAWEEDFS_INTEGRATION=1 RUN_DBT_PUBLISH_INTEGRATION=1 \
   uv run pytest tests/integration/test_publish_gate_dbt_integration.py
 ```
+
+## Reliability Suite 실행하기
+
+Phase 8 Reliability 시나리오(R-01~R-15)는 PostgreSQL·SeaweedFS Compose 서비스가 필요합니다. dbt를 실행하는
+시나리오(R-14)는 `RUN_DBT_PUBLISH_INTEGRATION=1`도 함께 설정합니다.
+
+```bash
+docker compose up -d
+RUN_POSTGRES_INTEGRATION=1 RUN_SEAWEEDFS_INTEGRATION=1 RUN_DBT_PUBLISH_INTEGRATION=1 \
+  uv run pytest tests/reliability -v
+```
+
+특정 시나리오만 실행하려면 `-k`로 필터링합니다(예: `-k "r02 or r03 or r15"`). 증적 JSON은
+`data/reliability/`에 생성되며 Git으로 관리하지 않습니다. 시나리오별 원인·조치는
+[Runbook 색인](docs/runbooks/README.md)과 [Troubleshooting 색인](docs/troubleshooting/README.md)을 참고합니다.
 
 ## 로컬 데이터와 Secret
 

@@ -160,7 +160,7 @@ def test_orders_service_keeps_watermark_when_final_object_already_exists(tmp_pat
             ).fetchone()
 
         assert watermark_row == (lower_bound.timestamp, lower_bound.as_json(), 0)
-        assert run_row == ("FAILED", "FileExistsError")
+        assert run_row == ("FAILED", "UNKNOWN_ERROR")
     finally:
         _delete_test_rows_and_objects(postgres, storage, pipeline_name, request)
 
@@ -432,7 +432,7 @@ def test_orders_service_does_not_read_or_publish_when_generator_holds_the_global
                 """,
                 (pipeline_name,),
             ).fetchone()
-        assert run_row == ("FAILED", "SOURCE_MUTATION_CONFLICT")
+        assert run_row == ("FAILED", "LEASE_UNAVAILABLE")
     finally:
         release_source_mutation_lease(postgres, generator_lease, now=now)
         _delete_test_rows_and_objects(postgres, storage, pipeline_name, request)

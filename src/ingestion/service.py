@@ -11,8 +11,6 @@ from pathlib import Path
 from src.common.database import PostgresSettings
 from src.generator.lease import (
     WAREHOUSE_OWNER_TYPE,
-    LeaseOwnershipLostError,
-    LeaseUnavailableError,
     SourceMutationLease,
     acquire_source_mutation_lease,
     assert_source_mutation_lease,
@@ -33,12 +31,11 @@ from src.ingestion.bronze import (
     table_logical_hash,
 )
 from src.ingestion.corruption import CorruptionPlan
+from src.ingestion.errors import BATCH_IDENTITY_CONFLICT, classify_error
 from src.ingestion.extract import SourcePage, open_table_snapshot
 from src.ingestion.lease import (
     LeaseHeartbeat,
     TableLease,
-    TableLeaseOwnershipLostError,
-    TableLeaseUnavailableError,
     acquire_table_lease,
     assert_table_lease,
     release_table_lease,
@@ -250,7 +247,7 @@ def ingest_table(
             now=current_time,
         )
     except Exception as error:
-        _record_lease_failure(postgres, request, config, watermark, run_id, error, current_time)
+        _record_prestart_failure(postgres, request, config, watermark, run_id, error, current_time)
         if owned_source_lease and active_source_lease is not None:
             with suppress(Exception):
                 release_source_mutation_lease(postgres, active_source_lease, now=current_time)
@@ -259,6 +256,7 @@ def ingest_table(
     if active_source_lease is None:
         raise RuntimeError("Warehouse source lease was not acquired")
 
+    run_started = False
     try:
         with (
             LeaseHeartbeat(postgres, active_source_lease, table_lease, now=now) as heartbeat,
@@ -277,6 +275,7 @@ def ingest_table(
                 extract_upper_bound=snapshot.extract_upper_bound,
             )
             record_started_run(postgres, run, now=current_time)
+            run_started = True
             if snapshot.extract_upper_bound is None:
                 heartbeat.assert_healthy()
                 record_success_no_data_run(postgres, run, now=current_time)
@@ -315,6 +314,7 @@ def ingest_table(
                         rows_valid=bronze_artifact.row_count,
                         rows_rejected=rows_rejected,
                         rows_loaded=bronze_artifact.row_count,
+                        lease_owner=table_lease.owner_id,
                         quarantine=quarantine_batch,
                     ),
                     now=current_time,
@@ -335,6 +335,12 @@ def ingest_table(
                 quarantine_batch.object_key if quarantine_batch is not None else None
             ),
         )
+    except Exception as error:
+        if not run_started:
+            _record_prestart_failure(
+                postgres, request, config, watermark, run_id, error, current_time
+            )
+        raise
     finally:
         if table_lease is not None:
             with suppress(Exception):
@@ -584,7 +590,7 @@ def _reuse_or_reject_committed_batch(
         record_failed_run(
             postgres,
             run,
-            error_type="BATCH_IDENTITY_CONFLICT",
+            error_type=BATCH_IDENTITY_CONFLICT,
             error_message=str(error),
             now=current_time,
         )
@@ -628,13 +634,13 @@ def _record_failure_without_masking(
         record_failed_run(
             postgres,
             run,
-            error_type=type(error).__name__[:64],
+            error_type=classify_error(error),
             error_message=str(error) or None,
             now=current_time,
         )
 
 
-def _record_lease_failure(
+def _record_prestart_failure(
     postgres: PostgresSettings,
     request: TableIngestionRequest,
     config: TableConfig,
@@ -643,7 +649,10 @@ def _record_lease_failure(
     error: Exception,
     current_time: datetime,
 ) -> None:
-    """Lease 충돌 Run을 Source Snapshot 없이 FAILED Metadata로 기록한다."""
+    """Run 시작(`record_started_run`) 전에 난 실패를 Source Snapshot 없이 FAILED Metadata로 기록한다.
+
+    Lease 획득 실패와 Source Snapshot 연결 실패가 이 경로를 공유한다.
+    """
     run = PipelineRun(
         run_id=run_id,
         pipeline_name=request.resolved_pipeline_name,
@@ -654,21 +663,12 @@ def _record_lease_failure(
         watermark_before=watermark.cursor,
         extract_upper_bound=None,
     )
-    conflict_errors = (
-        LeaseUnavailableError,
-        LeaseOwnershipLostError,
-        TableLeaseUnavailableError,
-        TableLeaseOwnershipLostError,
-    )
-    error_type = (
-        "SOURCE_MUTATION_CONFLICT" if isinstance(error, conflict_errors) else type(error).__name__
-    )
     with suppress(Exception):
         record_started_run(postgres, run, now=current_time)
         record_failed_run(
             postgres,
             run,
-            error_type=error_type[:64],
+            error_type=classify_error(error),
             error_message=str(error) or None,
             now=current_time,
         )

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import psycopg
+from botocore.exceptions import BotoCoreError, ClientError
 
 from src.generator.lease import LeaseOwnershipLostError, LeaseUnavailableError
 from src.ingestion.batch import BatchIdentityConflictError
@@ -30,7 +31,10 @@ OBJECT_VERIFICATION_ERROR = "OBJECT_VERIFICATION_ERROR"
 WATERMARK_CONFLICT = "WATERMARK_CONFLICT"
 BATCH_IDENTITY_CONFLICT = "BATCH_IDENTITY_CONFLICT"
 LEASE_OWNERSHIP_LOST = "LEASE_OWNERSHIP_LOST"
+OBJECT_STORAGE_ERROR = "OBJECT_STORAGE_ERROR"
 WAREHOUSE_ERROR_TYPES = frozenset({DBT_BUILD_ERROR, DBT_TEST_ERROR, UNKNOWN_ERROR})
+
+_RETRYABLE_HTTP_STATUS = frozenset({429, *range(500, 600)})
 
 # 문서 "재시도 가능" 목록: 일시적 연결 오류와 다른 활성 실행 종료를 기다리는 LeaseUnavailableError.
 RETRYABLE_ERROR_TYPES = frozenset({SOURCE_CONNECTION_ERROR, LEASE_UNAVAILABLE})
@@ -75,9 +79,26 @@ def classify_error(error: Exception) -> str:
         return error.error_type
     if isinstance(error, PublishedWalError):
         return CONFIGURATION_ERROR
+    if isinstance(error, (ClientError, BotoCoreError)):
+        return OBJECT_STORAGE_ERROR
     return UNKNOWN_ERROR
 
 
+def _object_storage_http_status(error: Exception) -> int | None:
+    """ClientError의 HTTP 상태 코드를 방어적으로 꺼낸다."""
+    response = getattr(error, "response", None) or {}
+    return response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+
+
 def is_retryable(error: Exception) -> bool:
-    """분류된 Error Type이 문서 정의 재시도 가능 목록에 속하는지 반환한다."""
-    return classify_error(error) in RETRYABLE_ERROR_TYPES
+    """분류된 Error Type이 문서 정의 재시도 가능 목록에 속하는지 반환한다.
+
+    `OBJECT_STORAGE_ERROR`는 예외다 — 코드 하나가 재시도 가능한 5xx/429와
+    재시도 불가능한 4xx를 모두 포함하므로, `RETRYABLE_ERROR_TYPES` 소속 여부가
+    아니라 HTTP 상태 코드로 가른다(ADR-018).
+    """
+    error_type = classify_error(error)
+    if error_type == OBJECT_STORAGE_ERROR:
+        status = _object_storage_http_status(error)
+        return status in _RETRYABLE_HTTP_STATUS
+    return error_type in RETRYABLE_ERROR_TYPES

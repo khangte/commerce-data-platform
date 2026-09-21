@@ -8,7 +8,7 @@
 
 ## Phase 실행 문서
 
-ROADMAP은 전체 순서와 범위를 관리하고, 아래 문서는 Phase별 Task, 산출물, 검증 Evidence, Definition of Done을 관리한다. 공통 Architecture와 데이터 계약의 Source of Truth는 [PRD v1.13](../../PRD_v1.13.md)다.
+ROADMAP은 전체 순서와 범위를 관리하고, 아래 문서는 Phase별 Task, 산출물, 검증 Evidence, Definition of Done을 관리한다. 공통 Architecture와 데이터 계약의 Source of Truth는 [PRD v1.14](../../PRD_v1.14.md)다.
 
 | Phase | 실행 문서                                                      | 주요 Gate                        |
 | ----- | -------------------------------------------------------------- | -------------------------------- |
@@ -1014,7 +1014,7 @@ R-07 Broken Manifest
 R-08 Late Order
 R-09 Late Payment
 R-10 Customer SCD2 Change
-R-11 Missing Schedule
+R-11 Missing Schedule (누락 구간은 다음 실행이 자동 Self-heal, 귀속만 명시 Batch로 복구)
 R-12 Backfill Replay
 R-13 Re-extract
 R-14 dbt Failure
