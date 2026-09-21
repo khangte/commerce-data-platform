@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from src.benchmark.store import (
     BenchmarkRun,
     append_run,
@@ -106,6 +108,21 @@ def test_median_duration_excludes_invalid_runs() -> None:
     invalid_run = _run(run_number=6, duration_seconds=999.0, status="INVALID")
 
     assert median_duration([*valid_runs, invalid_run], is_cold_run=False) == 1.0
+
+
+def test_median_duration_rejects_mixed_scenarios() -> None:
+    """서로 다른 scenario(Arm) Run이 섞이면 모집단 혼합 대신 ValueError로 거부한다."""
+    full_runs = [
+        _run(run_number=index, duration_seconds=280.0, scenario="extract-full")
+        for index in range(1, 6)
+    ]
+    incremental_runs = [
+        _run(run_number=index, duration_seconds=6.0, scenario="extract-incremental")
+        for index in range(1, 6)
+    ]
+
+    with pytest.raises(ValueError, match="scenario"):
+        median_duration(full_runs + incremental_runs, is_cold_run=False)
 
 
 def test_render_comparison_reports_raw_median_hash_and_percent_change() -> None:

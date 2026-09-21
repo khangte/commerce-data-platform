@@ -71,7 +71,13 @@ def median_duration(runs: Sequence[BenchmarkRun], *, is_cold_run: bool) -> float
     """유효(`VALID`)하고 요청한 Cache 상태에 속한 Run의 Duration Median을 구한다.
 
     5회 미만이면 대표값으로 신뢰할 수 없으므로 숫자 대신 None을 반환한다.
+    Run들의 `scenario`가 2종 이상 섞여 있으면 서로 다른 Arm의 모집단이 말없이
+    한 Median으로 합쳐지는 사고([[037_phase9-task14-review-and-median-correction]])를
+    막기 위해 ValueError를 낸다.
     """
+    scenarios = {run.scenario for run in runs}
+    if len(scenarios) > 1:
+        raise ValueError(f"median_duration: 서로 다른 scenario가 섞여 있다: {sorted(scenarios)}")
     durations = [
         run.duration_seconds
         for run in runs
