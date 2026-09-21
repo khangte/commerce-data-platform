@@ -110,6 +110,16 @@ RUN_POSTGRES_INTEGRATION=1 RUN_SEAWEEDFS_INTEGRATION=1 RUN_DBT_PUBLISH_INTEGRATI
 `data/reliability/`에 생성되며 Git으로 관리하지 않습니다. 시나리오별 원인·조치는
 [Runbook 색인](docs/runbooks/README.md)과 [Troubleshooting 색인](docs/troubleshooting/README.md)을 참고합니다.
 
+## Benchmark Cache 초기화
+
+Phase 9 Benchmark의 Cold Run은 `src/benchmark/cache.py`의 `reset_caches()`로 OS Page Cache를 지웁니다.
+
+- 정상 경로: `sync` 실행 후 `/proc/sys/vm/drop_caches`에 `3`을 씁니다.
+- WSL2 주의: WSL2 커널은 기본적으로 일반 사용자의 `drop_caches` 쓰기를 거부합니다(Permission denied).
+  이 경우 `reset_caches()`는 실패를 숨기지 않고 `cache_reset_method="process_restart_only"`로
+  내려가며, `services`를 넘기면 그 Compose Service들을 재시작해 대신 Cache 효과를 낮춥니다.
+- Cold Run과 Warm Run은 절대 같은 집계에 섞지 않습니다.
+
 ## 로컬 데이터와 Secret
 
 `.env`, Raw/Generated Data, DuckDB Warehouse, Airflow Log는 Git에 포함하지 않습니다. `.env.example`의 예시 Secret은 실제 값으로 사용하지 않습니다.
