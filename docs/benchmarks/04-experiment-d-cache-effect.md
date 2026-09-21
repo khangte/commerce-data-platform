@@ -80,9 +80,9 @@ Raw 값 정렬 기준 Cold 최솟값(0.027451)이 Warm 최댓값(0.027197)보다
 
 Cold와 Warm이 분리된 원인이 진짜 Page Cache 재적재인지, `os.sync()`
 Writeback인지, 아니면 Arm/시간 순서 교락인지를 가르기 위해 두 대조군을
-같은 Fixture·Query로 추가 실측했다(위 결과 재현 이후, 별도 진단 스크립트로
+같은 Fixture·Query로 추가 실측했다(위 결과 재현 이후, `scripts/d_control_experiments.py`로
 실행 — `store.py` 적재 파이프라인에는 넣지 않았다. 1회성 진단이라 영구
-Scenario로 등록하지 않았다).
+Scenario로 등록하지 않았다. 재현: `PYTHONPATH=. uv run python scripts/d_control_experiments.py`).
 
 ```
 대조군 A(sync만, fadvise 없음): raw=[0.026025, 0.026395, 0.023088, 0.022247, 0.021987]
