@@ -234,17 +234,25 @@ def _read_csv_arm(
 
 
 def _hash_rows_with_payload_size(cursor) -> tuple[str, int, int]:
-    """정렬된 Cursor를 Hash하며 Row 수와 Canonical JSON Payload Byte 수를 함께 센다."""
+    """정렬된 Cursor를 Hash하며 Row 수와 Canonical JSON Payload Byte 수를 함께 센다.
+
+    Row를 `fetchmany()`로 Python Tuple 1개씩 변환하는 대신 `to_arrow_reader()`
+    Columnar Batch로 받아 Column 단위로 `to_pylist()`한 뒤 `zip`으로 Row를
+    구성한다([[038_phase9-task16-bottleneck-selection]]) — DuckDB가 Row를
+    1개씩 Python 객체로 변환하는 구간이 M Scale Duration의 절반을 차지하는
+    것이 측정으로 확인됐다(`scripts/profile_file_format_read.py`). Hash
+    알고리즘·JSON 직렬화·Row 순서는 그대로라 결과 Hash는 바뀌지 않는다.
+    """
     column_names = [descriptor[0] for descriptor in cursor.description]
     digest = hashlib.sha256()
     row_count = 0
     payload_bytes = 0
-    while True:
-        rows = cursor.fetchmany(10_000)
-        if not rows:
-            break
-        for row in rows:
-            payload = canonical_row_json(dict(zip(column_names, row, strict=True))).encode("utf-8")
+    for batch in cursor.to_arrow_reader(batch_size=10_000):
+        columns = [batch.column(index).to_pylist() for index in range(batch.num_columns)]
+        for values in zip(*columns, strict=True):
+            payload = canonical_row_json(dict(zip(column_names, values, strict=True))).encode(
+                "utf-8"
+            )
             digest.update(payload)
             digest.update(b"\n")
             payload_bytes += len(payload)

@@ -93,10 +93,16 @@ Byte 수가 Row 수에 선형으로만 늘어난다. 즉 이 비율 증가는 �
 **이 측정 구간에서는 형식 차이가 고정 비용에 가려 분해되지 않았다.** CSV가
 Parquet보다 3.6배 큰 On-disk 크기인데도 측정된 읽기 시간은 두 Arm이 거의
 같다(+0.4%, Raw 값도 19.7~20.3초 범위에서 서로 겹친다). Duration 대부분이
-Byte 수가 아니라 다른 고정 비용(SeaweedFS S3 접속·`httpfs` 초기화, DuckDB CSV
-Parser 오버헤드 등)에 지배되는 것으로 보이지만, 이 실험 설계로는 그 고정
-비용을 측정 구간에서 분리해내지 못했다 — Task 16 병목 후보(접속·초기화
-구간을 측정에서 제외하고 재실행)로 올려 둔다.
+Byte 수가 아니라 다른 고정 비용에 지배되는 것으로 보이지만, 이 실험
+설계로는 그 고정 비용을 측정 구간에서 분리해내지 못했다.
+
+Task 16([[038_phase9-task16-bottleneck-selection]])에서 이 고정 비용을
+직접 진단했다 — 후보로 짐작했던 "SeaweedFS S3 접속·`httpfs` 초기화"는
+실측으로 기각됐다. 실제로는 Duration의 약 절반이 DuckDB Cursor가 Row를
+1개씩 Python Tuple로 변환하는 구간(`fetchmany`)이었다(`scripts/profile_file_format_read.py`).
+접속·초기화 구간(`to_arrow_reader` 기준 약 0.3초)은 20초 전체에서 무시할
+수준이다. 이 Row 변환 구간을 고친 결과는
+[[06-improvement|docs/benchmarks/06-improvement.md]] 참조.
 
 S Scale 결과와 직접 비교하지 않는다 — S Scale `file_format` 실행 시점의
 On-disk 크기를 이 작성 시점에 재확인하지 않았고, 두 실행의 절대 비교가
