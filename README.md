@@ -110,6 +110,41 @@ RUN_POSTGRES_INTEGRATION=1 RUN_SEAWEEDFS_INTEGRATION=1 RUN_DBT_PUBLISH_INTEGRATI
 `data/reliability/`에 생성되며 Git으로 관리하지 않습니다. 시나리오별 원인·조치는
 [Runbook 색인](docs/runbooks/README.md)과 [Troubleshooting 색인](docs/troubleshooting/README.md)을 참고합니다.
 
+## Benchmark 실행하기
+
+Phase 9 Benchmark는 S(100K 주문)·M(1M)·L(5M) Scale을 `--scale`로 선택해
+실행합니다. PostgreSQL·SeaweedFS Compose 서비스를 먼저 기동하고, 결과는
+`data/benchmarks/{benchmark_id}/runs.jsonl`에 Raw Run별로 저장됩니다. 실행 뒤
+출력된 Benchmark ID로 `report`를 호출하면 Raw 값·Median·Result Hash를 확인할 수
+있습니다.
+
+```bash
+docker compose up -d
+
+# A: Extract는 S Scale 결과만 정본으로 채택했다.
+uv run python -m src.benchmark run --scenario extract --scale S
+
+# B: 파일 형식 비교는 S/M/L 모두 같은 방식으로 생성·측정한다.
+uv run python -m src.benchmark run --scenario file_format --scale S
+uv run python -m src.benchmark run --scenario file_format --scale M
+uv run python -m src.benchmark run --scenario file_format --scale L
+
+# C/D: Fixture Row 수를 명시해 M/L Scale Fixture를 만든다.
+uv run python -m src.benchmark run --scenario scan --scale M \
+  --fixture-old-rows 5000000 --fixture-current-rows 1000000
+uv run python -m src.benchmark run --scenario cache_effect --scale M --cold \
+  --fixture-old-rows 5000000 --fixture-current-rows 1000000
+uv run python -m src.benchmark run --scenario cache_effect --scale M --warm \
+  --fixture-old-rows 5000000 --fixture-current-rows 1000000
+
+uv run python -m src.benchmark report --benchmark-id <benchmark_id>
+```
+
+Cold Run은 Linux Page Cache 초기화 권한이 필요하며, 권한이 없으면 실제 사용한
+대체 방법이 Run Metadata에 기록됩니다. Cold와 Warm 결과는 같은 모집단으로
+합치지 않습니다. Scale별 Fixture·Raw 결과·해석은
+[`docs/benchmarks/`](docs/benchmarks/)에 보존합니다.
+
 ## Benchmark Cache 초기화
 
 Phase 9 Benchmark의 Cold Run은 `src/benchmark/cache.py`의 `reset_caches()`로 OS Page Cache를 지웁니다.

@@ -1,6 +1,6 @@
 # Phase 9. Benchmark
 
-> 상태: Planned  
+> 상태: Done
 > Milestone: 3 — Portfolio Evidence  
 > 선행 Phase: [Phase 8. Reliability Scenarios](phase-08-reliability.md)  
 > 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.11](../../PRD_v1.11.md)
@@ -49,12 +49,12 @@ Harness와 Ingestion·Storage 계층 실험은 Mart 구성과 독립적이다. �
 
 ### 9-1-1. Benchmark Harness
 
-- [ ] `P9-01` Benchmark Scenario/Run ID와 Config Schema 정의
-- [ ] `P9-02` Wall Time, CPU/Memory, I/O, Row Count 수집
-- [ ] `P9-03` Raw Result 저장 형식과 Median 계산 구현
-- [ ] `P9-04` Result Hash와 정확성 Gate 연결
-- [ ] `P9-05` Cold/Warm Run 구분과 Cache Reset 절차 문서화
-- [ ] `P9-06` Dependency Lock/Image/Dataset 식별 정보 기록
+- [x] `P9-01` Benchmark Scenario/Run ID와 Config Schema 정의 — `src/benchmark/config.py`, `src/benchmark/runner.py`; `uv run python -m src.benchmark run --scenario harness_overhead --scale S` → `harness_overhead-S-20260921T104453Z` (`docs/benchmarks/00-environment.md` §6).
+- [x] `P9-02` Wall Time, CPU/Memory, I/O, Row Count 수집 — `src/benchmark/measure.py`, `src/benchmark/store.py`; `docs/benchmarks/02-experiment-b-file-format.md`의 M/L Duration·입출력 Byte와 `docs/benchmarks/03-experiment-c-scan.md`의 Scan Row/Byte 실측.
+- [x] `P9-03` Raw Result 저장 형식과 Median 계산 구현 — `src/benchmark/store.py`, `src/benchmark/runner.py`; `data/benchmarks/{benchmark_id}/runs.jsonl` 및 `uv run python -m src.benchmark report --benchmark-id <benchmark_id>`, Raw 5회·Median은 `docs/benchmarks/00-environment.md` §5에 예시 기록.
+- [x] `P9-04` Result Hash와 정확성 Gate 연결 — `src/benchmark/result_hash.py`, `src/benchmark/runner.py`; `uv run python -m src.benchmark run --scenario scan --scale M --fixture-old-rows 5000000 --fixture-current-rows 1000000` → 두 Arm Hash 동일(`docs/benchmarks/03-experiment-c-scan.md` §M Scale).
+- [x] `P9-05` Cold/Warm Run 구분과 Cache Reset 절차 문서화 — `src/benchmark/cache.py`; `uv run python -m src.benchmark run --scenario cache_effect --scale M --cold --fixture-old-rows 5000000 --fixture-current-rows 1000000` 및 같은 명령의 `--warm`, 절차·한계는 `docs/benchmarks/00-environment.md` §3 및 `docs/benchmarks/04-experiment-d-cache-effect.md`.
+- [x] `P9-06` Dependency Lock/Image/Dataset 식별 정보 기록 — `src/benchmark/metadata.py`; `uv run python -m src.benchmark report --benchmark-id harness_overhead-S-20260921T104453Z`, 환경·Lock·Image·Seed는 `docs/benchmarks/00-environment.md` §2·§4.
 
 Run Metadata 최소 필드:
 
@@ -81,29 +81,29 @@ query_or_command
 
 ### 9-1-2. Experiment A — Full vs Incremental Extract
 
-- [ ] `P9-07` 동일 최종 결과를 만드는 Full Extract Baseline
-- [ ] `P9-08` 변경률이 고정된 Incremental Extract 측정
-- [ ] `P9-09` Rows Scanned/Changed, Bytes, Duration 비교
+- [x] `P9-07` 동일 최종 결과를 만드는 Full Extract Baseline — `uv run python -m src.benchmark run --scenario extract --scale S` → Full median 282.089758063초, Anchor/Hash는 `docs/benchmarks/01-experiment-a-extract.md`.
+- [x] `P9-08` 변경률이 고정된 Incremental Extract 측정 — 같은 명령 → Incremental median 5.847424009초, `change_rate=0.013475091293743515`, 같은 Anchor/Hash(`docs/benchmarks/01-experiment-a-extract.md`).
+- [x] `P9-09` Rows Scanned/Changed, Bytes, Duration 비교 — `uv run python -m src.benchmark report --benchmark-id extract-S-20260921T113012Z`; Table별 t0/delta/t1과 Full/Incremental 48.2배 비교를 `docs/benchmarks/00-environment.md` §4·`01-experiment-a-extract.md`에 기록.
 
 변경률과 Cursor 범위를 결과에 기록한다. 결과 Hash가 다르면 성능 수치를 채택하지 않는다.
 
 ### 9-1-3. Experiment B — CSV vs Parquet
 
-- [ ] `P9-10` 같은 Column/Row 범위의 CSV Read 측정
-- [ ] `P9-11` 같은 결과를 만드는 Parquet Read 측정
-- [ ] `P9-12` 파일 크기, Scan Bytes, Duration 비교
+- [x] `P9-10` 같은 Column/Row 범위의 CSV Read 측정 — `uv run python -m src.benchmark run --scenario file_format --scale M` → csv Raw 5회·median 19.910847433초(`docs/benchmarks/02-experiment-b-file-format.md` §M Scale).
+- [x] `P9-11` 같은 결과를 만드는 Parquet Read 측정 — 같은 명령 → parquet Raw 5회·median 19.992092046초 및 csv와 동일 Hash(`docs/benchmarks/02-experiment-b-file-format.md` §M Scale).
+- [x] `P9-12` 파일 크기, Scan Bytes, Duration 비교 — `uv run python -m src.benchmark report --benchmark-id file_format-M-20260921T134121Z`; M/L CSV·Parquet On-disk Byte와 Duration을 `docs/benchmarks/02-experiment-b-file-format.md`에 기록.
 
 ### 9-1-4. Experiment C — Full Scan vs Filtered Scan
 
-- [ ] `P9-13` 전체 Dataset Scan Baseline
-- [ ] `P9-14` 동일 분석 결과 범위의 Predicate/Column Projection 적용
-- [ ] `P9-15` Scan Rows/Bytes와 Duration 비교
+- [x] `P9-13` 전체 Dataset Scan Baseline — `uv run python -m src.benchmark run --scenario scan --scale M --fixture-old-rows 5000000 --fixture-current-rows 1000000` → `full_scan` 6,000,000 Row, median 0.033107826초(`docs/benchmarks/03-experiment-c-scan.md` §M Scale).
+- [x] `P9-14` 동일 분석 결과 범위의 Predicate/Column Projection 적용 — 같은 명령 → Pushdown `filtered_scan` 1,000,000 Row, 동일 Result Hash(`docs/benchmarks/03-experiment-c-scan.md` §M Scale).
+- [x] `P9-15` Scan Rows/Bytes와 Duration 비교 — `uv run python -m src.benchmark report --benchmark-id scan-M-20260921T134454Z`; 6,000,000/98,132 대 1,000,000/19,322 Row/Byte 및 -22.2%를 `docs/benchmarks/03-experiment-c-scan.md`에 기록.
 
 ### 9-1-5. Experiment D — Cold vs Warm
 
-- [ ] `P9-16` Cold Run 절차로 5회 측정
-- [ ] `P9-17` Warm Run 절차로 5회 측정
-- [ ] `P9-18` Cache 효과를 별도 결과로 해석
+- [x] `P9-16` Cold Run 절차로 5회 측정 — `uv run python -m src.benchmark run --scenario cache_effect --scale M --cold --fixture-old-rows 5000000 --fixture-current-rows 1000000` → 5/5 VALID, median 0.029063759초(`docs/benchmarks/04-experiment-d-cache-effect.md`).
+- [x] `P9-17` Warm Run 절차로 5회 측정 — `uv run python -m src.benchmark run --scenario cache_effect --scale M --warm --fixture-old-rows 5000000 --fixture-current-rows 1000000` → 5/5 VALID, median 0.025608052초, Cold와 Hash 동일(`docs/benchmarks/04-experiment-d-cache-effect.md`).
+- [x] `P9-18` Cache 효과를 별도 결과로 해석 — `PYTHONPATH=. uv run python scripts/d_control_experiments.py`; 교차 실행 대조에서 분리가 무너져 Cache 효과를 분해하지 못했다는 판정을 `docs/benchmarks/04-experiment-d-cache-effect.md` §대조군 실측에 기록.
 
 ## 9-2. 적용: Phase 6 완료 후 진행
 
@@ -111,12 +111,12 @@ Mart까지 포함한 전체 Pipeline을 측정 대상으로 삼는 실험이다.
 
 ### 9-2-1. Scale 확장과 개선 Loop
 
-- [ ] `P9-19` S Scale에서 Harness 검증
-- [ ] `P9-20` M Scale 전체 주요 실험 수행
-- [ ] `P9-21` L Scale 실행 또는 자원 한계 Evidence 기록
-- [ ] `P9-22` 가장 큰 Bottleneck 하나 선정
-- [ ] `P9-23` 개선 적용 후 동일 조건 재측정
-- [ ] `P9-24` Baseline/개선 결과와 Trade-off 문서화
+- [x] `P9-19` S Scale에서 Harness 검증 — `uv run python -m src.benchmark run --scenario harness_overhead --scale S` → median `4.95e-05`초; A~D와 Overhead 모두 5/5 VALID(`docs/benchmarks/00-environment.md` §5·§6).
+- [x] `P9-20` M Scale 전체 주요 실험 수행 — `uv run python -m src.benchmark run --scenario file_format --scale M` 및 위 P9-13·P9-16·P9-17 명령 → B/C/D Raw 5회·Median·Hash는 `docs/benchmarks/02-experiment-b-file-format.md`~`04-experiment-d-cache-effect.md`; A는 비용·누적 원천 제약으로 S 정본을 유지한 범위 결정(`01-experiment-a-extract.md` §M Scale 미실행).
+- [x] `P9-21` L Scale 실행 또는 자원 한계 Evidence 기록 — `uv run python -m src.benchmark run --scenario file_format --scale L`; Scan/Cache는 `--fixture-old-rows 25000000 --fixture-current-rows 5000000`으로 실행 → B/C/D/Overhead 5/5 VALID, 메모리·Swap 관측과 A 제외 근거는 `docs/benchmarks/05-scale-limits.md`.
+- [x] `P9-22` 가장 큰 Bottleneck 하나 선정 — `docs/architect-review/038_phase9-task16-bottleneck-selection.md`: M Scale `file_format`에서 `fetchmany` Tuple 변환 10.251초와 Hash Loop 10.253초를 실측해 병목을 선정하고, `to_arrow_reader` 대조 0.295초 및 architect 사전 승인을 기록했다.
+- [x] `P9-23` 개선 적용 후 동일 조건 재측정 — `docs/benchmarks/06-improvement.md`: 같은 M Fixture·실행 창에서 전후 각각 csv/parquet 5회를 수행해 median 15.9%/17.6% 감소와 두 Arm의 동일 Result Hash를 기록했다.
+- [x] `P9-24` Baseline/개선 결과와 Trade-off 문서화 — `docs/benchmarks/06-improvement.md`: 같은 M Fixture에서 Before/After 각각 csv/parquet 5회, median -15.9%/-17.6%, 20 Run 동일 Hash, Arrow Batch 메모리·간접성 및 Run Record 한계를 기록.
 
 ```text
 Baseline
@@ -178,6 +178,7 @@ Result Hash 동일
 - 단일 실행값만을 대표 결과로 사용
 - Cache 상태가 다른 결과를 같은 모집단으로 집계
 - Benchmark를 위해 신뢰성 계약을 약화하는 변경
+- `src/common/row_hash.py`의 `hash_cursor_rows` Arrow 경로 전환(`docs/architect-review/040_backlog-row-hash-arrow-candidate.md`)
 
 ## 요구사항 추적
 
@@ -197,15 +198,25 @@ Result Hash 동일
 - Bottleneck 분석과 최소 1개 개선 전후 비교
 - `docs/benchmarks/`의 환경/재현 가이드
 
+## 파일·폴더별 변경 요약
+
+| 경로 | 변경 내용 |
+| --- | --- |
+| `src/benchmark/` | Scenario/Config, 측정·Metadata·Raw JSONL 저장, Cache 초기화와 A~D·Overhead 실험 구현을 추가했다. |
+| `tests/benchmark/` | Harness·측정·Hash·각 실험의 단위/통합 검증과 Arrow Batch Hash 등가성 검증을 추가했다. |
+| `scripts/d_control_experiments.py`, `scripts/profile_file_format_read.py` | Cache 순서 교락 대조와 File Format 병목 구간 분해를 재현 가능한 진단으로 추가했다. |
+| `docs/benchmarks/` | 환경, A~D Raw 5회·Median·Hash, L Scale 자원 관측, 개선 전후·트레이드오프·재현 명령을 기록했다. |
+| `docs/architect-review/` | 실험 방법·Cache/Extract 교정·Task 16 병목 선정과 개선 검수의 승인 근거를 기록했다. |
+
 ## Definition of Done
 
-- [ ] 모든 `P8-*` Task가 완료됐다.
-- [ ] 주요 실험마다 Raw 5회 결과가 있다.
-- [ ] 대표값으로 Median을 계산했다.
-- [ ] 비교 전후 Result Hash가 같다.
-- [ ] 환경과 Dataset Metadata가 누락 없이 기록됐다.
-- [ ] M Scale이 완료되고 L Scale은 성공 또는 자원 한계가 증명됐다.
-- [ ] AC-17이 통과한다.
+- [x] 모든 `P8-*` Task가 완료됐다 — `docs/phases/phase-08-reliability.md`의 `P8-01`~`P8-20` 전부 `[x]`; `RUN_POSTGRES_INTEGRATION=1 RUN_SEAWEEDFS_INTEGRATION=1 RUN_DBT_PUBLISH_INTEGRATION=1 uv run pytest tests/reliability -v`의 당시 18 passed 증거를 해당 문서 DoD에 기록.
+- [x] 주요 실험마다 Raw 5회 결과가 있다 — `docs/benchmarks/01-experiment-a-extract.md`~`04-experiment-d-cache-effect.md`, `06-improvement.md`의 모든 Arm Raw 5회와 `data/benchmarks/{benchmark_id}/runs.jsonl`.
+- [x] 대표값으로 Median을 계산했다 — `uv run python -m src.benchmark report --benchmark-id <benchmark_id>`; 각 결과 문서가 Raw 배열에서 Median을 기록(예: `docs/benchmarks/03-experiment-c-scan.md` §M Scale).
+- [x] 비교 전후 Result Hash가 같다 — `docs/benchmarks/06-improvement.md`: Before/After 두 Benchmark ID 20 Run 전부 `66d27f16...`이며 모두 VALID.
+- [x] 환경과 Dataset Metadata가 누락 없이 기록됐다 — `docs/benchmarks/00-environment.md` §2·§4의 Host/Lock/Image/Seed 및 `src/benchmark/metadata.py`의 Run Record 수집.
+- [x] M Scale이 완료되고 L Scale은 성공 또는 자원 한계가 증명됐다 — `docs/benchmarks/05-scale-limits.md` §4: B/C/D/Overhead L Run 성공, A는 누적 원천과 20시간 이상 외삽 비용으로 실행하지 않은 범위를 §1·§2에 명시.
+- [x] AC-17이 통과한다 — `uv run python -m src.benchmark report --benchmark-id file_format-M-20260922T000636Z`; 환경 Metadata·Raw 5회·Median·동일 Result Hash를 `docs/benchmarks/00-environment.md`, `06-improvement.md`에 함께 보존.
 
 ## Portfolio Evidence
 

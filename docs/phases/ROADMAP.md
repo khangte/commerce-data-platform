@@ -21,7 +21,7 @@ ROADMAP은 전체 순서와 범위를 관리하고, 아래 문서는 Phase별 Ta
 | 6     | [Dimensional Modeling](phase-06-dimensional-modeling.md)       | AC-01, 09~12                     |
 | 7     | [Data Quality & Publish](phase-07-data-quality-publish.md)     | AC-01, 08, 12, 13, 16            |
 | 8     | [Reliability Scenarios](phase-08-reliability.md)               | 실패/충돌/재처리 복구 Evidence   |
-| 9     | [Benchmark](phase-09-benchmark.md)                             | AC-17                            |
+| 9     | [Benchmark](phase-09-benchmark.md) — 완료                      | AC-17 완료                       |
 | 10    | [BI](phase-10-bi.md)                                           | Mart-only Dashboard, Serving ADR |
 
 Phase 문서의 상태는 `Planned → In Progress → Done`으로 변경한다. `Done`은 체크박스 개수가 아니라 해당 문서의 Definition of Done과 Acceptance Gate가 모두 통과했음을 뜻한다.
@@ -1041,7 +1041,7 @@ docs/troubleshooting/
 
 ---
 
-## Phase 9. Benchmark
+## Phase 9. Benchmark — 완료
 
 ### 목표
 
