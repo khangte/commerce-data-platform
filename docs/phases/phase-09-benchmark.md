@@ -1,6 +1,6 @@
 # Phase 9. Benchmark
 
-> 상태: Done
+> 상태: Done  
 > Milestone: 3 — Portfolio Evidence  
 > 선행 Phase: [Phase 8. Reliability Scenarios](phase-08-reliability.md)  
 > 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.11](../../PRD_v1.11.md)
@@ -210,7 +210,7 @@ Result Hash 동일
 
 ## Definition of Done
 
-- [x] 모든 `P8-*` Task가 완료됐다 — `docs/phases/phase-08-reliability.md`의 `P8-01`~`P8-20` 전부 `[x]`; `RUN_POSTGRES_INTEGRATION=1 RUN_SEAWEEDFS_INTEGRATION=1 RUN_DBT_PUBLISH_INTEGRATION=1 uv run pytest tests/reliability -v`의 당시 18 passed 증거를 해당 문서 DoD에 기록.
+- [x] 모든 `P9-*` Task가 완료됐다 — 이 문서의 `P9-01`~`P9-24` 전부 `[x]`이며, 각 항목은 실행 명령과 `docs/benchmarks/` 또는 `docs/architect-review/` 증거 경로를 함께 기록한다.
 - [x] 주요 실험마다 Raw 5회 결과가 있다 — `docs/benchmarks/01-experiment-a-extract.md`~`04-experiment-d-cache-effect.md`, `06-improvement.md`의 모든 Arm Raw 5회와 `data/benchmarks/{benchmark_id}/runs.jsonl`.
 - [x] 대표값으로 Median을 계산했다 — `uv run python -m src.benchmark report --benchmark-id <benchmark_id>`; 각 결과 문서가 Raw 배열에서 Median을 기록(예: `docs/benchmarks/03-experiment-c-scan.md` §M Scale).
 - [x] 비교 전후 Result Hash가 같다 — `docs/benchmarks/06-improvement.md`: Before/After 두 Benchmark ID 20 Run 전부 `66d27f16...`이며 모두 VALID.

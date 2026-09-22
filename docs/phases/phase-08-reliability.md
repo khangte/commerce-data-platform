@@ -1,6 +1,6 @@
 # Phase 8. Reliability Scenarios
 
-> 상태: Planned  
+> 상태: Done  
 > Milestone: 3 — Portfolio Evidence  
 > 선행 Phase: [Phase 7. Data Quality & Publish](phase-07-data-quality-publish.md)  
 > 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.11](../../PRD_v1.11.md)
