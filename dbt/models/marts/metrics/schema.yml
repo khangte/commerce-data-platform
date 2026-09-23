@@ -1,6 +1,18 @@
 version: 2
 
 models:
+  - name: rpt_customer_order_activity_daily
+    description: 주문일·신규 또는 재구매 고객 구분별 고객·주문·배송 완료 GMV 집계다.
+    columns:
+      - name: purchase_date_key
+        data_tests: [not_null]
+      - name: customer_kind
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [new, repeat]
+
   - name: rpt_subscription_funnel_daily
     description: 구독 상태 진입 이벤트를 일별로 집계한 퍼널 지표다.
     columns:

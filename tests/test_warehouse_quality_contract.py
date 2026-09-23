@@ -9,6 +9,7 @@ import yaml
 DBT_DIR = Path(__file__).resolve().parents[1] / "dbt"
 FACT_SCHEMA = DBT_DIR / "models/marts/facts/schema.yml"
 DBT_PROFILE = DBT_DIR / "profiles.yml"
+METRIC_SCHEMA = DBT_DIR / "models/marts/metrics/schema.yml"
 
 
 def _tests(model: str, column: str) -> list:
@@ -58,3 +59,18 @@ def test_mart_build_session_timezone_is_utc() -> None:
     profile = yaml.safe_load(DBT_PROFILE.read_text(encoding="utf-8"))
     settings = profile["commerce_data_platform"]["outputs"]["dev"]["settings"]
     assert settings["TimeZone"] == "UTC"
+
+
+def test_customer_order_activity_metric_contract_is_declared() -> None:
+    """신규·재구매 고객 Report는 일자·고객 구분 Grain과 복합 Unique Test를 가진다."""
+    schema = yaml.safe_load(METRIC_SCHEMA.read_text(encoding="utf-8"))
+    model = next(
+        item for item in schema["models"] if item["name"] == "rpt_customer_order_activity_daily"
+    )
+    columns = {column["name"]: column.get("data_tests", []) for column in model["columns"]}
+    assert "not_null" in columns["purchase_date_key"]
+    assert _named(columns["customer_kind"], "accepted_values")["arguments"]["values"] == [
+        "new",
+        "repeat",
+    ]
+    assert (DBT_DIR / "tests/rpt_customer_order_activity_daily_unique.sql").is_file()

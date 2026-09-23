@@ -102,31 +102,31 @@ Metabase
 
 ### 10-2-2. Sales Dashboard
 
-- [ ] `P10-10` Daily GMV
-- [ ] `P10-11` Daily Orders
-- [ ] `P10-12` AOV
-- [ ] Date/Order Status Filter와 합계 검증
+- [x] `P10-10` Daily GMV
+- [x] `P10-11` Daily Orders
+- [x] `P10-12` AOV
+- [x] Date/Order Status Filter와 합계 검증
 
 ### 10-2-3. Product Dashboard
 
-- [ ] `P10-13` Category GMV
-- [ ] `P10-14` Top Products
-- [ ] `P10-15` Sales Volume
-- [ ] Item Grain과 Order Grain 혼합으로 인한 Fan-out이 없는지 검증
+- [x] `P10-13` Category GMV
+- [x] `P10-14` Top Products
+- [x] `P10-15` Sales Volume
+- [x] Item Grain과 Order Grain 혼합으로 인한 Fan-out이 없는지 검증
 
 ### 10-2-4. Customer Dashboard
 
-- [ ] `P10-16` New Customers
-- [ ] `P10-17` Repeat Customers
-- [ ] `P10-18` 구독 상태·거래 실적 등급 분포/추이
-- [ ] `P10-19` Region 분석
-- [ ] 현재 속성과 주문 시점 속성의 사용 목적을 명시
+- [x] `P10-16` New Customers
+- [x] `P10-17` Repeat Customers
+- [x] `P10-18` 구독 상태·거래 실적 등급 분포/추이
+- [x] `P10-19` Region 분석
+- [x] 현재 속성과 주문 시점 속성의 사용 목적을 명시
 
 ### 10-2-5. 재현성과 검증
 
-- [ ] `P10-20` Dashboard Export 또는 재생성 가능한 설정 보존
-- [ ] `P10-21` Dashboard별 Source Model/Query/Filter 문서화
-- [ ] `P10-22` dbt 기준 Query와 Dashboard Total 대조
+- [x] `P10-20` Dashboard Export 또는 재생성 가능한 설정 보존
+- [x] `P10-21` Dashboard별 Source Model/Query/Filter 문서화
+- [x] `P10-22` dbt 기준 Query와 Dashboard Total 대조
 - [ ] `P10-23` Screenshot과 Dataset/Run/Commit 식별자 기록
 
 ## 범위 밖
@@ -182,6 +182,8 @@ Phase 10에는 별도 AC 번호가 없으므로 ROADMAP의 Connection/Dashboard 
 | `compose.yaml`, `.env.example`, `sql/bootstrap/01-create-databases-and-roles.sh`, `metabase/`, `data/serving/` | `bi` Profile Metabase, 별도 애플리케이션 DB·역할, 읽기 전용 Serving Mount와 Driver 설치 문서를 추가했다. Connection Gate 준비 과정에서 플러그인 디렉터리를 Metabase UID/GID `2000`이 쓰도록 고쳐 DuckDB 드라이버가 로드됨을 확인했고, release `1.5.5.0` jar의 플러그인 표기 버전은 `1.4.1.0`임을 문서화했다. DuckDB JDBC native 라이브러리가 Alpine musl에서 동작하지 않아, `metabase/Dockerfile`은 공식 Metabase 앱을 glibc 기반 Temurin Java 이미지에서 실행하고 health check용 `wget`을 포함한다. WSL 멈춤 완화를 위해 Metabase `JAVA_OPTS=-Xmx1g`, `mem_limit: 1536m`, `restart: "no"`를 적용했다. `.env.example`에는 Connection Gate 자동 검증용 `METABASE_API_KEY`의 로컬 전용 안내를 추가했다. 2026-09-23 Run `5d74a326-954b-4850-a3d6-56d1556fec8d`에서 생성한 Serving Export는 Mart 12개를 `data/serving/mart.duckdb`에 담았고, `Commerce Mart Serving` Connection이 세 Mart Schema를 read-only로 조회한 뒤 컨테이너 재기동 후에도 유지됨을 확인했다. |
 | `dbt/profiles.yml`, `src/warehouse/publish.py`, `dbt/models/intermediate/int_order_items_enriched.sql`, `dbt/models/marts/facts/`, `dbt/tests/`, `tests/test_warehouse_*` | Mart Build 세션을 UTC로 고정해 날짜 키·대체 키의 실행 환경 의존성을 없앴고, Publish CLI에 전체 새로고침 인자를 추가했다. 주문 항목 Fact에는 주문 원본에서 유도한 `purchase_date_key`와 날짜 차원 FK·주문 Fact 일치 Test를 추가했다. Run `a10d06c3-c32e-4407-afdc-a1167b820c44`는 UTC 기준 Run `5d74a326-954b-4850-a3d6-56d1556fec8d`와 비교해 `facts.fct_order_item`만 Hash가 변경됨을 검증했다. |
 | `docs/reference/metric-dictionary.md`, `metabase/queries/semantic_*.sql` | GMV·Orders·AOV와 카테고리·상품·고객 지표의 원본 Grain·가산성·계약 근거를 고정하고, Metabase 등록 지표와 Warehouse 대조 SQL을 추가했다. |
+| `dbt/models/marts/metrics/rpt_customer_order_activity_daily.sql`, `dbt/tests/rpt_customer_order_activity_daily_unique.sql`, `dbt/models/marts/metrics/schema.yml` | 신규·재구매 고객을 BI Native SQL로 재정의하지 않도록 주문일×고객 구분 Report Model과 계약 Test를 추가했다. Run `7472eb21-ef48-4c8d-bd5f-f5c3e6f4c1cf`의 Serving Export `191cafe0-8ce4-4570-a43d-418209dfd948`에 1,141행으로 반영했다. |
+| `metabase/queries/dashboard_*.sql`, `scripts/metabase_snapshot.sh`, `metabase/export/`, `docs/bi/` | Metabase Sales(2)·Product(3)·Customer(4) Dashboard와 카드 12개의 Query·UTC Filter·재생성 Snapshot, Warehouse 대조표와 식별 증적을 보존했다. |
 | `docs/adr/012-metabase-serving-strategy.md` | Serving DuckDB 기본 경로와 Connection Gate 대기 상태를 ADR 초안에 기록했다. |
 
 ## Definition of Done

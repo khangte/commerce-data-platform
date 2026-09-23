@@ -408,6 +408,7 @@ Business Key가 계약이므로 해지 뒤 재가입한 사람은 `subscription_
 | `rpt_subscription_funnel_daily` | 이벤트 발생일 1일 1건 | `event_date_key` | table |
 | `rpt_subscription_payment_outcomes_daily` | 결제일 1일 × 결제 상태 1건 | (`payment_date_key`, `payment_status`) | table |
 | `rpt_membership_tier_performance` | 주문 시점 거래 실적 등급 1건 | `membership_tier` | table |
+| `rpt_customer_order_activity_daily` | 주문일 1일 × 신규·재구매 구분 1건 | (`purchase_date_key`, `customer_kind`) | table |
 
 ### 4.1.1 `rpt_subscription_funnel_daily`
 
@@ -457,6 +458,21 @@ Business Key가 계약이므로 해지 뒤 재가입한 사람은 `subscription_
 | `delivered_order_count` | HUGEINT | Additive Measure | N | 배송 완료 주문 건수. `SUM` 가능 |
 | `delivered_gmv` | DECIMAL(38,2) | Additive Measure | N | 배송 완료 주문의 주문 금액 합계. `SUM` 가능 |
 | `delivered_aov` | DOUBLE | Non-additive Measure | Y | `delivered_gmv ÷ delivered_order_count` 비율. `SUM` 금지 |
+
+### 4.1.4 `rpt_customer_order_activity_daily`
+
+- Grain: 주문일 1일 × 신규 또는 재구매 고객 구분 1건
+- Unique Key: (`purchase_date_key`, `customer_kind`)
+- Materialization: table
+- 출처: `fct_order`, `dim_customer`
+
+| 컬럼 | 타입 | 종류 | Null | 정의 / Test |
+| ---- | ---- | ---- | ---- | ----------- |
+| `purchase_date_key` | INTEGER | PK / FK | N | UTC 주문일. `not_null`, `rpt_customer_order_activity_daily_unique.sql` |
+| `customer_kind` | VARCHAR | PK / Attribute | N | 고객의 첫 주문일이면 `new`, 이후 주문일이면 `repeat`. `not_null`, `accepted_values: new, repeat` |
+| `customer_count` | BIGINT | Non-additive Measure (접힘) | N | `count(distinct customer_id)`. 날짜·고객 구분을 넘어 `SUM` 금지 |
+| `order_count` | BIGINT | Additive Measure | N | 해당 일자·구분 주문의 `sum(fct_order.order_count)`. `SUM` 가능 |
+| `delivered_gmv` | DECIMAL(38,2) | Additive Measure | N | 배송 완료 주문의 `sum(fct_order.gross_order_value)`. `SUM` 가능 |
 
 ### 4.2 Report Model을 만들 때
 
