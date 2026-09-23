@@ -1,4 +1,4 @@
--- 청구 기간 시작일 기준 일별 구독 결제 성공·실패 건수와 금액이다.
+-- payment_at에서 파생한 결제일 기준 일별 구독 결제 성공·실패 건수와 금액이다.
 select
     payment_date_key,
     payment_status,

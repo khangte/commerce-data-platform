@@ -1,4 +1,4 @@
--- 등급 성과 지표는 주문 시점 등급·구독 상태마다 한 행이다.
+-- 등급 성과 지표는 주문 시점 거래 실적 등급마다 한 행이다.
 select
     membership_tier,
     count(*) as row_count

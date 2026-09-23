@@ -10,7 +10,7 @@ from pathlib import Path
 from airflow.sdk import DAG, get_current_context, task
 from airflow.sdk.exceptions import AirflowFailException
 
-from src.common.database import PostgresSettings
+from src.common.database import PROJECT_ROOT, PostgresSettings
 from src.generator.lease import (
     WAREHOUSE_OWNER_TYPE,
     LeaseOwnershipLostError,
@@ -24,6 +24,7 @@ from src.ingestion.errors import classify_error, is_retryable
 from src.ingestion.service import TableIngestionRequest, ingest_table
 from src.ingestion.storage import SeaweedFSSettings
 from src.ingestion.verification import verify_bronze_commit
+from src.serving.export import ServingPaths, export_serving_mart
 from src.warehouse.publish import (
     DEFAULT_WAREHOUSE_ROOT,
     WarehousePaths,
@@ -35,6 +36,7 @@ from src.warehouse.publish_metadata import PublishRun, get_publish_run
 
 LOCAL_DIRECTORY = Path(tempfile.gettempdir()) / "commerce-data-platform" / "warehouse-pipeline-dag"
 WAREHOUSE_PATHS = WarehousePaths.under(DEFAULT_WAREHOUSE_ROOT)
+SERVING_PATHS = ServingPaths.under(PROJECT_ROOT / "data" / "serving")
 
 DEFAULT_TASK_ARGS = {
     "retries": 2,
@@ -209,11 +211,35 @@ with DAG(
         return {
             "publish_run_id": str(outcome.publish_run_id),
             "changed_relations": list(outcome.changed_relations),
+            "mart_hashes": outcome.mart_hashes,
+        }
+
+    @task(task_id="export_serving_mart", trigger_rule="all_success", retries=0)
+    def export_serving_mart_task(publish: dict) -> dict:
+        """성공한 Published Mart만 별도 Serving 파일로 복사하고 실패를 Publish와 분리한다."""
+        try:
+            result = export_serving_mart(
+                WAREHOUSE_PATHS.published,
+                SERVING_PATHS,
+                publish_run_id=uuid.UUID(publish["publish_run_id"]),
+                mart_hashes=publish["mart_hashes"],
+                now=datetime.now(UTC),
+            )
+        except Exception as error:
+            raise AirflowFailException(f"SERVING_EXPORT_FAILED: {error}") from error
+        return {
+            "export_id": str(result.export_id),
+            "row_counts": result.row_counts,
+            "serving_path": str(result.serving_path),
         }
 
     @task(trigger_rule="all_done")
     def publish_run_summary(
-        run_info: dict, verification: dict | None, build: dict | None, publish: dict | None
+        run_info: dict,
+        verification: dict | None,
+        build: dict | None,
+        publish: dict | None,
+        serving_export: dict | None,
     ) -> dict:
         """DagRun의 Bronze 검증과 Mart Publish 결과를 작은 JSON Summary로 남긴다."""
         publish_status = "SKIPPED"
@@ -224,6 +250,9 @@ with DAG(
             )
             publish_status = record.status if record else "UNKNOWN"
             publish_error_type = record.error_type if record else None
+        serving_export_status = "NOT_REQUESTED"
+        if publish:
+            serving_export_status = "SUCCESS" if serving_export else "SERVING_EXPORT_FAILED"
         summary = {
             "batch_id": run_info["batch_id"],
             "verified_table_count": verification["verified_table_count"] if verification else 0,
@@ -231,6 +260,9 @@ with DAG(
             "publish_status": publish_status,
             "publish_error_type": publish_error_type,
             "changed_relations": publish["changed_relations"] if publish else [],
+            "serving_export_status": serving_export_status,
+            "serving_export_id": serving_export["export_id"] if serving_export else None,
+            "serving_row_counts": serving_export["row_counts"] if serving_export else {},
         }
         print(summary)
         return summary
@@ -245,7 +277,8 @@ with DAG(
     build = prepare_warehouse_build_task(run_info, verification)
     dbt_result = dbt_build_task(build)
     publish = publish_mart_task(build, dbt_result)
+    serving_export = export_serving_mart_task(publish)
 
     extract_results >> release_task
-    extract_results >> verification >> build >> dbt_result >> publish
-    publish_run_summary(run_info, verification, build, publish)
+    extract_results >> verification >> build >> dbt_result >> publish >> serving_export
+    publish_run_summary(run_info, verification, build, publish, serving_export)

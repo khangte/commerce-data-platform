@@ -154,6 +154,21 @@ def get_publish_run(settings: PostgresSettings, publish_run_id: uuid.UUID) -> Pu
     return None if row is None else _record(row)
 
 
+def get_latest_publish_run(settings: PostgresSettings) -> PublishRecord | None:
+    """가장 최근에 완료된 PUBLISHED Run을 조회한다."""
+    with settings.pipeline_connection() as connection:
+        row = connection.execute(
+            f"""
+            SELECT {_RECORD_COLUMNS}
+            FROM mart_publish_runs
+            WHERE status = 'PUBLISHED'
+            ORDER BY finished_at DESC, started_at DESC
+            LIMIT 1
+            """
+        ).fetchone()
+    return None if row is None else _record(row)
+
+
 def stale_active_runs(
     settings: PostgresSettings, *, older_than: datetime
 ) -> tuple[PublishRecord, ...]:

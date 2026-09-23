@@ -264,21 +264,22 @@ def test_generator_failure_does_not_trigger_warehouse() -> None:
         _run_compose("down")
 
 
-def test_warehouse_pipeline_publishes_through_build_then_swap() -> None:
-    """Warehouse DAG는 검증 뒤 Build 준비 → dbt build → Publish 순서로만 Mart를 교체한다."""
+def test_warehouse_pipeline_publishes_then_exports_the_serving_mart() -> None:
+    """Warehouse DAG는 Publish 성공 뒤에만 독립된 Serving Mart를 내보낸다."""
     dag_source = (PROJECT_ROOT / "airflow/dags/warehouse_pipeline_dag.py").read_text(
         encoding="utf-8"
     )
     compile(dag_source, "warehouse_pipeline_dag.py", "exec")
 
-    for task_id in ("prepare_warehouse_build", "dbt_build", "publish_mart"):
+    for task_id in ("prepare_warehouse_build", "dbt_build", "publish_mart", "export_serving_mart"):
         pattern = rf'@task\(\s*task_id="{task_id}",\s*trigger_rule="all_success"'
         assert re.search(pattern, dag_source)
-    for task_id in ("dbt_build", "publish_mart"):
+    for task_id in ("dbt_build", "publish_mart", "export_serving_mart"):
         pattern = rf'task_id="{task_id}",\s*trigger_rule="all_success",\s*retries=0'
         assert re.search(pattern, dag_source)
-    assert "extract_results >> verification >> build >> dbt_result >> publish" in dag_source
-    assert "publish_run_summary(run_info, verification, build, publish)" in dag_source
+    assert "extract_results >> verification >> build >> dbt_result >> publish >> serving_export" in dag_source
+    assert "publish_run_summary(run_info, verification, build, publish, serving_export)" in dag_source
+    assert 'serving_export_status = "SUCCESS" if serving_export else "SERVING_EXPORT_FAILED"' in dag_source
     assert "sync_bronze_catalog" not in dag_source
     assert "subprocess" not in dag_source
     assert "CATALOG_PATH" not in dag_source
