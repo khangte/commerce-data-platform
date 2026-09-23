@@ -107,7 +107,10 @@ services:
     restart: unless-stopped
 
   metabase:
-    image: metabase/metabase:v0.63.16.1
+    build:
+      context: ./metabase
+      dockerfile: Dockerfile
+    image: commerce-data-platform-metabase:v0.63.16.1
     environment:
       MB_DB_TYPE: postgres
       MB_DB_DBNAME: ${METABASE_DB_NAME}

@@ -56,11 +56,11 @@ Metabase 연결과 권한 검증은 조회 대상 Model과 독립적이다. 어�
 
 ### 10-1-1. Connection Gate
 
-- [ ] `P10-01` Metabase Compose Service와 Health Check 구성
-- [ ] `P10-02` Metabase → DuckDB Driver 설치/Version/Lock 검증
-- [ ] `P10-03` Read-only 권한과 Published Mart만 노출되는지 검증
-- [ ] `P10-04` 재기동 후 Connection/Dashboard 지속성 확인
-- [ ] `P10-05` 연결 방식과 제한을 ADR-012에 기록
+- [x] `P10-01` Metabase Compose Service와 Health Check 구성
+- [x] `P10-02` Metabase → DuckDB Driver 설치/Version/Lock 검증
+- [x] `P10-03` Read-only 권한과 Published Mart만 노출되는지 검증
+- [x] `P10-04` 재기동 후 Connection/Dashboard 지속성 확인
+- [x] `P10-05` 연결 방식과 제한을 ADR-012에 기록
 
 기본 경로:
 
@@ -84,7 +84,7 @@ Metabase
 
 대안을 선택할 경우 동기화 시점, 원자성, Serving Schema, 추가 운영 비용을 ADR에 기록한다.
 
-구현 증적은 `src/serving/export.py`의 Mart 전용 원자 Export, `compose.yaml`의 `bi` Profile과 `metabase/README.md`의 Driver 설치 절차다. Docker 실행 파일이 없는 환경에서는 Connection Gate의 기동·Lock·재기동 측정을 수행하지 못했으므로 P10-01~P10-05는 완료로 표시하지 않는다.
+구현 증적은 `src/serving/export.py`의 Mart 전용 원자 Export, `compose.yaml`의 `bi` Profile과 `metabase/README.md`의 Driver 설치 절차다. 2026-09-23에 Run `5d74a326-954b-4850-a3d6-56d1556fec8d`의 `PUBLISHED` Mart 9개를 검증하고 Serving Export를 실행해 `data/serving/mart.duckdb`를 생성했다. Metabase는 health check를 통과했고 DuckDB 드라이버도 로드됐으며, 컨테이너 재기동 뒤에도 health check와 드라이버 등록을 재확인했다. `METABASE_API_KEY`로 등록한 `Commerce Mart Serving` Connection은 Mart 12개와 `dimensions`·`facts`·`metrics` Schema만 조회했고 `access_mode=read_only`·읽기 전용 `/serving` Mount를 확인했다. 재기동 뒤에도 Connection과 `metrics.rpt_membership_tier_performance` 조회가 유지돼 `P10-01`~`P10-05`를 완료했다.
 
 ## 10-2. 적용: Phase 6 완료 후 진행
 
@@ -179,7 +179,7 @@ Phase 10에는 별도 AC 번호가 없으므로 ROADMAP의 Connection/Dashboard 
 | `dbt/dbt_project.yml`, `tests/test_published_mart_queryable.py` | `marts.metrics`를 table로 실체화하고, 외부 접근 없이 Published Mart 전 객체가 조회되는 회귀 Test를 추가했다. |
 | `src/serving/`, `tests/serving/` | Mart Schema만 복사하고 Publish Hash·행 수를 Manifest에 보존하는 원자 Serving Export와 단위 Test를 추가했다. |
 | `airflow/dags/warehouse_pipeline_dag.py`, `tests/test_airflow_dags.py` | Publish 성공 뒤 Serving Export를 실행하고 Export 실패를 Publish와 분리해 Summary에 남기도록 연결했다. |
-| `compose.yaml`, `.env.example`, `sql/bootstrap/01-create-databases-and-roles.sh`, `metabase/` | `bi` Profile Metabase, 별도 애플리케이션 DB·역할, 읽기 전용 Serving Mount와 Driver 설치 문서를 추가했다. Connection Gate 준비 과정에서 플러그인 디렉터리를 Metabase UID/GID `2000`이 쓰도록 고쳐 DuckDB 드라이버가 로드됨을 확인했고, release `1.5.5.0` jar의 플러그인 표기 버전은 `1.4.1.0`임을 문서화했다. WSL 멈춤 완화를 위해 Metabase `JAVA_OPTS=-Xmx1g`, `mem_limit: 1536m`, `restart: "no"`를 적용했다. Serving Export는 최신 `PUBLISHED` 실행 기록이 없어 아직 생성되지 않았다. |
+| `compose.yaml`, `.env.example`, `sql/bootstrap/01-create-databases-and-roles.sh`, `metabase/`, `data/serving/` | `bi` Profile Metabase, 별도 애플리케이션 DB·역할, 읽기 전용 Serving Mount와 Driver 설치 문서를 추가했다. Connection Gate 준비 과정에서 플러그인 디렉터리를 Metabase UID/GID `2000`이 쓰도록 고쳐 DuckDB 드라이버가 로드됨을 확인했고, release `1.5.5.0` jar의 플러그인 표기 버전은 `1.4.1.0`임을 문서화했다. DuckDB JDBC native 라이브러리가 Alpine musl에서 동작하지 않아, `metabase/Dockerfile`은 공식 Metabase 앱을 glibc 기반 Temurin Java 이미지에서 실행하고 health check용 `wget`을 포함한다. WSL 멈춤 완화를 위해 Metabase `JAVA_OPTS=-Xmx1g`, `mem_limit: 1536m`, `restart: "no"`를 적용했다. `.env.example`에는 Connection Gate 자동 검증용 `METABASE_API_KEY`의 로컬 전용 안내를 추가했다. 2026-09-23 Run `5d74a326-954b-4850-a3d6-56d1556fec8d`에서 생성한 Serving Export는 Mart 12개를 `data/serving/mart.duckdb`에 담았고, `Commerce Mart Serving` Connection이 세 Mart Schema를 read-only로 조회한 뒤 컨테이너 재기동 후에도 유지됨을 확인했다. |
 | `docs/adr/012-metabase-serving-strategy.md` | Serving DuckDB 기본 경로와 Connection Gate 대기 상태를 ADR 초안에 기록했다. |
 
 ## Definition of Done

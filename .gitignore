@@ -2,6 +2,9 @@
 __pycache__/
 data/reliability/
 data/benchmarks/
+data/serving/
+metabase/plugins/*.jar
+metabase/plugins/*.sqlite
 *.py[codz]
 *$py.class
 
