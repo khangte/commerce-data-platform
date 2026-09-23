@@ -1,6 +1,6 @@
 # Phase 6. Dimensional Modeling
 
-> 상태: Done
+> 상태: Done  
 > Milestone: 2 — Data Platform Core  
 > 선행 Phase: [Phase 5. Bronze Catalog + Staging](phase-05-bronze-catalog-and-staging.md)  
 > 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.12](../../PRD_v1.12.md), [Mart Grain 계약](../reference/mart-grain.md)
@@ -60,6 +60,8 @@ Mart 하위 Schema 구성은 Grain 계약에서 결정한 Model 분류를 따른
 - [x] `P6-03` Measure 목록과 계산식, Additive 여부 결정
 - [x] `P6-04` 이력 추적 대상 속성과 Version 생성 규칙 결정
 - [x] `P6-05` 결정 사항을 [Mart Grain 계약](../reference/mart-grain.md)에 기록
+- [x] `P6-26` Mart Grain 계약 §2·§3 컬럼표를 구현과 정합
+- [x] `P6-27` Mart Grain 계약 §4 Report 계약 작성 (기존 `rpt_*` 3개)
 
 Model을 만들기 전에 Grain 문장을 먼저 쓴다. 컬럼 목록만으로는 중복의 의미를 판정할 수 없다.
 
@@ -191,6 +193,8 @@ Report Model은 Mart 위에서 파생된다. BI가 Source·Bronze·Staging을 �
 | `dbt/models/marts/facts/fact_subscription_payments.sql`                                                 | `payment_id` Grain의 계약별 구독 결제 시도 Fact를 구현했다.                                                                                |
 | `dbt/models/marts/*/schema.yml`, `dbt/tests/dim_subscription_*`, `dbt/tests/fct_subscription_payment_*` | 계약 SCD2, 열린 계약, 청구 회차·시도, 성공 금액, 실패 코드 계약을 Schema 및 Singular Test로 강제했다.                                      |
 | `tests/integration/test_subscription_payment_temporal_join_integration.py`                              | 계약 키·청구 회차·시도 순번 기준으로 Source→Bronze→dbt Fact의 계약·고객 Temporal Join을 E2E 검증하도록 갱신했다.                           |
+| `docs/reference/mart-grain.md`                                                                          | P6-26으로 Dimension·Fact 컬럼표를 현행 dbt 출력과 정합시키고, P6-27으로 기존 Report 3개의 Grain·키·컬럼·제약을 기록했다.                    |
+| `dbt/tests/rpt_membership_tier_performance_unique.sql`, `dbt/models/marts/metrics/rpt_subscription_payment_outcomes_daily.sql` | 기존 SQL Test·Model의 Grain 설명만 실제 그룹화 기준으로 바로잡았다. |
 
 ### v1.12 구독 Mart 전환
 
@@ -214,6 +218,8 @@ Report Model은 Mart 위에서 파생된다. BI가 Source·Bronze·Staging을 �
 - [x] Incremental과 Full Refresh의 Logical Hash가 같다.
 - [x] Phase 4 Warehouse DAG의 `dbt_build` 호출 경계가 활성화된다.
 - [x] AC-01, 09, 10, 11, 12가 통과한다.
+
+[042 Mart Grain 계약 컬럼 불일치 판정](../architect-review/042_mart-grain-column-drift-ruling.md)에 따라 2026-09-22에 P6-26·P6-27을 위해 Phase 6을 다시 열었다. 2026-09-23에 다시 닫았다. 근거: reviewer가 문서 정합을 통과시켰고(2026-09-22), 계약 컬럼표 12개 Mart의 컬럼 집합이 Published Run `a10d06c3`의 실제 컬럼과 모두 일치한다.
 
 ## Portfolio Evidence
 

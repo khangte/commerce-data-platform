@@ -1,6 +1,6 @@
 # Phase 7. Data Quality & Publish
 
-> 상태: In Progress  
+> 상태: Done  
 > Milestone: 2 — Data Platform Core  
 > 선행 Phase: [Phase 6. Dimensional Modeling](phase-06-dimensional-modeling.md)  
 > 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.14](../../PRD_v1.14.md), [Mart Grain 계약](../reference/mart-grain.md)
@@ -209,6 +209,8 @@ Normal E2E Unknown Key = 0
     | AC-13 | `tests/integration/test_observability_run_status_integration.py::test_observability_query_distinguishes_run_outcomes` → `1 passed` |
     | AC-16 | `./scripts/verify_clean_clone.sh` → `clean clone verification passed` |
 - [x] Publish 전략과 관측 근거가 ADR에 기록됐다.
+
+2026-09-22 발견한 Publish 경로 결함: `metrics` Model이 View로 실체화돼 있었다. ADR-016의 Build 파일 교체 이후 Published Warehouse의 모든 `rpt_*` View가 `Binder Error: Catalog "…" does not exist!`로 실패했다. 수정(`marts.metrics` → `table`)은 Phase 10 Task 1(`docs/superpowers/plans/2026-09-22-phase10-bi.md`)이 맡았고, Published Run `a10d06c3`에서 `rpt_*` 3개가 `BASE TABLE`임을 확인했다. 이 결함을 주장한 `P7-*` 항목은 없으므로 Phase 7 Task는 다시 열지 않는다([042](../architect-review/042_mart-grain-column-drift-ruling.md) §3).
 
 ## Portfolio Evidence
 
