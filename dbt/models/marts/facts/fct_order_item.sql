@@ -12,6 +12,7 @@ select
     order_item_id,
     product_id,
     seller_id,
+    purchase_date_key,
     price as item_price,
     freight_value,
     line_gross_value

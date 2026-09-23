@@ -324,6 +324,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--warehouse-root", type=Path, default=DEFAULT_WAREHOUSE_ROOT)
     parser.add_argument("--pipeline-name", default="manual_publish")
     parser.add_argument("--dbt-vars", help="YAML/JSON string passed to dbt --vars")
+    parser.add_argument(
+        "--full-refresh",
+        action="store_true",
+        help="dbt build에 --full-refresh를 전달한다",
+    )
     parser.add_argument("--recover-only", action="store_true")
     args = parser.parse_args(argv)
 
@@ -335,9 +340,14 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps({"recovered": [str(run_id) for run_id in recovered]}))
         return 0
 
-    runner: DbtRunner = run_dbt_build
+    extra_args: list[str] = []
+    if args.full_refresh:
+        extra_args.append("--full-refresh")
     if args.dbt_vars is not None:
-        runner = partial(run_dbt_build, extra_args=("--vars", args.dbt_vars))
+        extra_args.extend(("--vars", args.dbt_vars))
+    runner: DbtRunner = run_dbt_build
+    if extra_args:
+        runner = partial(run_dbt_build, extra_args=tuple(extra_args))
     run = PublishRun(uuid.uuid4(), args.pipeline_name)
     try:
         outcome = publish_warehouse(settings, paths, run, dbt_runner=runner)

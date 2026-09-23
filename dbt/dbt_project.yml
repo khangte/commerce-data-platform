@@ -35,5 +35,5 @@ models:
         +materialized: incremental
         +schema: facts
       metrics:
-        +materialized: view
+        +materialized: table
         +schema: metrics

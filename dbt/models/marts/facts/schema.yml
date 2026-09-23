@@ -51,6 +51,13 @@ models:
               arguments:
                 to: ref('dim_seller')
                 field: seller_id
+      - name: purchase_date_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_date')
+                field: date_key
       - name: item_price
         data_tests: [non_negative]
       - name: freight_value
