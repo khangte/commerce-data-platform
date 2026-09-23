@@ -24,6 +24,7 @@ from src.benchmark.duckdb_s3 import configure_s3
 from src.benchmark.experiments import EXPERIMENTS, SCENARIOS
 from src.benchmark.measure import RowCounts, measure
 from src.benchmark.runner import ArmResult
+from src.benchmark.settings import benchmark_settings
 from src.benchmark.store import BENCHMARK_DATA_ROOT
 from src.common.row_hash import canonical_row_json
 from src.ingestion.storage import (
@@ -53,7 +54,7 @@ def run_file_format_experiment(config: RunConfig) -> Mapping[str, ArmResult]:
     Fixture 생성과 CSV Export는 측정 밖에서 수행하고, 읽어서 Canonical Hash를
     계산하는 구간만 측정한다.
     """
-    storage = SeaweedFSSettings.from_environment()
+    storage = benchmark_settings().storage
     row_count = config.scale.order_count
 
     with tempfile.TemporaryDirectory(prefix="bench-file-format-") as tmp:
@@ -176,7 +177,7 @@ def export_csv_mirror(catalog_path: Path, table: str, destination: Path) -> Path
     if BENCHMARK_DATA_ROOT not in destination.parents:
         raise ValueError("CSV mirror must live under data/benchmarks/")
     config = table_config(table)
-    storage = SeaweedFSSettings.from_environment()
+    storage = benchmark_settings().storage
     column_list = ", ".join(f'"{column}"' for column in config.source_column_names)
     order_by = ", ".join(f'"{column}"' for column in config.primary_key_columns)
     destination.parent.mkdir(parents=True, exist_ok=True)

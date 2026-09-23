@@ -132,6 +132,13 @@ Median과 Result Hash 비교
 
 ## 실험 통제 Matrix
 
+### 9-3. 사후 조치: 운영 Bronze 혼입 제거와 다음 실행 격리
+
+- [x] `P9-25` 044 판정에 따라 운영 Source·Metadata·Bronze·Catalog를 Seed 기준으로 재기준화하고,
+  Extract·File Format이 전용 DB·Bucket 없이는 실행되지 않게 했다. 재기준화 전 Inventory,
+  백업, `bench-*` 428건 집계와 재기준화 후 `bench-*` 0건은
+  [044 판정 실행 기록](../architect-review/044_benchmark-bronze-isolation-ruling.md#5-실행-기록)에 남겼다.
+
 각 비교에서 다음 값이 같아야 한다.
 
 | 통제 변수                       | 기록 위치              |
@@ -202,10 +209,10 @@ Result Hash 동일
 
 | 경로 | 변경 내용 |
 | --- | --- |
-| `src/benchmark/` | Scenario/Config, 측정·Metadata·Raw JSONL 저장, Cache 초기화와 A~D·Overhead 실험 구현을 추가했다. |
-| `tests/benchmark/` | Harness·측정·Hash·각 실험의 단위/통합 검증과 Arrow Batch Hash 등가성 검증을 추가했다. |
+| `src/benchmark/` | Scenario/Config, 측정·Metadata·Raw JSONL 저장, Cache 초기화와 A~D·Overhead 실험을 구현했고, `settings.py`에서 Extract·File Format의 전용 DB·Bucket 격리 Guard를 추가했다. |
+| `tests/benchmark/` | Harness·측정·Hash·각 실험의 단위/통합 검증과 Arrow Batch Hash 등가성 검증, Benchmark 격리 값 누락·운영 값 재사용 거부 Test를 추가했다. |
 | `scripts/d_control_experiments.py`, `scripts/profile_file_format_read.py` | Cache 순서 교락 대조와 File Format 병목 구간 분해를 재현 가능한 진단으로 추가했다. |
-| `docs/benchmarks/` | 환경, A~D Raw 5회·Median·Hash, L Scale 자원 관측, 개선 전후·트레이드오프·재현 명령을 기록했다. |
+| `docs/benchmarks/` | 환경, A~D Raw 5회·Median·Hash, L Scale 자원 관측, 개선 전후·트레이드오프·재현 명령과 044 이후 저장소 격리 전제를 기록했다. |
 | `docs/architect-review/` | 실험 방법·Cache/Extract 교정·Task 16 병목 선정과 개선 검수의 승인 근거를 기록했다. |
 
 ## Definition of Done

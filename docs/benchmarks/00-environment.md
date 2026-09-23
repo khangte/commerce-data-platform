@@ -1,6 +1,6 @@
 # Phase 9 벤치마크 — 실행 환경 (S Scale)
 
-버전 1. Task 13(S Scale Harness 검증) 완료 시점 기준.
+버전 2. Task 13(S Scale Harness 검증) 완료 시점과 2026-09-23 Benchmark 저장소 격리 조치 기준.
 
 ## 1. 재현 명령
 
@@ -12,6 +12,25 @@ uv run python -m src.benchmark report --benchmark-id <benchmark_id>
 ```
 
 실행(run) 명령은 실험별로 다르다.
+
+### 저장소를 쓰는 실험의 격리 전제
+
+2026-09-23 이전 Extract·File Format 실험은 운영 `commerce_source`,
+`pipeline_metadata`, SeaweedFS Bucket을 함께 사용해 운영 Bronze에 `bench-*` Object를
+혼입시켰다. 이 실행 결과는 당시의 성능 증거로 보존하되, 같은 저장소에 다시 실행해서는
+안 된다. 판정과 재기준화 결과는 [044 Benchmark Bronze 혼입 판정](../architect-review/044_benchmark-bronze-isolation-ruling.md)이 정본이다.
+
+`extract`와 `file_format`은 다음 세 환경 변수가 모두 있어야 실행된다.
+
+```text
+BENCHMARK_COMMERCE_SOURCE_DB
+BENCHMARK_PIPELINE_METADATA_DB
+BENCHMARK_SEAWEEDFS_BUCKET
+```
+
+각 값은 대응하는 운영 값과 반드시 달라야 한다. 누락하거나 같으면 코드가 fail-closed로
+실행을 거부한다. Host·Port·계정은 운영 연결 값을 재사용한다. 전용 DB·Bucket은 다음
+Benchmark 계획에서 준비한다. 저장소를 쓰지 않는 `scan`과 `cache_effect`는 이 Guard 대상이 아니다.
 
 ### Experiment B(File Format)
 

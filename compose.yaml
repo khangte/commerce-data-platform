@@ -40,6 +40,7 @@ x-airflow-common: &airflow-common
     - ./sql:/opt/airflow/project/sql:ro
     - ./dbt:/opt/airflow/project/dbt
     - ./data/warehouse:/opt/airflow/project/data/warehouse
+    - ./data/serving:/opt/airflow/project/data/serving
   profiles:
     - airflow
 
@@ -67,6 +68,9 @@ services:
       AIRFLOW_DB_PASSWORD: ${AIRFLOW_DB_PASSWORD}
       PIPELINE_DB_USER: ${PIPELINE_DB_USER}
       PIPELINE_DB_PASSWORD: ${PIPELINE_DB_PASSWORD}
+      METABASE_DB_NAME: ${METABASE_DB_NAME}
+      METABASE_DB_USER: ${METABASE_DB_USER}
+      METABASE_DB_PASSWORD: ${METABASE_DB_PASSWORD}
     ports:
       - "${POSTGRES_PORT}:5432"
     volumes:
@@ -101,6 +105,36 @@ services:
       retries: 20
       start_period: 10s
     restart: unless-stopped
+
+  metabase:
+    image: metabase/metabase:v0.63.16.1
+    environment:
+      MB_DB_TYPE: postgres
+      MB_DB_DBNAME: ${METABASE_DB_NAME}
+      MB_DB_HOST: postgres
+      MB_DB_PORT: "5432"
+      MB_DB_USER: ${METABASE_DB_USER}
+      MB_DB_PASS: ${METABASE_DB_PASSWORD}
+      MB_PLUGINS_DIR: /plugins
+      JAVA_OPTS: -Xmx1g
+    ports:
+      - "${METABASE_PORT}:3000"
+    volumes:
+      - ./data/serving:/serving:ro
+      - ./metabase/plugins:/plugins
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    mem_limit: 1536m
+    restart: "no"
+    profiles:
+      - bi
 
   airflow-init:
     <<: *airflow-common

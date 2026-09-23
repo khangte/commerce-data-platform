@@ -255,6 +255,7 @@ Normal E2E Unknown Key = 0
 | `src/warehouse/errors.py`, `src/ingestion/errors.py` | 생성·수정 | Warehouse 오류 분류와 기본 `UNKNOWN_ERROR`를 추가했다. |
 | `sql/metadata/005_create_mart_publish_runs.sql`, `src/warehouse/publish_metadata.py` | 생성 | Publish 상태 전이와 활성 실행 Mutex를 구현했다. |
 | `src/warehouse/dbt_runner.py`, `src/warehouse/publish.py` | 생성 | 격리 Build, dbt 결과 분류, 원자 파일 교체, 복구 CLI를 구현했다. |
+| `dbt/profiles.yml` | 수정 | WSL 자원 상한을 위해 DuckDB 내부 `memory_limit: '2GB'`와 `threads: 2`를 설정했다. |
 | `tests/integration/test_corruption_matrix_integration.py`, `tests/integration/test_child_parent_references_integration.py` | 생성·수정 | Corruption Matrix 5종과 Snapshot 이후 Parent Commit 비가시성 검증을 추가했다. |
 | `tests/integration/test_observability_run_status_integration.py` | 생성 | Batch별 성공·빈·실패·재실행·Publish 실패 상태를 관측 SQL로 검증한다. |
 | `tests/integration/test_publish_gate_dbt_integration.py` | 생성 | 실제 dbt Canary 실패가 Published Warehouse Hash와 Row Count를 바꾸지 못함을 검증한다. |

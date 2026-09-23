@@ -9,6 +9,8 @@ commerce_data_platform:
       extensions:
         - httpfs
       settings:
+        memory_limit: '2GB'
+        threads: 2
         s3_endpoint: "{{ env_var('SEAWEEDFS_HOST', 'localhost') }}:{{ env_var('SEAWEEDFS_S3_PORT', '8333') }}"
         s3_region: us-east-1
         s3_url_style: path

@@ -20,7 +20,7 @@ Metabase에서 검증 완료된 Mart만 사용해 Sales, Product, Customer Dashb
 ## 구독·등급 전환 Step 7 사전 지표
 
 Metabase Dashboard 구현 전에도 BI가 Source·Bronze가 아닌 Mart만 읽도록, 아래 `metrics`
-Schema View를 제공한다. 이는 Phase 10의 연결·Dashboard·스크린샷 완료를 뜻하지 않는다.
+Schema Table을 제공한다. 이는 Phase 10의 연결·Dashboard·스크린샷 완료를 뜻하지 않는다.
 
 | View | 용도 |
 | ---- | ---- |
@@ -67,7 +67,9 @@ Metabase 연결과 권한 검증은 조회 대상 Model과 독립적이다. 어�
 ```text
 Metabase
     ↓
-DuckDB Published Mart
+읽기 전용 Serving DuckDB (`data/serving/mart.duckdb`)
+    ↑
+Published Mart → Serving Export
 ```
 
 Driver 또는 File Lock 문제가 V1 운영 조건에서 해결되지 않으면 다음 대안을 사용한다.
@@ -81,6 +83,8 @@ Metabase
 ```
 
 대안을 선택할 경우 동기화 시점, 원자성, Serving Schema, 추가 운영 비용을 ADR에 기록한다.
+
+구현 증적은 `src/serving/export.py`의 Mart 전용 원자 Export, `compose.yaml`의 `bi` Profile과 `metabase/README.md`의 Driver 설치 절차다. Docker 실행 파일이 없는 환경에서는 Connection Gate의 기동·Lock·재기동 측정을 수행하지 못했으므로 P10-01~P10-05는 완료로 표시하지 않는다.
 
 ## 10-2. 적용: Phase 6 완료 후 진행
 
@@ -167,6 +171,16 @@ Phase 10에는 별도 AC 번호가 없으므로 ROADMAP의 Connection/Dashboard 
 - Metric Dictionary와 Model 관계 문서
 - Dashboard 재현/Export 자료
 - dbt 기준 Query와 Dashboard Total 비교 결과
+
+## 파일·폴더별 변경 요약
+
+| 경로 | 변경 내용 |
+| ---- | --------- |
+| `dbt/dbt_project.yml`, `tests/test_published_mart_queryable.py` | `marts.metrics`를 table로 실체화하고, 외부 접근 없이 Published Mart 전 객체가 조회되는 회귀 Test를 추가했다. |
+| `src/serving/`, `tests/serving/` | Mart Schema만 복사하고 Publish Hash·행 수를 Manifest에 보존하는 원자 Serving Export와 단위 Test를 추가했다. |
+| `airflow/dags/warehouse_pipeline_dag.py`, `tests/test_airflow_dags.py` | Publish 성공 뒤 Serving Export를 실행하고 Export 실패를 Publish와 분리해 Summary에 남기도록 연결했다. |
+| `compose.yaml`, `.env.example`, `sql/bootstrap/01-create-databases-and-roles.sh`, `metabase/` | `bi` Profile Metabase, 별도 애플리케이션 DB·역할, 읽기 전용 Serving Mount와 Driver 설치 문서를 추가했다. Connection Gate 준비 과정에서 플러그인 디렉터리를 Metabase UID/GID `2000`이 쓰도록 고쳐 DuckDB 드라이버가 로드됨을 확인했고, release `1.5.5.0` jar의 플러그인 표기 버전은 `1.4.1.0`임을 문서화했다. WSL 멈춤 완화를 위해 Metabase `JAVA_OPTS=-Xmx1g`, `mem_limit: 1536m`, `restart: "no"`를 적용했다. Serving Export는 최신 `PUBLISHED` 실행 기록이 없어 아직 생성되지 않았다. |
+| `docs/adr/012-metabase-serving-strategy.md` | Serving DuckDB 기본 경로와 Connection Gate 대기 상태를 ADR 초안에 기록했다. |
 
 ## Definition of Done
 

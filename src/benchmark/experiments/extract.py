@@ -26,6 +26,7 @@ from src.benchmark.duckdb_s3 import configure_s3
 from src.benchmark.experiments import EXPERIMENTS, PREPARE_HOOKS, SCENARIOS
 from src.benchmark.measure import RowCounts, measure
 from src.benchmark.runner import ArmResult
+from src.benchmark.settings import benchmark_settings
 from src.common.database import PostgresSettings
 from src.common.row_hash import hash_cursor_rows
 from src.generator.config import GENERATOR_VERSION, GeneratorConfig
@@ -60,8 +61,9 @@ def prepare_extract_fixture(config: RunConfig) -> RunConfig:
     없어 버린다. Delta Row 수는 추정이 아니라 실제 Postgres 조회로 잰다. 이후 5회
     반복 동안 `run_generator()`는 다시 부르지 않는다 — 원천은 T1에서 동결.
     """
-    postgres = PostgresSettings.from_environment()
-    storage = SeaweedFSSettings.from_environment()
+    settings = benchmark_settings()
+    postgres = settings.postgres
+    storage = settings.storage
     change_rate_target = config.parameters.get("change_rate", 0.1)
     order_count_t0 = config.scale.order_count
     # T1 Generator 호출의 order_count는 총량이 아니라 이번 호출이 새로 넣을 건수다.
@@ -127,8 +129,9 @@ def run_extract_experiment(config: RunConfig) -> Mapping[str, ArmResult]:
     Catalog Hash를 만든다(측정 밖). `config.run_number`를 DAG ID에 섞어 반복마다 다른
     Batch Identity를 만든다 — 같으면 멱등 재사용 경로로 빠져 실제 작업이 측정되지 않는다.
     """
-    postgres = PostgresSettings.from_environment()
-    storage = SeaweedFSSettings.from_environment()
+    settings = benchmark_settings()
+    postgres = settings.postgres
+    storage = settings.storage
     t_boundary: datetime = config.parameters["t_boundary"]
     t0_incremental: tuple[TableIngestionResult, ...] = config.parameters["t0_incremental_results"]
 
@@ -438,7 +441,7 @@ def _write_bronze_catalog(catalog_path: Path, results: list[TableIngestionResult
 def bronze_logical_hash(catalog_path: Path, table: str) -> tuple[str, int]:
     """Catalog에 등록된 한 Table의 커밋된 Bronze Row를 PK 순서로 Canonical Hash한다."""
     config = table_config(table)
-    storage = SeaweedFSSettings.from_environment()
+    storage = benchmark_settings().storage
     column_list = ", ".join(f'"{column}"' for column in config.source_column_names)
     order_by = ", ".join(f'"{column}"' for column in config.primary_key_columns)
     with duckdb.connect(str(catalog_path)) as connection:
