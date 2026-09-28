@@ -185,9 +185,9 @@ refunded  → REFUNDED
 | ---- | ---------------------------------------- |
 | PRD  | Section 10.4 Commit File Catalog         |
 | PRD  | Section 14.1 Staging                     |
-| ADR  | ADR-002 DuckDB Local Warehouse           |
-| ADR  | ADR-008 Staging Naming 표준화            |
-| ADR  | ADR-010 메타데이터 기반 Bronze 파일 목록 |
+| ADR  | [ADR-002 DuckDB Local Warehouse](../adr/002-use-duckdb-as-local-warehouse.md) |
+| ADR  | [ADR-008 Staging Naming 표준화](../adr/008-preserve-olist-source-schema-and-standardize-in-dbt-staging.md) |
+| ADR  | [ADR-010 메타데이터 기반 Bronze 파일 목록](../adr/010-use-metadata-backed-bronze-file-catalog.md) |
 | FR   | FR-10 dbt Staging                        |
 
 ## 산출물
@@ -215,6 +215,8 @@ refunded  → REFUNDED
 | `dbt/README.md`                                | 루트 기준 dbt 실행 명령과 Catalog Macro의 입력 경계를 기록했다.                                                                                                                               |
 | `tests/test_dbt_catalog_macro.py`               | 빈 Catalog 처리, Commit된 명시적 Parquet 목록 생성, 미지원 Schema Version의 dbt 사전 차단을 독립 DuckDB로 검증한다.                                                                            |
 
+| `docs/adr/002-use-duckdb-as-local-warehouse.md`, `docs/adr/008-preserve-olist-source-schema-and-standardize-in-dbt-staging.md`, `docs/adr/010-use-metadata-backed-bronze-file-catalog.md` | DuckDB Warehouse, Staging 표준화, Metadata 기반 Bronze 입력 결정을 ADR로 기록했다. |
+
 ## Definition of Done
 
 - [x] 모든 `P5-*` Task가 완료됐다.
@@ -222,6 +224,8 @@ refunded  → REFUNDED
 - [x] Staging Naming/상태 Mapping이 100% 일치한다. (`stg_source_mapping` 계약 테스트 PASS)
 - [x] Staging이 원천 Grain을 바꾸지 않는다.
 - [x] AC-19, AC-22가 통과한다.
+
+- [x] 요구사항 추적표가 참조하는 ADR-002·ADR-008·ADR-010 문서가 존재한다.
 
 ## Portfolio Evidence
 

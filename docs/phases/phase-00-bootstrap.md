@@ -85,7 +85,7 @@ docker compose config
 | PRD  | Section 3 개발 환경과 Version Baseline | Version 출력과 Lockfile       |
 | PRD  | Section 23 Repository Structure        | 실제 디렉터리 구조            |
 | PRD  | Section 24 Phase 0 DoD                 | 검증 명령 결과                |
-| ADR  | ADR-007 Version Pinning Policy         | Lockfile과 고정 Image Version |
+| ADR  | [ADR-007 Version Pinning Policy](../adr/007-version-pinning-policy.md) | Lockfile과 고정 Image Version |
 | AC   | AC-16 새 Clone의 Bootstrap 부분        | 새 Clone 재현 기록            |
 
 AC-16의 전체 E2E/dbt 검증은 Phase 7 이후 완료하며, 이 Phase에서는 환경 재현성만 검증한다.
@@ -117,6 +117,7 @@ AC-16의 전체 E2E/dbt 검증은 Phase 7 이후 완료하며, 이 Phase에서�
 | `tests/test_bootstrap.py`                                      | 생성              | 프로젝트 골격과 Bootstrap 계약을 확인하는 Smoke Test를 추가했다.               |
 | `README.md`                                                    | 생성·수정         | 사전 조건, 설치, 검증, Dataset 다운로드 방법을 추가했다.                       |
 | `AGENTS.md`                                                    | 생성 후 추적 제외 | 로컬 작업 규칙과 구현·문서 동기화 규칙을 추가했으며 현재 Git에는 포함하지 않는다. |
+| `docs/adr/007-version-pinning-policy.md`                       | 생성              | Version Baseline의 고정·변경 Gate 결정을 ADR 형식으로 기록했다. |
 
 ## Definition of Done
 
@@ -126,6 +127,7 @@ AC-16의 전체 E2E/dbt 검증은 Phase 7 이후 완료하며, 이 Phase에서�
 - [x] Git Ignore 정책이 Runtime Data와 Secret을 차단한다.
 - [x] README만으로 Bootstrap 절차를 재현했다.
 - [x] 실제 구현과 문서가 다르면 관련 문서 또는 ADR을 갱신했다.
+- [x] 요구사항 추적표가 참조하는 ADR-007 문서가 존재한다.
 
 ## 검증 증적
 

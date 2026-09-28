@@ -165,8 +165,8 @@ Report Model은 Mart 위에서 파생된다. BI가 Source·Bronze·Staging을 �
 | PRD  | Section 14.4 Incremental                  |
 | PRD  | Section 15 이력 추적 요구사항             |
 | PRD  | Section 16 Late Arrival, Backfill, Re-run |
-| ADR  | ADR-009 관측 기반 고객 이력               |
-| ADR  | ADR-011 Late Arrival 재처리 전략          |
+| ADR  | [ADR-009 관측 기반 고객 이력](../adr/009-use-observed-history-for-customer-scd2.md) |
+| ADR  | [ADR-011 Late Arrival 재처리 전략](../adr/011-late-arrival-reprocessing-strategy.md) |
 | FR   | FR-10 dbt Intermediate/Mart               |
 | FR   | FR-11 Star Schema/Fact Grain              |
 | FR   | FR-14 Late Arrival 재처리                 |
@@ -195,6 +195,7 @@ Report Model은 Mart 위에서 파생된다. BI가 Source·Bronze·Staging을 �
 | `tests/integration/test_subscription_payment_temporal_join_integration.py`                              | 계약 키·청구 회차·시도 순번 기준으로 Source→Bronze→dbt Fact의 계약·고객 Temporal Join을 E2E 검증하도록 갱신했다.                           |
 | `docs/reference/mart-grain.md`                                                                          | P6-26으로 Dimension·Fact 컬럼표를 현행 dbt 출력과 정합시키고, P6-27으로 기존 Report 3개의 Grain·키·컬럼·제약을 기록했다.                    |
 | `dbt/tests/rpt_membership_tier_performance_unique.sql`, `dbt/models/marts/metrics/rpt_subscription_payment_outcomes_daily.sql` | 기존 SQL Test·Model의 Grain 설명만 실제 그룹화 기준으로 바로잡았다. |
+| `docs/adr/009-use-observed-history-for-customer-scd2.md`, `docs/adr/011-late-arrival-reprocessing-strategy.md` | 관측 기반 고객 이력과 Late Arrival 재처리 결정을 ADR로 기록했다. |
 
 ### v1.12 구독 Mart 전환
 
@@ -218,6 +219,8 @@ Report Model은 Mart 위에서 파생된다. BI가 Source·Bronze·Staging을 �
 - [x] Incremental과 Full Refresh의 Logical Hash가 같다.
 - [x] Phase 4 Warehouse DAG의 `dbt_build` 호출 경계가 활성화된다.
 - [x] AC-01, 09, 10, 11, 12가 통과한다.
+
+- [x] 요구사항 추적표가 참조하는 ADR-009·ADR-011 문서가 존재한다.
 
 [042 Mart Grain 계약 컬럼 불일치 판정](../architect-review/042_mart-grain-column-drift-ruling.md)에 따라 2026-09-22에 P6-26·P6-27을 위해 Phase 6을 다시 열었다. 2026-09-23에 다시 닫았다. 근거: reviewer가 문서 정합을 통과시켰고(2026-09-22), 계약 컬럼표 12개 Mart의 컬럼 집합이 Published Run `a10d06c3`의 실제 컬럼과 모두 일치한다.
 

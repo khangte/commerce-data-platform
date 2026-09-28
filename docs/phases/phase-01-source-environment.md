@@ -143,8 +143,8 @@ Source Schema Allowlist
 | PRD  | Section 4 공통 데이터 계약                  | Type/Timestamp Schema Test |
 | PRD  | Section 5 Seed 계약                         | Raw Checksum, Seed Run     |
 | PRD  | Section 6 PostgreSQL Source 계약            | DDL과 제약조건 Test        |
-| ADR  | ADR-006 Single PostgreSQL Container         | Database/Role 구성         |
-| ADR  | ADR-008 Source Schema 보존과 Staging 표준화 | Allowlist/Naming Test      |
+| ADR  | [ADR-006 Single PostgreSQL Container](../adr/006-use-single-postgres-container.md) | Database/Role 구성         |
+| ADR  | [ADR-008 Source Schema 보존과 Staging 표준화](../adr/008-preserve-olist-source-schema-and-standardize-in-dbt-staging.md) | Allowlist/Naming Test      |
 | FR   | FR-01 Raw-compatible Olist Seed             | Seed Loader 실행 기록      |
 | AC   | AC-14 Seed 2회                              | Count/Content Hash 비교    |
 | AC   | AC-18 Source Schema Allowlist               | Schema/Value 비교 결과     |
@@ -184,6 +184,7 @@ Source Schema Allowlist
 | `docs/architecture/02-subscription-membership-transition-plan.md` | 생성·수정 | 구독 상태와 거래 실적 등급 분리, 전환 순서를 기록했다. |
 | `docs/architecture/04-membership-table-split-comparison.md` | 생성 | 통합·Source분리·완전분리 세 안을 비교하고 B안(Source만 분리)으로 확정했다. |
 | `docs/architecture/03-subscription-lifecycle-requirements.md` | 생성 | 구독 주기 1개월, 자동결제, 유예 7일, 만료 스캔 요구사항을 확정했다. |
+| `docs/adr/006-use-single-postgres-container.md`, `docs/adr/008-preserve-olist-source-schema-and-standardize-in-dbt-staging.md` | 생성 | PostgreSQL Database·역할 경계와 원천 Schema 보존·Staging 표준화 결정을 ADR로 기록했다. |
 
 Membership Grain 분리 후 `customers`는 계정 불변값과 `created_at`만 보관한다. 사람 단위
 구독 생명주기는 `customer_subscriptions`, 거래 실적 등급은 `customer_membership_tiers`가 각각
@@ -214,6 +215,7 @@ Membership Grain 분리 후 `customers`는 계정 불변값과 `created_at`만 �
 - [x] AC-14와 AC-18이 자동 또는 재현 가능한 명령으로 통과한다.
 - [x] Source Naming에 분석용 Rename이 섞이지 않았다.
 - [x] Credential이 Git과 실행 증적에 노출되지 않았다.
+- [x] 요구사항 추적표가 참조하는 ADR-006·ADR-008 문서가 존재한다.
 
 ## 검증 증적
 

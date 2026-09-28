@@ -404,12 +404,12 @@ Phase 3에서는 Framework-independent Python Pipeline을 완성하고 Phase 4�
 | 구분 | 연결 항목                                                        |
 | ---- | ---------------------------------------------------------------- |
 | PRD  | Sections 8~12 증분, Identity, Bronze, Validation, Metadata       |
-| ADR  | ADR-001/003 SeaweedFS와 Parquet Bronze                           |
-| ADR  | ADR-004/005 Table별 증분과 Composite Watermark                   |
-| ADR  | ADR-010 메타데이터 기반 Bronze 파일 목록                         |
-| ADR  | ADR-013 원천 변경/수집 동시성                                    |
-| ADR  | ADR-014 메타데이터 커밋 상태 기준                                |
-| ADR  | ADR-015 Bronze Schema Evolution                                  |
+| ADR  | [ADR-001 SeaweedFS](../adr/001-use-seaweedfs-as-local-s3-compatible-storage.md)·[ADR-003 Parquet Bronze](../adr/003-use-parquet-for-bronze.md) |
+| ADR  | [ADR-004 테이블별 증분](../adr/004-use-table-specific-incremental-strategy.md)·[ADR-005 Composite Watermark](../adr/005-use-composite-watermark-and-fixed-upper-bound.md) |
+| ADR  | [ADR-010 메타데이터 기반 Bronze 파일 목록](../adr/010-use-metadata-backed-bronze-file-catalog.md) |
+| ADR  | [ADR-013 원천 변경/수집 동시성](../adr/013-source-mutation-and-warehouse-extract-concurrency.md) |
+| ADR  | [ADR-014 메타데이터 커밋 상태 기준](../adr/014-use-metadata-as-bronze-commit-authority.md) |
+| ADR  | [ADR-015 Bronze Schema Evolution](../adr/015-bronze-schema-evolution-policy.md) |
 | FR   | FR-03~08 Incremental/Watermark/Lease/Metadata/Bronze/Idempotency |
 | FR   | FR-13 Backfill 입력 경계                                         |
 | FR   | FR-16/17 Quarantine와 Bronze Schema Version                      |
@@ -489,6 +489,7 @@ Phase 3에서는 Framework-independent Python Pipeline을 완성하고 Phase 4�
 | `tests/test_rebaseline.py`                                       | 생성      | 구 Membership Table 제거와 결제 이력 0건 기준 재기준화가 성공하는 계약을 검증한다. |
 | `docs/phases/phase-03-incremental-ingestion.md`                  | 수정      | Phase 3A Decimal, Phase 3B 공통 Commit, Phase 3C Quarantine, Phase 3D 잠금·Catalog·Schema Contract 진행 상태와 구독·등급 분리 후 9개 Table 구현 범위를 기록했다. |
 | `src/ingestion/`, `scripts/`, `tests/`                           | 수정      | Phase 3 관련 모듈·운영 스크립트·테스트의 docstring을 개조식 접두사 없이 짧은 일반 문장으로 통일했다.                                                                                                                                                                               |
+| `docs/adr/001-use-seaweedfs-as-local-s3-compatible-storage.md`, `docs/adr/003-use-parquet-for-bronze.md`, `docs/adr/004-use-table-specific-incremental-strategy.md`, `docs/adr/005-use-composite-watermark-and-fixed-upper-bound.md`, `docs/adr/010-use-metadata-backed-bronze-file-catalog.md`, `docs/adr/013-source-mutation-and-warehouse-extract-concurrency.md`, `docs/adr/014-use-metadata-as-bronze-commit-authority.md`, `docs/adr/015-bronze-schema-evolution-policy.md` | 생성 | Bronze 저장·증분 경계·동시성·Commit 권한·Schema Version 결정을 ADR로 기록했다. |
 
 ## Definition of Done
 
@@ -521,6 +522,7 @@ uv run python -m src.rebaseline --seeded-at 2026-09-03T00:00:00Z --confirm
 - [x] Reject와 Batch Failure 정책이 구분된다.
 - [x] 원천 데이터 동시성 잠금과 테이블별 수집 잠금, Watermark CAS가 경쟁 조건을 차단한다.
 - [x] Phase 3의 모든 AC가 재현 가능한 명령으로 통과한다.
+- [x] 요구사항 추적표가 참조하는 ADR-001·003·004·005·010·013·014·015 문서가 존재한다.
 
 ## 구독·등급 전환 반영 완료
 

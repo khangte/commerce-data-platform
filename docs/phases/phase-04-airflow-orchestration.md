@@ -432,8 +432,8 @@ AC-01과 AC-16의 Fact/dbt 부분은 Phase 5~6에서 완성한다.
 | PRD  | Section 12 Pipeline Metadata             |
 | PRD  | Section 13 Airflow 실행 계약             |
 | PRD  | Section 18 Observability와 오류          |
-| ADR  | ADR-010 메타데이터 기반 Bronze 파일 목록 |
-| ADR  | ADR-013 원천 변경/수집 동시성            |
+| ADR  | [ADR-010 메타데이터 기반 Bronze 파일 목록](../adr/010-use-metadata-backed-bronze-file-catalog.md) |
+| ADR  | [ADR-013 원천 변경/수집 동시성](../adr/013-source-mutation-and-warehouse-extract-concurrency.md) |
 | FR   | FR-08 Idempotency와 Orphan Recovery      |
 | FR   | FR-09 Airflow Pipeline                   |
 
@@ -460,6 +460,8 @@ AC-01과 AC-16의 Fact/dbt 부분은 Phase 5~6에서 완성한다.
 - [x] XCom 금지 Payload가 존재하지 않는다.
 - [x] Lease 해제 후 Catalog/dbt 구간에서 Generator가 원천 데이터 동시성 잠금을 획득할 수 있다.
 - [x] dbt Project 미구현 상태에서 Warehouse DAG가 dbt 성공을 가장하지 않는다.
+
+- [x] 요구사항 추적표가 참조하는 ADR-010·ADR-013 문서가 존재한다.
 
 ## 구독·등급 전환 반영 완료
 
@@ -516,3 +518,4 @@ Project/CLI와 Test를 완성한 뒤, Warehouse DAG의 `dbt_build` 호출 경계
 | `.env.example`                                  | 수정 | `RUN_AIRFLOW_SMOKE_TEST`/`RUN_SEAWEEDFS_INTEGRATION` Test Opt-in 환경 변수 안내 주석을 추가했다. |
 | `airflow/dags/source_simulation_dag.py`         | 수정 | Generator 성공 뒤 같은 `logical_date`로 `warehouse_pipeline_dag`를 자동 트리거하는 `TriggerDagRunOperator` Task를 추가했다. `skip_when_already_exists`로 중복 트리거를 skip 처리하고 `fail_when_dag_is_paused`로 Warehouse paused 상태의 무증상 미실행을 막는다. |
 | `tests/test_airflow_dags.py`                    | 수정 | Generator-Warehouse 트리거 순서, 중복 트리거 시 Warehouse DagRun 1개 유지, Generator 실패 시 Warehouse 미실행을 검증하는 테스트 3건을 `RUN_AIRFLOW_SMOKE_TEST=1` opt-in으로 추가했다. |
+| `docs/adr/010-use-metadata-backed-bronze-file-catalog.md`, `docs/adr/013-source-mutation-and-warehouse-extract-concurrency.md` | 생성 | DAG의 Catalog 입력 경계와 원천 변경·수집 동시성 결정을 ADR로 기록했다. |

@@ -152,8 +152,8 @@ Logical Hash
 | PRD  | Section 4.1 `updated_at` 안전성 계약         | 원천 변경 시각 Test      |
 | PRD  | Section 7 Generator와 Anomaly                | 결정성 및 상태 전이 Test |
 | PRD  | Section 7.3 원천 데이터 동시성 잠금          | Lease 충돌 Test          |
-| ADR  | ADR-009 관측 기반 고객 SCD2                  | 변경 횟수/관측 계약      |
-| ADR  | ADR-013 원천 변경/수집 동시성                | Lease Test               |
+| ADR  | [ADR-009 관측 기반 고객 SCD2](../adr/009-use-observed-history-for-customer-scd2.md) | 변경 횟수/관측 계약      |
+| ADR  | [ADR-013 원천 변경/수집 동시성](../adr/013-source-mutation-and-warehouse-extract-concurrency.md) | Lease Test               |
 | FR   | FR-02 Deterministic Generator                | 동일 Snapshot 비교       |
 | FR   | FR-05 원천 데이터 동시성 잠금                | 동시성 실행 기록         |
 | AC   | AC-15 Generator 재현                         | Key Set/Hash 비교        |
@@ -202,6 +202,7 @@ AC-20과 AC-21의 전체 E2E 판정은 Phase 3의 Ingestion과 결합해 완료�
 | `tests/integration/test_generator_service_integration.py`     | 생성      | 실제 Generator 적재, 성공 결과 재사용, Warehouse의 원천 데이터 동시성 잠금 차단을 검증하는 통합 테스트를 추가했다.    |
 | `tests/generator/test_customers.py`, `tests/generator/test_scenarios.py` | 수정 | 거래 실적 등급 경계, 구독 상태 전이, 상태별 시각, 해지 후 재가입을 검증했다. |
 | `docs/phases/phase-02-deterministic-generator.md`             | 수정      | P2-01~22와 구독 상태·거래 실적 등급 Generator 전환, 파일별 변경 요약을 기록했다.                                 |
+| `docs/adr/009-use-observed-history-for-customer-scd2.md`, `docs/adr/013-source-mutation-and-warehouse-extract-concurrency.md` | 생성 | 관측 기반 고객 이력과 Generator·Warehouse 원천 데이터 동시성 잠금 결정을 ADR로 기록했다. |
 
 ### 구독·등급 Generator 재작업 완료
 
@@ -232,6 +233,7 @@ AC-20과 AC-21의 전체 E2E 판정은 Phase 3의 Ingestion과 결합해 완료�
 - [x] 복합 Entity 생성이 원자적으로 동작한다.
 - [x] Warehouse의 원천 데이터 동시성 잠금 중 Generator 변경이 0이다.
 - [x] AC-15가 통과하고 AC-20/21용 Fixture가 준비됐다.
+- [x] 요구사항 추적표가 참조하는 ADR-009·ADR-013 문서가 존재한다.
 
 ## 검증 증적
 
