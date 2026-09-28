@@ -125,6 +125,10 @@ Metabase
 card 56의 Region 분석은 Brazil 주 코드에 기본 Region Map이 없는 Metabase 환경에서 경고만 표시하지
 않도록, 주문 시점 `customer_state`별 주문 수 내림차순 막대 차트로 고정한다.
 
+논리 시각 2026-10-28에 Generator로 구독 계약 4건과 자동 청구 결제 1건을 생성하고 Bronze 수집·Warehouse
+Publish·Serving Export를 다시 수행했다. card 54는 `rpt_subscription_funnel_daily` 4행의 실제
+상태 전이 시계열을 표시하며, 빈 차트가 아님을 Customer Screenshot으로 확인했다.
+
 ### 10-2-5. 재현성과 검증
 
 - [x] `P10-20` Dashboard Export 또는 재생성 가능한 설정 보존
@@ -194,6 +198,7 @@ Phase 10에는 별도 AC 번호가 없으므로 ROADMAP의 Connection/Dashboard 
 | `dbt/models/marts/metrics/rpt_customer_order_activity_daily.sql`, `dbt/tests/rpt_customer_order_activity_daily_unique.sql`, `dbt/models/marts/metrics/schema.yml` | 신규·재구매 고객을 BI Native SQL로 재정의하지 않도록 주문일×고객 구분 Report Model과 계약 Test를 추가했다. Run `7472eb21-ef48-4c8d-bd5f-f5c3e6f4c1cf`의 Serving Export `191cafe0-8ce4-4570-a43d-418209dfd948`에 1,141행으로 반영했다. |
 | `metabase/queries/dashboard_*.sql`, `scripts/metabase_snapshot.sh`, `metabase/export/`, `docs/bi/` | Metabase Sales(2)·Product(3)·Customer(4) Dashboard와 카드 12개의 Query·UTC Filter·재생성 Snapshot, Warehouse 대조표와 식별 증적을 보존했다. card 56은 기본 Brazil Region Map 부재로 경고가 나는 `map` 대신 주별 주문 수 내림차순 `bar`로 고치고 Customer Snapshot·Screenshot을 재생성했다. |
 | `scripts/capture_metabase_dashboards.py`, `tests/test_capture_metabase_dashboards.py`, `docs/bi/screenshots/`, `docs/bi/dashboards.md`, `docs/bi/evidence.md`, `pyproject.toml`, `uv.lock` | Playwright headless Chromium으로 API Key 요청 헤더를 사용하는 Dashboard 2·3·4 재캡처 스크립트와 단위 Test를 추가하고, 실제 PNG 증적 경로·재실행 방법을 기록했다. |
+| `data/serving/mart.duckdb`, `metabase/export/card-54.json`, `metabase/export/dashboard-4.json`, `docs/bi/totals-reconciliation.md`, `docs/bi/evidence.md` | 구독 계약 4건·자동 청구 결제 1건을 수집·Publish한 Run `8890b135-5391-4290-8b05-bf99f24668a6`과 Serving Export `0616bd30-7c38-4a3c-b03b-aaecb0cc6cec` 기준으로 card 54의 실제 상태 전이 시계열, Export Snapshot, Customer Screenshot, Dashboard 대조표를 재생성했다. |
 | `docs/adr/012-metabase-serving-strategy.md` | Serving DuckDB 경로를 채택하고 Driver 등록·read-only·재기동 지속성 Connection Gate 통과 결과를 기록했다(상태 Accepted). |
 
 ## Definition of Done

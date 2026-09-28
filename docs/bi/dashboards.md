@@ -18,3 +18,8 @@ Query 원본은 `metabase/queries/dashboard_*.sql`과 API Snapshot의 `dataset_q
 Customer Dashboard의 card 56 `Region Analysis (주문 시점)`은 `fct_order.customer_state`별
 `order_count`를 내림차순으로 표시하는 `bar`다. Brazil 주 코드에 대응하는 기본 Region Map이 없는
 Metabase 환경에서도 같은 사건 시점 지역 분포를 화면에 안정적으로 표시하도록 `map`을 사용하지 않는다.
+
+card 54 `Subscription Status Trend`는 `metrics.rpt_subscription_funnel_daily`의 이벤트 날짜와
+계약 시작·활성·결제 실패·해지 신청·이탈·재가입 측정값을 line 차트로 표시한다. 논리 시각
+2026-10-28 재증적은 구독 계약 4건과 자동 청구 결제 1건을 포함해 빈 차트가 아닌 상태 전이 시계열을
+확인했다.
