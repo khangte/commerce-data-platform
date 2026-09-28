@@ -1,6 +1,6 @@
 # ROADMAP: Commerce Analytics Data Platform
 
-> 기준 PRD: PRD v1.13
+> 기준 PRD: PRD v1.14
 > 목적: Phase 0부터 Phase 10까지의 실제 개발 순서와 검증 기준 정의  
 > 원칙: 전체 아키텍처와 핵심 계약은 PRD를 기준으로 유지하고, 구현은 Phase 단위로 완료·검증한 뒤 다음 단계로 진행한다.
 

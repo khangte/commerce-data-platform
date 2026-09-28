@@ -506,9 +506,10 @@ uv run python -m src.rebaseline --seeded-at 2026-09-03T00:00:00Z
 uv run python -m src.rebaseline --seeded-at 2026-09-03T00:00:00Z --confirm
 ```
 
-- Seed 기준 Source는 `customers=99,441`, `customer_subscriptions=96,096`,
-  `customer_membership_tiers=96,096` 행으로 재생성됐다. 구 `customer_memberships` Table은
-  제거됐다.
+- 2026-09-03 Rebaseline 시점 기록이다. 당시 Seed 기준 Source는 `customers=99,441`,
+  `customer_subscriptions=96,096`, `customer_membership_tiers=96,096` 행으로 재생성됐다.
+  구 `customer_memberships` Table은 제거됐다. PRD v1.13 이후 Seed는 `customer_subscriptions`
+  행을 만들지 않으므로(`src/seed/loader.py`), 현재 계약과는 다르다.
 - 주문 Source는 `orders=99,441`, `order_items=112,650`, `order_payments=103,886`,
   `products=32,951`, `sellers=3,095` 행으로 재생성됐다. 기준 시점에 결제 이력이 없는
   `subscription_payments`는 0행 `SUCCESS_NO_DATA`로 정상 완료했다.

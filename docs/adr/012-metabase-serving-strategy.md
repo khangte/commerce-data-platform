@@ -1,7 +1,8 @@
 # 012. Metabase Serving 전략
 
-- 상태: Accepted — DuckDB Serving Connection Gate 통과
-- 일자: 2026-09-22
+## Status
+
+Accepted — DuckDB Serving Connection Gate 통과 (2026-09-22)
 
 ## Context
 

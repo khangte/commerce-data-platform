@@ -171,7 +171,7 @@ Source Schema Allowlist
 | `sql/metadata/001_create_seed_metadata.sql`      | 생성      | Seed 실행 이력과 Count/Hash/상태를 기록하는 `seed_runs` 테이블을 추가했다. |
 | `src/common/database.py`                         | 생성      | `.env` 기반 PostgreSQL 연결과 SQL 적용 공통 기능을 추가했다.               |
 | `src/seed/contracts.py`                          | 생성      | CSV 파일·헤더·기본 키 계약 검증과 Raw Checksum 계산을 추가했다.            |
-| `src/seed/loader.py`                             | 수정      | CSV 변환, 검증, 임시 Staging, Transactional UPSERT에 `customer_subscriptions` 구독 기준선, `customer_membership_tiers` 거래 실적 등급, 필수 `shipping_limit_date`와 원본에 근거가 없는 결제 생명주기 시각 4개의 `NULL` Seed 및 결제 컬럼 순서 마이그레이션 실행을 반영했다. |
+| `src/seed/loader.py`                             | 수정      | CSV 변환, 검증, 임시 Staging, Transactional UPSERT에 `customer_membership_tiers` 거래 실적 등급 Seed(`customer_subscriptions`는 행을 만들지 않음), 필수 `shipping_limit_date`와 원본에 근거가 없는 결제 생명주기 시각 4개의 `NULL` Seed 및 결제 컬럼 순서 마이그레이션 실행을 반영했다. |
 | `src/generator/customers.py`, `src/generator/subscription_payments.py` | 수정 | 구독 계약 시작·자동갱신·해지·종료와 청구 회차별 결제 재시도 Record를 새 원천 계약으로 생성·검증하도록 바꿨다. |
 | `src/ingestion/tables.py`, `dbt/models/staging/*` | 수정 | 새 계약 식별자와 자동갱신·결제 컬럼의 증분 Cursor, Bronze Schema v3, Staging 투영을 반영했다. |
 | `src/seed/__main__.py`                           | 생성      | `python -m src.seed` CLI와 `seeded_at` 입력 처리를 추가했다.               |
