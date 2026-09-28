@@ -3,7 +3,7 @@
 > 상태: Done  
 > Milestone: 3 — Portfolio Evidence  
 > 선행 Phase: [Phase 8. Reliability Scenarios](phase-08-reliability.md)  
-> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.15](../../PRD_v1.15.md)
+> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.16](../../PRD_v1.16.md)
 
 ## 목표
 

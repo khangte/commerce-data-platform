@@ -3,7 +3,7 @@
 > 상태: Done  
 > Milestone: 2 — Data Platform Core  
 > 선행 Phase: [Phase 3. Incremental Ingestion](phase-03-incremental-ingestion.md)  
-> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.15](../../PRD_v1.15.md)
+> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.16](../../PRD_v1.16.md)
 
 ## 목표
 
@@ -108,6 +108,7 @@ Context Manager를 Task 경계 전체에 걸쳐 사용할 수 없다. 아래 계
 - [x] `P4-03` Secret을 코드에 넣지 않는 환경 변수 설정
 - [x] `P4-04` DAG Import/Parse Smoke Test 구성
 - [x] 2026-09-28 운영 검증: Airflow 실행 API 연결·JWT 인증 설정 후 Source→Warehouse DAG 실제 실행 완료
+- [x] 2026-09-28 `source_simulation_dag`를 매시간 예약하고 과거 구간 자동 재실행 없이 다음 예약 시각 확인
 
 Runtime 계약:
 
@@ -231,6 +232,19 @@ Warehouse 실행 `manual__2026-09-28T14:27:00+00:00`은 `success`(47.760초)로 
 | Warehouse | `publish_mart` | 7.375 |
 | Warehouse | `export_serving_mart` | 2.075 |
 | Warehouse | `publish_run_summary` | 0.600 |
+
+2026-09-28 예약 실행 설정: `source_simulation_dag`의 `schedule`은 `@hourly`로 바꾸고
+`catchup=False`와 기존 `start_date=2026-01-01 00:00 UTC`를 유지했다. 시작 시각은 이미 과거지만
+`catchup=False`이므로 과거 매시간 구간을 자동으로 소급 실행하지 않는다.
+`warehouse_pipeline_dag`의 `schedule=None`은 그대로 유지해 Source 성공 시에만 트리거한다.
+Airflow DAG Processor 반영 후 `airflow dags details`는 Source의 주기를 `0 * * * *`로,
+`airflow dags next-execution source_simulation_dag`는 다음 예약 시각을
+`2026-09-28T15:00:00+00:00`으로 표시했다. Warehouse의 다음 예약 시각은 `None`이었다.
+설정 반영 직후 현재 시간대의 첫 예약 실행 `scheduled__2026-09-28T14:00:00+00:00`이
+14:37:39 UTC에 시작해 `success`로 종료됐다(2.642초, 태스크 2개 모두 성공).
+이 실행이 트리거한 Warehouse 실행 `manual__2026-09-28T14:00:00+00:00`도
+`success`로 종료됐다(41.262초, 태스크 18개 모두 성공). 당시 Source의 예약 실행은 1건만
+생성되어 과거 시간대별 소급 실행은 없었다. 다음 예약 시각은 계속 15:00 UTC였다.
 
 ### 2. Generator DAG
 
@@ -559,5 +573,6 @@ Project/CLI와 Test를 완성한 뒤, Warehouse DAG의 `dbt_build` 호출 경계
 | `pyproject.toml`                                | 수정 | `airflow` Pytest Marker를 등록했다. |
 | `.env.example`                                  | 수정 | `RUN_AIRFLOW_SMOKE_TEST`/`RUN_SEAWEEDFS_INTEGRATION` Test Opt-in 환경 변수 안내 주석을 추가했다. |
 | `airflow/dags/source_simulation_dag.py`         | 수정 | Generator 성공 뒤 같은 `logical_date`로 `warehouse_pipeline_dag`를 자동 트리거하는 `TriggerDagRunOperator` Task를 추가했다. `skip_when_already_exists`로 중복 트리거를 skip 처리하고 `fail_when_dag_is_paused`로 Warehouse paused 상태의 무증상 미실행을 막는다. |
+| `airflow/dags/source_simulation_dag.py`         | 수정 | 2026-09-28 `schedule="@hourly"`로 매시간 실행을 예약하고 `catchup=False`와 기존 시작 시각을 유지했다. |
 | `tests/test_airflow_dags.py`                    | 수정 | Generator-Warehouse 트리거 순서, 중복 트리거 시 Warehouse DagRun 1개 유지, Generator 실패 시 Warehouse 미실행을 검증하는 테스트 3건을 `RUN_AIRFLOW_SMOKE_TEST=1` opt-in으로 추가했다. |
 | `docs/adr/010-use-metadata-backed-bronze-file-catalog.md`, `docs/adr/013-source-mutation-and-warehouse-extract-concurrency.md` | 생성 | DAG의 Catalog 입력 경계와 원천 변경·수집 동시성 결정을 ADR로 기록했다. |

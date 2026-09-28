@@ -24,7 +24,7 @@ DEFAULT_TASK_ARGS = {
 
 with DAG(
     dag_id="source_simulation_dag",
-    schedule=None,
+    schedule="@hourly",
     start_date=datetime(2026, 1, 1, tzinfo=UTC),
     catchup=False,
     max_active_runs=1,

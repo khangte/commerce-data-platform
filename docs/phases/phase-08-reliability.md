@@ -3,7 +3,7 @@
 > 상태: Done  
 > Milestone: 3 — Portfolio Evidence  
 > 선행 Phase: [Phase 7. Data Quality & Publish](phase-07-data-quality-publish.md)  
-> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.15](../../PRD_v1.15.md)
+> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.16](../../PRD_v1.16.md)
 
 ## 목표
 
@@ -79,9 +79,14 @@ Harness와 Ingestion 계층 장애 Scenario는 Mart 구성과 독립적이다. �
 | ID     | 시나리오                  | 핵심 검증                                        |
 | ------ | ------------------------- | ------------------------------------------------ |
 | `R-11` | Missing Schedule          | 누락 구간은 다음 실행이 자동 Self-heal(Gap 없음), 귀속만 명시 Batch로 복구 |
+
 | `R-12` | Backfill Replay           | Source Read 없이 COMMITTED Bronze 재적용         |
 | `R-13` | Re-extract                | 명시 범위를 새 `batch_id`로 추출                 |
 | `R-15` | Source Connection Failure | Object 생성/Watermark 전진 없이 재시도 가능 상태 |
+
+> R-11 주석: 2026-09-28부터 `source_simulation_dag`는 `@hourly`, 두 DAG 모두 `catchup=False`다.
+> Scheduler 누락은 Source 변경 미발생 또는 다음 Warehouse 실행의 Self-heal로 귀결되며
+> 새 시나리오는 필요 없다([architect-review 047](../architect-review/047_source-dag-hourly-r11-premise.md)).
 
 - [x] `P8-16` R-11 Missing Schedule 실행 및 문서화 — 증거: `RUN_POSTGRES_INTEGRATION=1 RUN_SEAWEEDFS_INTEGRATION=1 RUN_DBT_PUBLISH_INTEGRATION=1 uv run pytest tests/reliability -v` → PASSED. `pipeline_name=test_r11_43411123c19e486f82a3bf544a83ac14`, 건너뛴 창 없이 C 실행이 Gap 없이 회수, Mart Hash가 회복 전후 모두 Control과 일치([Runbook](../runbooks/r11-missing-schedule.md))
 - [x] `P8-17` R-12 Backfill Replay 실행 및 문서화 — 증거: 위 명령 → PASSED. `pipeline_name=test_r12_b5052dc9946743749f37fbc773f62f53`, Source Read 없이 COMMITTED Bronze만으로 재Build, `mart_hashes_match_control=true`([Runbook](../runbooks/r12-backfill-replay.md))

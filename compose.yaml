@@ -28,7 +28,6 @@ x-airflow-common: &airflow-common
     PIPELINE_DB_USER: ${PIPELINE_DB_USER}
     PIPELINE_DB_PASSWORD: ${PIPELINE_DB_PASSWORD}
     INGESTION_PAGE_SIZE: ${INGESTION_PAGE_SIZE:-50000}
-    WAREHOUSE_DAG_SCHEDULE: ${WAREHOUSE_DAG_SCHEDULE:-}
     PYTHONPATH: /opt/airflow/project
     WAREHOUSE_PATH: /opt/airflow/project/data/warehouse/warehouse.duckdb
     DBT_PROJECT_DIR: /opt/airflow/project/dbt

@@ -5,8 +5,15 @@
 누락 Schedule은 데이터 손실을 만들지 않는다. `extract_upper_bound`가 항상 Source의 실제 최대
 Cursor이고(`_fetch_upper_bound`, `src/ingestion/extract.py`) Watermark가 연속이라, 건너뛴 창의
 Row는 다음 실행이 함께 쓸어 담는다. 유일한 실제 영향은 그 Row가 건너뛴 창이 아니라 다음 실행의
-`ingestion_date`/`batch_id` Partition에 귀속된다는 것이다. `subscription_payments` DAG도 `catchup`을
-쓰지 않으므로 누락은 오직 다음 정기 실행이나 명시 Batch로만 회복된다.
+`ingestion_date`/`batch_id` Partition에 귀속된다는 것이다. `source_simulation_dag`(`@hourly`)와
+`warehouse_pipeline_dag`(Source 성공 시 트리거) 모두 `catchup=False`이므로 누락은 오직 다음
+정기 실행이나 명시 Batch로만 회복된다.
+
+2026-09-28부터 `source_simulation_dag`는 매시간 예약 실행되며 두 DAG 모두 `catchup=False`다.
+Scheduler 누락으로 Source 예약 실행이 빠지면 해당 구간의 Source 변경 자체가 발생하지 않는다.
+Source는 성공했으나 Warehouse가 실행되지 못한 경우에는 다음 Warehouse 실행이 누락된 변경을
+함께 수집한다. 두 경우 모두 기존 R-11의 지연 수집·복구 계약으로 설명되므로 새 시나리오는
+필요하지 않다([architect-review 047](../architect-review/047_source-dag-hourly-r11-premise.md)).
 
 ## 재현 조건과 명령
 
