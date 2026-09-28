@@ -107,6 +107,7 @@ Context Manager를 Task 경계 전체에 걸쳐 사용할 수 없다. 아래 계
 - [x] `P4-02` Airflow Metadata DB 초기화와 Health Check 구성
 - [x] `P4-03` Secret을 코드에 넣지 않는 환경 변수 설정
 - [x] `P4-04` DAG Import/Parse Smoke Test 구성
+- [x] 2026-09-28 운영 검증: Airflow 실행 API 연결·JWT 인증 설정 후 Source→Warehouse DAG 실제 실행 완료
 
 Runtime 계약:
 
@@ -190,6 +191,46 @@ Generator 실행 로직을 복제하지 않고 Phase 2 API(`run_generator`)만 �
 - `orders` Param에 음수를 주면 Task 진입 전 `ParamValidationError`로 실행이 차단됨을 확인했다.
 - Airflow Container에 `POSTGRES_USER`/`POSTGRES_PASSWORD`가 없어 `PostgresSettings.from_environment()`가
   실패하는 문제를 발견해 `compose.yaml`의 `airflow-common` 환경 변수에 추가했다.
+
+2026-09-28 실제 실행 검증: `docker compose --profile airflow up -d`로 서비스 5개를 모두 healthy 상태로
+기동했고, `airflow dags list`에서 `source_simulation_dag`와 `warehouse_pipeline_dag`를 확인했다.
+`airflow dags list-import-errors`는 0건이었다. Airflow 3.3.1의 작업 실행 API 기본 경로는
+`/execution/`이다. 기본 `localhost:8080` 주소에서는 Scheduler 컨테이너의 태스크 실행이 연결
+거부됐으므로, `AIRFLOW__WORKERS__EXECUTION_API_SERVER_URL`을 API Server 서비스 주소로 지정했다.
+이어 발생한 `Invalid auth token`은 Scheduler와 API Server가 공유할
+`AIRFLOW__API_AUTH__JWT_SECRET`이 없어서 발생했으며, 공통 Compose 환경 변수와 로컬 `.env`에
+생성한 비밀값으로 해결했다. 비밀값은 문서와 Git에 기록하지 않았다.
+
+9월 22일부터 `running`으로 남은 Warehouse 실행 `manual__2026-09-22T02:52:16.928385+00:00`은
+`dbt_build` 태스크와 함께 `failed`로 표시했다. `max_active_runs=1`에서 새 검증 실행을 막던
+미시작 대기 실행 `manual_pipeline_20260928T142100Z`도 이력을 보존하며 `failed`로 표시했다.
+이후 소스 실행 `manual_source_20260928T142700Z`는 `success`(129.266초), 자동 트리거된
+Warehouse 실행 `manual__2026-09-28T14:27:00+00:00`은 `success`(47.760초)로 종료됐다.
+소스 실행 시간에는 초기 JWT 인증 오류와 재시도 대기 시간이 포함된다. 태스크별 최종 상태는
+전부 `success`이며, 아래 시간은 각 최종 성공 시도의 실제 시작·종료 시각 차이다.
+
+| DAG | 태스크 | 소요 시간(초) |
+| --- | --- | ---: |
+| Source | `run_source_simulation` | 9.383 |
+| Source | `trigger_warehouse_pipeline` | 1.081 |
+| Warehouse | `initialize_run` | 0.599 |
+| Warehouse | `acquire_source_snapshot_lease` | 0.667 |
+| Warehouse | `extract_validate_load[0]` customers | 1.654 |
+| Warehouse | `extract_validate_load[1]` customer_subscriptions | 1.611 |
+| Warehouse | `extract_validate_load[2]` customer_membership_tiers | 1.838 |
+| Warehouse | `extract_validate_load[3]` subscription_payments | 0.977 |
+| Warehouse | `extract_validate_load[4]` products | 0.996 |
+| Warehouse | `extract_validate_load[5]` sellers | 0.831 |
+| Warehouse | `extract_validate_load[6]` orders | 1.067 |
+| Warehouse | `extract_validate_load[7]` order_items | 1.112 |
+| Warehouse | `extract_validate_load[8]` order_payments | 1.027 |
+| Warehouse | `release_source_snapshot_lease` | 0.523 |
+| Warehouse | `verify_bronze_commit_task` | 0.728 |
+| Warehouse | `prepare_warehouse_build` | 2.024 |
+| Warehouse | `dbt_build` | 24.858 |
+| Warehouse | `publish_mart` | 7.375 |
+| Warehouse | `export_serving_mart` | 2.075 |
+| Warehouse | `publish_run_summary` | 0.600 |
 
 ### 2. Generator DAG
 
@@ -499,10 +540,11 @@ Project/CLI와 Test를 완성한 뒤, Warehouse DAG의 `dbt_build` 호출 경계
 | `airflow/Dockerfile`                            | 생성 | Airflow 3.3.1 Python 3.12 Image에 프로젝트 런타임 의존성을 빌드 시 설치하도록 구성했다. |
 | `airflow/requirements.txt`                      | 생성 | Airflow Container에서 필요한 프로젝트 Python 의존성의 고정 Version을 정의했다. |
 | `airflow/logs/.gitkeep`                         | 생성 | Airflow Log Bind Mount의 추적 가능한 빈 디렉터리를 추가했다. |
-| `compose.yaml`                                  | 수정 | `airflow` Profile의 API Server·Scheduler·DAG Processor, LocalExecutor, 내부 Service 연결과 프로젝트 경로 Mount를 추가했다. `airflow-init` Metadata DB Migration Service와 세 Airflow Service의 Health Check, `airflow-runtime-depends-on` Anchor를 추가했다. `PostgresSettings.from_environment()`가 요구하는 `POSTGRES_USER`/`POSTGRES_PASSWORD`를 `airflow-common` 환경 변수에 추가했다. |
+| `compose.yaml`                                  | 수정 | `airflow` Profile의 API Server·Scheduler·DAG Processor, LocalExecutor, 내부 Service 연결과 프로젝트 경로 Mount를 추가했다. `airflow-init` Metadata DB Migration Service와 세 Airflow Service의 Health Check, `airflow-runtime-depends-on` Anchor를 추가했다. `PostgresSettings.from_environment()`가 요구하는 `POSTGRES_USER`/`POSTGRES_PASSWORD`를 `airflow-common` 환경 변수에 추가했다. 2026-09-28 실제 실행에서 `AIRFLOW__WORKERS__EXECUTION_API_SERVER_URL`과 공통 `AIRFLOW__API_AUTH__JWT_SECRET` 주입을 추가했다. |
 | `pyproject.toml`                                | 수정 | Airflow Image의 Amazon Provider와 호환되는 `boto3` Version으로 고정했다. |
 | `uv.lock`                                       | 수정 | 프로젝트 의존성 잠금 정보를 `boto3` Version 변경에 맞춰 갱신했다. |
-| `.env.example`                                  | 수정 | Airflow UI Port·LocalExecutor 병렬도와 Linux/WSL 파일 권한용 `AIRFLOW_UID` 설정 예시를 추가했다. |
+| `.env.example`                                  | 수정 | Airflow UI Port·LocalExecutor 병렬도와 Linux/WSL 파일 권한용 `AIRFLOW_UID` 설정 예시를 추가했다. 2026-09-28 공통 JWT 비밀값의 환경 변수 자리표시자를 추가했다. |
+| `.env`                                          | 로컬 수정 | 2026-09-28 실행에서 Airflow 서비스가 공유하는 JWT 비밀값을 생성해 추가했다. Git 추적 대상이 아니다. |
 | `.gitignore`                                    | 수정 | Airflow Log는 무시하되 빈 디렉터리 표시 파일은 추적하도록 변경했다. |
 | `airflow/dags/source_simulation_dag.py`         | 생성 | Airflow Param을 검증해 Phase 2 `run_generator` API를 호출하는 Generator DAG를 추가했다. |
 | `airflow/dags/warehouse_pipeline_dag.py`        | 수정 | `initialize_run`/Lease 획득·해제/9개 Table Dynamic Mapping/Verify/Catalog/Summary Task로 Phase 3 `ingest_table`을 오케스트레이션하며 구독·등급 분리 3개 Table을 추가했다. |
