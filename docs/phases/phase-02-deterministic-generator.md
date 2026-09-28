@@ -6,7 +6,7 @@
 >
 > 선행 Phase: [Phase 1. Source Environment](phase-01-source-environment.md)
 >
-> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.16](../../PRD_v1.16.md)
+> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.17](../../PRD_v1.17.md)
 
 ## 목표
 
@@ -104,6 +104,9 @@ Payment: pending → completed → refunded
 - [x] 현재 성공 Seed Snapshot을 자동 식별하는 Generator 실행 서비스
 - [x] Lease 보호 아래 결정적 Order Bundle 생성과 `generator_runs` 결과 기록
 - [x] 동일 성공 입력의 결과 재사용과 Warehouse의 원천 데이터 동시성 잠금 중 Source 변경 0 검증
+- [x] 2026-09-29 새 행의 `logical_date`가 대상 테이블별 수집 커서 최대값 이하이면 Lease 획득 뒤 쓰기 전에 실패하고 동일 성공 입력은 재사용하는 역행 방지 검증(`created_at` 커서 포함)
+- [x] 2026-09-29 빈 테이블과 이전 커서가 섞인 정상 전진 실행 및 실제 Cursor 뒤 시각을 사용하는 PostgreSQL 통합 검증
+- [x] 2026-09-29 `subscription-payment-failed` 전이에서 실패 결제 행을 함께 기록하고 이후 동일 회차 시도 2로 재시도하는 검증
 
 CLI가 직접 실행하는 Profile은 `default`, `late-arrival`, `membership-change`,
 `subscription-active`, `subscription-payment-failed`, `subscription-cancel-requested`,
@@ -188,18 +191,22 @@ AC-20과 AC-21의 전체 E2E 판정은 Phase 3의 Ingestion과 결합해 완료�
 | `dbt/models/staging/stg_payments.sql`, `dbt/tests/stg_source_mapping.sql` | 수정 | 결제 생명주기 사건 시각을 Bronze에서 Staging으로 보존하고 원천 매핑을 검증한다. |
 | `src/generator/lease.py`                                      | 생성      | Generator·Warehouse 원천 데이터 동시성 잠금의 획득·갱신·Fencing·해제를 추가했다.                                      |
 | `src/generator/service.py`                                    | 수정      | Seed Snapshot 검증, Lease 보호 Source 생성, 실행 결과 재사용과 거래 실적 등급·구독 상태 변경 Profile 실행을 추가했다.          |
+| `src/generator/service.py`, `src/generator/errors.py`         | 수정·생성 | 2026-09-29 Generator 대상 테이블별 수집 커서 컬럼의 최대 시각보다 새 `logical_date`가 커야 한다는 검사를 Source 트랜잭션 첫 쓰기 전에 추가하고 역행 예외를 정의했다. `customers`와 `order_items`의 `created_at`도 검사한다. |
+| `tests/generator/test_cursor_regression.py` | 생성·수정 | 역행·동일 시각 차단, `created_at` 커서 차단, 빈 테이블을 포함한 정상 전진 경로, 동일 성공 입력 재사용, 재시도 불가 오류 분류를 검증한다. |
+| `src/generator/service.py`, `src/generator/subscription_payments.py`, `tests/generator/test_subscription_profile_payment.py` | 수정·생성 | 실패 결제 Profile 전이가 회차 1·시도 1의 실패 결제 행을 같은 거래에서 생성하도록 하고, 이틀 뒤 동일 회차 시도 2 재시도를 검증한다. |
 | `src/generator/__main__.py`                                   | 생성·수정 | Generator CLI 기반을 만들고, 기본 실행 적재·`--validate-only`·실행 가능 Profile 선택을 지원하도록 변경했다.           |
 | `sql/metadata/002_create_generator_metadata.sql`              | 생성·수정 | Generator 실행 Metadata Schema를 만들고, 성공 실행 입력만 Unique하게 보관해 실패 실행의 재시도를 허용하도록 변경했다. |
 | `sql/metadata/003_create_source_mutation_leases.sql`          | 생성      | `commerce_source` 원천 데이터 동시성 잠금 Table을 추가했다.                                                           |
 | `src/generator/__init__.py`                                   | 수정      | Generator Config와 현재 구현 Version을 Package API로 노출했다.                                                        |
 | `tests/generator/`                                            | 생성·수정 | Config, 결정적 ID/Hash, Metadata 입력과 동일 Snapshot 입력의 Bundle 재현 단위 테스트를 추가했다.                      |
+| `tests/generator/test_cursor_regression.py`                  | 생성      | 더 이른 시각·같은 시각 거부, Source 쓰기 없음, 동일 성공 입력 재사용, 계약 오류 분류와 재시도 불가를 검증했다. |
 | `tests/integration/test_generator_metadata_integration.py`    | 생성      | 실제 PostgreSQL에 Generator 실행 이력이 저장되는지 검증하는 통합 테스트를 추가했다.                                   |
 | `tests/integration/test_generator_customer_integration.py`    | 생성      | Customer Record 저장 멱등성과 Membership 변경 시각을 검증하는 통합 테스트를 추가했다.                                 |
 | `tests/integration/test_generator_order_integration.py`       | 생성      | Order Bundle의 Insert/Skip, FK 오류 Rollback 통합 테스트를 추가했다.                                                  |
 | `tests/integration/test_generator_transition_integration.py`  | 생성      | 상태 전이 재실행, Business Timestamp, 오래된 Version 거부를 검증하는 통합 테스트를 추가했다.                          |
 | `tests/integration/test_generator_scenario_integration.py`    | 생성      | Service-level Scenario의 Business Event와 원천 변경 시각 분리를 검증하는 통합 테스트를 추가했다.                      |
 | `tests/integration/test_source_mutation_lease_integration.py` | 생성      | Generator·Warehouse 원천 데이터 동시성 잠금의 배타성, 해제, 만료 인수 Fencing을 검증하는 통합 테스트를 추가했다.      |
-| `tests/integration/test_generator_service_integration.py`     | 생성      | 실제 Generator 적재, 성공 결과 재사용, Warehouse의 원천 데이터 동시성 잠금 차단을 검증하는 통합 테스트를 추가했다.    |
+| `tests/integration/test_generator_service_integration.py`     | 생성·수정 | 실제 Generator 적재, 성공 결과 재사용, Warehouse의 원천 데이터 동시성 잠금 차단을 검증한다. 실행 시점의 대상 테이블별 Cursor 최대값보다 1초 뒤 논리 시각을 사용하고, 실패 기록도 정리한다. |
 | `tests/generator/test_customers.py`, `tests/generator/test_scenarios.py` | 수정 | 거래 실적 등급 경계, 구독 상태 전이, 상태별 시각, 해지 후 재가입을 검증했다. |
 | `docs/phases/phase-02-deterministic-generator.md`             | 수정      | P2-01~22와 구독 상태·거래 실적 등급 Generator 전환, 파일별 변경 요약을 기록했다.                                 |
 | `docs/adr/009-use-observed-history-for-customer-scd2.md`, `docs/adr/013-source-mutation-and-warehouse-extract-concurrency.md` | 생성 | 관측 기반 고객 이력과 Generator·Warehouse 원천 데이터 동시성 잠금 결정을 ADR로 기록했다. |

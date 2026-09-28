@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -18,7 +18,8 @@ from src.generator.lease import (
     release_source_mutation_lease,
 )
 from src.generator.orders import fetch_order_catalog, new_order_bundle
-from src.generator.service import resolve_source_snapshot_id, run_generator
+from src.generator.service import MUTABLE_SOURCE_TABLES, resolve_source_snapshot_id, run_generator
+from src.ingestion.tables import TABLE_CONFIGS
 
 pytestmark = pytest.mark.integration
 
@@ -33,7 +34,7 @@ def test_generator_creates_bundles_and_reuses_a_successful_deterministic_run() -
     config = GeneratorConfig(
         source_snapshot_id=resolve_source_snapshot_id(settings),
         random_seed=uuid.uuid4().int % (2**63),
-        logical_date=datetime(2026, 9, 20, tzinfo=UTC),
+        logical_date=_forward_logical_date(settings),
         order_count=2,
         anomaly_profile="default",
         generator_version=GENERATOR_VERSION,
@@ -57,13 +58,23 @@ def test_generator_creates_bundles_and_reuses_a_successful_deterministic_run() -
         assert status == "SUCCESS"
     finally:
         _delete_bundles(settings, bundles)
-        if result is not None:
-            with settings.pipeline_connection() as connection:
-                connection.execute(
-                    "DELETE FROM generator_runs WHERE generator_run_id = %s",
-                    (result.generator_run_id,),
-                )
-                connection.commit()
+        with settings.pipeline_connection() as connection:
+            connection.execute(
+                """
+                DELETE FROM generator_runs
+                WHERE source_snapshot_id = %s AND random_seed = %s AND logical_date = %s
+                  AND order_count = %s AND anomaly_profile = %s AND generator_version = %s
+                """,
+                (
+                    config.source_snapshot_id,
+                    config.random_seed,
+                    config.logical_date,
+                    config.order_count,
+                    config.anomaly_profile,
+                    config.generator_version,
+                ),
+            )
+            connection.commit()
 
 
 @pytest.mark.skipif(
@@ -98,6 +109,20 @@ def test_generator_stops_before_source_mutation_when_warehouse_lease_is_active()
         assert after_count == before_count
     finally:
         release_source_mutation_lease(settings, warehouse_lease)
+
+
+def _forward_logical_date(settings: PostgresSettings) -> datetime:
+    """Generator 대상 테이블의 최신 수집 커서보다 1초 뒤 실행 시각을 고른다."""
+    maxima = [datetime.now(tz=UTC)]
+    with settings.source_connection() as connection:
+        for table_name in MUTABLE_SOURCE_TABLES:
+            column = TABLE_CONFIGS[table_name].cursor_timestamp_column
+            maximum = connection.execute(
+                f'SELECT max("{column}") FROM "{table_name}"'
+            ).fetchone()[0]
+            if maximum is not None:
+                maxima.append(maximum)
+    return max(maxima) + timedelta(seconds=1)
 
 
 def _expected_bundles(settings: PostgresSettings, config: GeneratorConfig):

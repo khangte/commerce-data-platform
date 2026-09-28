@@ -3,7 +3,7 @@
 > 상태: Done  
 > Milestone: 3 — Portfolio Evidence  
 > 선행 Phase: [Phase 7. Data Quality & Publish](phase-07-data-quality-publish.md)  
-> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.16](../../PRD_v1.16.md)
+> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.17](../../PRD_v1.17.md)
 
 ## 목표
 

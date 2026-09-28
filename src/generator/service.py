@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
+
+import psycopg
 
 from src.common.database import PostgresSettings
 from src.generator.config import EXECUTABLE_ANOMALY_PROFILES, GeneratorConfig
@@ -18,6 +20,7 @@ from src.generator.customers import (
     persist_subscription_records,
     subscription_transition_records,
 )
+from src.generator.errors import SourceCursorRegressionError
 from src.generator.ids import logical_hash
 from src.generator.lease import (
     GENERATOR_OWNER_TYPE,
@@ -39,6 +42,17 @@ from src.generator.subscription_payments import (
     next_billing_cycle_sequence,
     persist_subscription_payments,
     plan_subscription_payment,
+)
+from src.ingestion.tables import TABLE_CONFIGS
+
+MUTABLE_SOURCE_TABLES = (
+    "customers",
+    "customer_subscriptions",
+    "customer_membership_tiers",
+    "subscription_payments",
+    "orders",
+    "order_items",
+    "order_payments",
 )
 
 
@@ -104,6 +118,7 @@ def run_generator(config: GeneratorConfig, settings: PostgresSettings) -> Genera
         started = True
 
         with settings.source_connection() as connection, connection.transaction():
+            _assert_source_cursor_forward(connection, config.logical_date)
             catalog = fetch_order_catalog(connection)
             result_counts = _empty_result_counts()
             logical_rows = []
@@ -132,7 +147,7 @@ def run_generator(config: GeneratorConfig, settings: PostgresSettings) -> Genera
                 logical_rows.append(tier_row)
             elif config.anomaly_profile.startswith("subscription-"):
                 subscription_result, subscription_row = _apply_subscription_transition(
-                    connection, config
+                    connection, config, result_counts, logical_rows
                 )
                 result_counts["subscriptions_inserted"] += subscription_result.inserted
                 result_counts["subscriptions_updated"] += subscription_result.updated
@@ -171,6 +186,20 @@ def run_generator(config: GeneratorConfig, settings: PostgresSettings) -> Genera
     finally:
         if lease is not None:
             release_source_mutation_lease(settings, lease)
+
+
+def _assert_source_cursor_forward(connection: psycopg.Connection, logical_date: datetime) -> None:
+    """새 원천 행의 실행 시각이 대상 테이블별 커서 최대값보다 큰지 확인한다."""
+    for table_name in MUTABLE_SOURCE_TABLES:
+        cursor_column = TABLE_CONFIGS[table_name].cursor_timestamp_column
+        maximum = connection.execute(
+            f'SELECT max("{cursor_column}") FROM "{table_name}"'
+        ).fetchone()[0]
+        if maximum is not None and logical_date <= maximum:
+            raise SourceCursorRegressionError(
+                f"logical_date={logical_date.isoformat()} must be later than "
+                f"{table_name}.{cursor_column} max={maximum.isoformat()}"
+            )
 
 
 def _successful_result(
@@ -445,8 +474,10 @@ def _apply_membership_tier_change(connection, config: GeneratorConfig):
     }
 
 
-def _apply_subscription_transition(connection, config: GeneratorConfig):
-    """Profile에 맞는 현재 상태 사람 하나를 골라 구독 상태 전이를 저장한다."""
+def _apply_subscription_transition(
+    connection, config: GeneratorConfig, result_counts: dict[str, int], logical_rows: list
+):
+    """Profile에 맞는 구독 상태를 바꾸고 실패 전이의 결제 행도 저장한다."""
     if config.anomaly_profile == "subscription-active":
         return _start_subscription_contract(connection, config)
     next_status, source_statuses = _subscription_profile_contract(config.anomaly_profile)
@@ -487,6 +518,28 @@ def _apply_subscription_transition(connection, config: GeneratorConfig):
     current = candidates[selector]
     changed = subscription_transition_records(config, (current,), next_status)
     result = persist_subscription_records(connection, changed)
+    if next_status == "PAYMENT_FAILED":
+        billing_cycle_sequence = next_billing_cycle_sequence(connection, current.subscription_id)
+        payment = plan_subscription_payment(
+            config,
+            current.subscription_id,
+            billing_cycle_sequence,
+            1,
+            current.billing_due_at or config.logical_date,
+            forced_status="failed",
+        )
+        result_counts["subscription_payments_inserted"] += persist_subscription_payments(
+            connection, (payment,)
+        )
+        logical_rows.append(
+            {
+                "customer_unique_id": current.customer_unique_id,
+                "subscription_id": str(current.subscription_id),
+                "billing_cycle_sequence": billing_cycle_sequence,
+                "attempt_sequence": 1,
+                "payment_status": payment.payment_status,
+            }
+        )
     return result, {
         "customer_unique_id": current.customer_unique_id,
         "subscription_status": changed[0].subscription_status,

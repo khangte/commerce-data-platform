@@ -5,6 +5,7 @@ from __future__ import annotations
 import psycopg
 from botocore.exceptions import BotoCoreError, ClientError
 
+from src.generator.errors import SourceCursorRegressionError
 from src.generator.lease import LeaseOwnershipLostError, LeaseUnavailableError
 from src.ingestion.batch import BatchIdentityConflictError
 from src.ingestion.lease import TableLeaseOwnershipLostError, TableLeaseUnavailableError
@@ -65,7 +66,7 @@ def classify_error(error: Exception) -> str:
         return LEASE_OWNERSHIP_LOST
     if isinstance(error, _CONNECTION_EXCEPTION_TYPES):
         return SOURCE_CONNECTION_ERROR
-    if isinstance(error, (BronzeSchemaContractError, BatchValidationContractError)):
+    if isinstance(error, (BronzeSchemaContractError, BatchValidationContractError, SourceCursorRegressionError)):
         return SOURCE_CONTRACT_ERROR
     if isinstance(error, RejectRateExceededError):
         return VALIDATION_THRESHOLD_EXCEEDED

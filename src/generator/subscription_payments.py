@@ -73,9 +73,12 @@ def plan_subscription_payment(
     billing_cycle_sequence: int,
     attempt_sequence: int,
     billing_period_start_at: datetime,
+    forced_status: str | None = None,
 ) -> SubscriptionPaymentRecord:
-    """한 청구 회차의 결제 성공·실패를 결정적으로 판정한 Record를 만든다."""
-    status = _billing_outcome(config, subscription_id, billing_cycle_sequence, attempt_sequence)
+    """한 청구 회차의 결제 결과를 계획하고 지정된 실패 상태를 우선한다."""
+    status = forced_status or _billing_outcome(
+        config, subscription_id, billing_cycle_sequence, attempt_sequence
+    )
     return SubscriptionPaymentRecord(
         payment_id=deterministic_uuid(
             "subscription-payment", subscription_id, billing_cycle_sequence, attempt_sequence

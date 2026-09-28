@@ -3,7 +3,7 @@
 > 상태: Done  
 > Milestone: 2 — Data Platform Core  
 > 선행 Phase: [Phase 3. Incremental Ingestion](phase-03-incremental-ingestion.md)  
-> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.16](../../PRD_v1.16.md)
+> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.17](../../PRD_v1.17.md)
 
 ## 목표
 
@@ -340,6 +340,7 @@ Manifest Object를 재다운로드해 HEAD Checksum과 `orphan.py`가 쓰던 Man
 ### 4. Retry와 오류 분류
 
 - [x] `P4-14` Retryable/Non-retryable Error Taxonomy 구현
+- [x] 2026-09-29 Generator 원천 커서 역행 예외를 기존 `SOURCE_CONTRACT_ERROR`로 분류하고 재시도하지 않음
 - [x] `P4-15` Exponential Backoff와 최대 Retry 설정
 - [x] `P4-16` 부분 성공 재실행과 COMMITTED Table 재사용 구현
 - [x] `P4-17` Task Timeout/종료 시 Lease 만료 또는 해제 검증
@@ -566,7 +567,7 @@ Project/CLI와 Test를 완성한 뒤, Warehouse DAG의 `dbt_build` 호출 경계
 | `src/ingestion/verification.py`                 | 생성 | Batch의 9개 Table이 모두 COMMITTED이고 Manifest/Object/Hash/Row Count/Watermark가 일치하는지 재확인하는 `verify_bronze_commit()`을 추가했다. |
 | `src/ingestion/manifest.py`                     | 수정 | `orphan.py`가 쓰던 Manifest 파싱·Type 검증 로직을 `parse_bronze_manifest_payload()`로 공개해 `verification.py`와 공유하도록 정리했다. |
 | `src/ingestion/orphan.py`                       | 수정 | 중복이던 Manifest 파싱·Type 검증 Private 함수를 제거하고 `manifest.py`의 공개 함수를 사용하도록 정리했다. |
-| `src/ingestion/errors.py`                       | 생성 | 예외를 문서 정의 Retryable/Non-retryable Error Type으로 변환하는 `classify_error()`/`is_retryable()`을 추가했다. |
+| `src/ingestion/errors.py`                       | 생성·수정 | 예외를 문서 정의 Retryable/Non-retryable Error Type으로 변환하는 `classify_error()`/`is_retryable()`을 추가하고, 2026-09-29 Generator 역행 예외를 재시도 불가 `SOURCE_CONTRACT_ERROR`로 분류했다. |
 | `airflow/dags/warehouse_pipeline_dag.py`        | 수정 | `default_args`로 재시도·Backoff·Timeout을 설정하고, 각 Task를 `classify_error()` 기반으로 Retryable은 재시도, Non-retryable은 `AirflowFailException`으로 즉시 실패하도록 감쌌다. |
 | `airflow/dags/source_simulation_dag.py`         | 수정 | 동일한 `default_args`와 `classify_error()` 기반 즉시 실패 처리를 Generator Task에 적용했다. |
 | `docs/phases/phase-04-airflow-orchestration.md` | 수정 | P4-01/P4-02/P4-05~P4-10/P4-12~P4-17 완료 상태와 Airflow Runtime 구성 범위, Fresh Boot·DAG 실행·Error Taxonomy 검증 결과를 기록했다. |

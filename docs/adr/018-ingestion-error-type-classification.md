@@ -43,6 +43,7 @@ Task 13A 착수 전 두 가지 설계 질의를 architect에 올렸다(판정 [0
 | `PublishInProgressError`(Publish 잠금) | `LEASE_UNAVAILABLE` | 가능 |
 | `LeaseOwnershipLostError` | `LEASE_OWNERSHIP_LOST` | 불가 |
 | `TableLeaseOwnershipLostError` | `LEASE_OWNERSHIP_LOST` | 불가 |
+| `SourceCursorRegressionError`(원천 갱신 시각 역행) | `SOURCE_CONTRACT_ERROR` | 불가 |
 
 가르는 축은 "어느 잠금이냐"가 아니라 "무슨 일이 일어났느냐"다. 대기 후 재시도 가능한 Unavailable과
 소유권을 잃어 재시도 불가능한 OwnershipLost는 잠금 종류와 무관하게 같은 재시도 답을 낸다.
