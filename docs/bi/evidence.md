@@ -17,6 +17,11 @@ Brazil 주 코드의 기본 Region Map이 없는 Metabase에서 `map`은 지역 
 않는다. `metabase/export/card-56.json`과 `dashboard-4.json`, `docs/bi/screenshots/dashboard-4.png`는
 2026-09-28에 이 설정으로 다시 생성했다.
 
+card 58 `Membership Tier Trend (주문 시점)`은 주문 Fact·주문 시점 고객 SCD2 결합을 날짜·거래 실적
+등급별 고객 수로 펼친 line 카드다. `metabase/export/card-58.json`과 `dashboard-4.json`에는 card 58의
+`calendar_date`·`membership_tier`·`customer_count` 시각화 설정과 Dashboard 4의 `(row 12, col 0, 12×4)`
+배치가 보존돼 있으며, `docs/bi/screenshots/dashboard-4.png`를 같은 설정으로 재캡처했다.
+
 Commit `5e149ef`은 구독 계약·결제 재증적 전후의 세 Dashboard Query와 현재 Dataset을 함께 확인한
 기준이다. 대조 수치와 구독 카드의 이벤트 합계는 [Dashboard 합계 대조](totals-reconciliation.md)에
 기록했다.
