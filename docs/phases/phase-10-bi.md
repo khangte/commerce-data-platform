@@ -3,7 +3,7 @@
 > 상태: Done — `P10-01`~`P10-23` 완료 (2026-09-28)
 > Milestone: 3 — Portfolio Evidence  
 > 선행 Phase: [Phase 9. Benchmark](phase-09-benchmark.md)  
-> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.14](../../PRD_v1.14.md)
+> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.15](../../PRD_v1.15.md)
 
 ## 목표
 
