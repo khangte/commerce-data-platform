@@ -2,9 +2,9 @@
 
 | Dashboard | Metabase ID | Dataset / Run / Export | Commit | Snapshot | Screenshot |
 | --- | ---: | --- | --- | --- | --- |
-| Sales | 2 | `Commerce Mart Serving` / `cef6b673-dc20-49bd-8f40-d615b2146796` / `a9ffd423-4e3d-4e20-9362-c2f4d6fb2679` | 048 복구 작업 중(미커밋) | `metabase/export/dashboard-2.json` | `docs/bi/screenshots/dashboard-2.png` |
-| Product | 3 | `Commerce Mart Serving` / `cef6b673-dc20-49bd-8f40-d615b2146796` / `a9ffd423-4e3d-4e20-9362-c2f4d6fb2679` | 048 복구 작업 중(미커밋) | `metabase/export/dashboard-3.json` | `docs/bi/screenshots/dashboard-3.png` |
-| Customer | 4 | `Commerce Mart Serving` / `cef6b673-dc20-49bd-8f40-d615b2146796` / `a9ffd423-4e3d-4e20-9362-c2f4d6fb2679` | 048 복구 작업 중(미커밋) | `metabase/export/dashboard-4.json` | `docs/bi/screenshots/dashboard-4.png` |
+| Sales | 2 | `Commerce Mart Serving` / `cef6b673-dc20-49bd-8f40-d615b2146796` / `a9ffd423-4e3d-4e20-9362-c2f4d6fb2679` | `6875685` | `metabase/export/dashboard-2.json` | `docs/bi/screenshots/dashboard-2.png` |
+| Product | 3 | `Commerce Mart Serving` / `cef6b673-dc20-49bd-8f40-d615b2146796` / `a9ffd423-4e3d-4e20-9362-c2f4d6fb2679` | `6875685` | `metabase/export/dashboard-3.json` | `docs/bi/screenshots/dashboard-3.png` |
+| Customer | 4 | `Commerce Mart Serving` / `cef6b673-dc20-49bd-8f40-d615b2146796` / `a9ffd423-4e3d-4e20-9362-c2f4d6fb2679` | `6875685` | `metabase/export/dashboard-4.json` | `docs/bi/screenshots/dashboard-4.png` |
 
 Serving Manifest는 Export `a9ffd423-4e3d-4e20-9362-c2f4d6fb2679`와 Publish Run
 `cef6b673-dc20-49bd-8f40-d615b2146796`의 Mart Hash를 보존한다. 이 Run은
