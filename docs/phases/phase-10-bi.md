@@ -1,6 +1,6 @@
 # Phase 10. BI
 
-> 상태: In Progress — `P10-23` Screenshot만 미완료 (2026-09-23)  
+> 상태: Done — `P10-01`~`P10-23` 완료 (2026-09-28)
 > Milestone: 3 — Portfolio Evidence  
 > 선행 Phase: [Phase 9. Benchmark](phase-09-benchmark.md)  
 > 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.14](../../PRD_v1.14.md)
@@ -127,9 +127,13 @@ Metabase
 - [x] `P10-20` Dashboard Export 또는 재생성 가능한 설정 보존
 - [x] `P10-21` Dashboard별 Source Model/Query/Filter 문서화
 - [x] `P10-22` dbt 기준 Query와 Dashboard Total 대조
-- [ ] `P10-23` Screenshot과 Dataset/Run/Commit 식별자 기록
+- [x] `P10-23` Screenshot과 Dataset/Run/Commit 식별자 기록
 
-`P10-23`은 열어 둔다. Dataset/Run/Export/Commit 식별자는 [Dashboard 증적](../bi/evidence.md)에 기록했지만, 작업 환경에 Browser 캡처 도구가 없어 실제 화면 Screenshot을 만들지 못했다. 대체 증적은 Metabase API JSON Snapshot(`metabase/export/dashboard-{2,3,4}.json`, `card-46`~`card-57.json`)이다. 이 Snapshot은 카드·Query·Filter 매핑과 Connection(id 2)을 보존하지만 화면 자체를 보여 주지 않는다. Screenshot을 추가하면 이 Task와 DoD 마지막 항목을 닫는다.
+`P10-23`은 [Dashboard 증적](../bi/evidence.md)의 Dataset/Run/Export/Commit 식별자와 연결된 실제
+화면 PNG를 남겼다. `scripts/capture_metabase_dashboards.py`는 `METABASE_API_KEY`를 URL이 아닌
+BrowserContext의 `X-API-Key` 요청 헤더로 전달해 Dashboard 2·3·4를 재캡처한다. API JSON Snapshot
+(`metabase/export/dashboard-{2,3,4}.json`, `card-46`~`card-57.json`)은 카드·Query·Filter 매핑의
+재생성 기준으로 계속 보존한다.
 
 ## 범위 밖
 
@@ -186,17 +190,18 @@ Phase 10에는 별도 AC 번호가 없으므로 ROADMAP의 Connection/Dashboard 
 | `docs/reference/metric-dictionary.md`, `metabase/queries/semantic_*.sql` | GMV·Orders·AOV와 카테고리·상품·고객 지표의 원본 Grain·가산성·계약 근거를 고정하고, Metabase 등록 지표와 Warehouse 대조 SQL을 추가했다. |
 | `dbt/models/marts/metrics/rpt_customer_order_activity_daily.sql`, `dbt/tests/rpt_customer_order_activity_daily_unique.sql`, `dbt/models/marts/metrics/schema.yml` | 신규·재구매 고객을 BI Native SQL로 재정의하지 않도록 주문일×고객 구분 Report Model과 계약 Test를 추가했다. Run `7472eb21-ef48-4c8d-bd5f-f5c3e6f4c1cf`의 Serving Export `191cafe0-8ce4-4570-a43d-418209dfd948`에 1,141행으로 반영했다. |
 | `metabase/queries/dashboard_*.sql`, `scripts/metabase_snapshot.sh`, `metabase/export/`, `docs/bi/` | Metabase Sales(2)·Product(3)·Customer(4) Dashboard와 카드 12개의 Query·UTC Filter·재생성 Snapshot, Warehouse 대조표와 식별 증적을 보존했다. |
+| `scripts/capture_metabase_dashboards.py`, `tests/test_capture_metabase_dashboards.py`, `docs/bi/screenshots/`, `docs/bi/dashboards.md`, `docs/bi/evidence.md`, `pyproject.toml`, `uv.lock` | Playwright headless Chromium으로 API Key 요청 헤더를 사용하는 Dashboard 2·3·4 재캡처 스크립트와 단위 Test를 추가하고, 실제 PNG 증적 경로·재실행 방법을 기록했다. |
 | `docs/adr/012-metabase-serving-strategy.md` | Serving DuckDB 경로를 채택하고 Driver 등록·read-only·재기동 지속성 Connection Gate 통과 결과를 기록했다(상태 Accepted). |
 
 ## Definition of Done
 
-- [ ] 모든 `P10-*` Task가 완료됐다. (`P10-23` 미완료)
+- [x] 모든 `P10-*` Task가 완료됐다.
 - [x] Metabase가 Mart만 조회한다.
 - [x] 연결 전략과 Driver/Lock 관측 결과가 ADR에 기록됐다.
 - [x] Sales/Product/Customer Dashboard가 모두 재현된다.
 - [x] Dashboard 합계가 dbt 기준 Query와 일치한다.
 - [x] Grain Fan-out과 Metric 의미 혼동이 없다.
-- [ ] Screenshot에 Dataset/Run/Commit 식별 정보가 연결된다. (식별자와 API JSON 대체 증적만 있음. `P10-23` 참조)
+- [x] Screenshot에 Dataset/Run/Commit 식별 정보가 연결된다. (`P10-23` 참조)
 
 2026-09-23 대조 근거: Serving Manifest는 Export `191cafe0-8ce4-4570-a43d-418209dfd948`·Run `7472eb21-ef48-4c8d-bd5f-f5c3e6f4c1cf`(`PUBLISHED`)를 가리키고, `data/serving/mart.duckdb`에는 `dimensions`·`facts`·`metrics` Schema의 Relation 13개와 `serving_manifest`만 있다. 카드 Snapshot 12개는 모두 Connection id 2를 쓴다. Serving 파일에서 다시 계산한 GMV 15,419,773.75, Orders 99,441, AOV 159.8268, Category GMV 15,843,553.24(112,650행), 신규 97,026·재구매 2,415 주문, 현재 등급 고객 96,096이 [대조표](../bi/totals-reconciliation.md)와 같다. Item Fact에 `dim_product`·`dim_date`를 Join해도 행 수와 `sum(line_gross_value)`가 바뀌지 않는다. ADR-012에 Driver 등록, WAL 부재, 교체 뒤 재연결, `access_mode=read_only`, 재기동 지속성 관측이 있다.
 
