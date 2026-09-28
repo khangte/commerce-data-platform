@@ -255,3 +255,5 @@ dbt/data/
 dbt/logs/
 
 docs/reference/mart-grain.md.bak
+docs/superpowers/
+.superpowers/
