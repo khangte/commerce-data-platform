@@ -3,7 +3,7 @@
 > 상태: Done  
 > Milestone: 2 — Data Platform Core  
 > 선행 Phase: [Phase 5. Bronze Catalog + Staging](phase-05-bronze-catalog-and-staging.md)  
-> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.12](../../PRD_v1.12.md), [Mart Grain 계약](../reference/mart-grain.md)
+> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.14](../../PRD_v1.14.md), [Mart Grain 계약](../reference/mart-grain.md)
 > 참고: [데이터 변환 흐름](../reference/data-transformation-flow.md) — 계층별 변환의 근거
 
 ## 목표
@@ -190,7 +190,7 @@ Report Model은 Mart 위에서 파생된다. BI가 Source·Bronze·Staging을 �
 | `dbt/models/marts/dimensions/dim_customer.sql`                                                          | 구독 상태·재가입 파생 컬럼을 제거하고 등급 Version만 투영하도록 축소했다.                                                                  |
 | `dbt/models/marts/dimensions/dim_subscription.sql`, `dim_date.sql`                                      | `subscription_id` Business Key와 결정적 Version Key를 가진 계약 SCD2 Dimension을 추가하고, 계약 결제일까지 날짜 Dimension 범위를 확장했다. |
 | `dbt/models/intermediate/int_subscription_payments_enriched.sql`                                        | 결제 시점의 계약·고객 Version과 날짜 Key를 결합해 Fact 입력을 준비하도록 수정했다.                                                         |
-| `dbt/models/marts/facts/fact_subscription_payments.sql`                                                 | `payment_id` Grain의 계약별 구독 결제 시도 Fact를 구현했다.                                                                                |
+| `dbt/models/marts/facts/fct_subscription_payment.sql`                                                 | `payment_id` Grain의 계약별 구독 결제 시도 Fact를 구현했다.                                                                                |
 | `dbt/models/marts/*/schema.yml`, `dbt/tests/dim_subscription_*`, `dbt/tests/fct_subscription_payment_*` | 계약 SCD2, 열린 계약, 청구 회차·시도, 성공 금액, 실패 코드 계약을 Schema 및 Singular Test로 강제했다.                                      |
 | `tests/integration/test_subscription_payment_temporal_join_integration.py`                              | 계약 키·청구 회차·시도 순번 기준으로 Source→Bronze→dbt Fact의 계약·고객 Temporal Join을 E2E 검증하도록 갱신했다.                           |
 | `docs/reference/mart-grain.md`                                                                          | P6-26으로 Dimension·Fact 컬럼표를 현행 dbt 출력과 정합시키고, P6-27으로 기존 Report 3개의 Grain·키·컬럼·제약을 기록했다.                    |

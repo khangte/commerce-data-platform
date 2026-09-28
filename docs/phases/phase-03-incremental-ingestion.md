@@ -1,9 +1,9 @@
 # Phase 3. Incremental Ingestion
 
-> 상태: 구현 완료 · `orders` 최초 Bronze 적재 완료
+> 상태: Done
 > Milestone: 2 — Data Platform Core  
 > 선행 Phase: [Phase 2. Deterministic Generator](phase-02-deterministic-generator.md)  
-> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.12](../../PRD_v1.12.md)
+> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.14](../../PRD_v1.14.md)
 
 ## 목표
 
