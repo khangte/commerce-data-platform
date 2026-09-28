@@ -22,12 +22,18 @@ card 58 `Membership Tier Trend (주문 시점)`은 주문 Fact·주문 시점 �
 `calendar_date`·`membership_tier`·`customer_count` 시각화 설정과 Dashboard 4의 `(row 12, col 0, 12×4)`
 배치가 보존돼 있으며, `docs/bi/screenshots/dashboard-4.png`를 같은 설정으로 재캡처했다.
 
+card 59 `Current Subscription Status Distribution`은 `is_current = true`인
+`dimensions.dim_subscription` 계약 Version만 상태별로 중복 없이 세는 bar다. `metabase/export/card-59.json`과
+`dashboard-4.json`에는 `subscription_status`·`contract_count` 시각화 설정과 Dashboard 4의
+`(row 16, col 0, 6×4)` 배치가 보존돼 있으며, 실제 상태 막대가 렌더링된 Customer PNG를 재생성했다.
+
 Commit `5e149ef`은 구독 계약·결제 재증적 전후의 세 Dashboard Query와 현재 Dataset을 함께 확인한
 기준이다. 대조 수치와 구독 카드의 이벤트 합계는 [Dashboard 합계 대조](totals-reconciliation.md)에
 기록했다.
 
 `P10-23`은 2026-09-28에 완료했다. `scripts/capture_metabase_dashboards.py`가 `METABASE_API_KEY`를
 `X-API-Key` 요청 헤더로만 전달하는 headless Chromium BrowserContext에서 세 Dashboard를 열어 표의
-PNG를 저장했다. 논리 시각 2026-10-28 재증적에서 card 54의 상태 전이 시계열이 빈 화면이 아닌 것을
-확인하기 위해 Snapshot과 Customer PNG를 다시 생성했다. API JSON Snapshot은 Dashboard·카드·Filter의 재생성
-기준으로 계속 보존하고, PNG는 실제 화면 증적으로 사용한다.
+PNG를 저장했다. 기본 화면 뒤 8초의 카드 렌더링 대기를 두어 하단의 card 58·59도 골격 화면이 아닌 실제
+차트로 저장한다. 논리 시각 2026-10-28 재증적에서 card 54의 상태 전이 시계열과 card 59의 현재 상태 분포가
+빈 화면이 아닌 것을 확인하기 위해 Snapshot과 Customer PNG를 다시 생성했다. API JSON Snapshot은 Dashboard·카드·Filter의
+재생성 기준으로 계속 보존하고, PNG는 실제 화면 증적으로 사용한다.

@@ -28,3 +28,10 @@ def test_dashboard_ids_match_the_documented_sales_product_customer_dashboards():
     module = load_capture_module()
 
     assert module.DASHBOARD_IDS == (2, 3, 4)
+
+
+def test_dashboard_capture_waits_for_card_rendering():
+    """하단 카드가 골격 화면으로 저장되지 않을 만큼 렌더링 시간을 기다리는지 검증한다."""
+    module = load_capture_module()
+
+    assert module.DASHBOARD_RENDER_WAIT_MS >= 8_000

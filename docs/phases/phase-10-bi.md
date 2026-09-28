@@ -118,7 +118,7 @@ Metabase
 
 - [x] `P10-16` New Customers
 - [x] `P10-17` Repeat Customers
-- [x] `P10-18` 구독 상태·거래 실적 등급 분포/추이 (card 55 집계, card 57 현재 분포, card 58 주문 시점 추이)
+- [x] `P10-18` 구독 상태·거래 실적 등급 분포/추이 (card 54 이벤트 추이, card 59 현재 상태 분포, card 55 집계, card 57 현재 분포, card 58 주문 시점 추이)
 - [x] `P10-19` Region 분석
 - [x] 현재 속성과 주문 시점 속성의 사용 목적을 명시
 
@@ -128,6 +128,10 @@ card 56의 Region 분석은 Brazil 주 코드에 기본 Region Map이 없는 Met
 논리 시각 2026-10-28에 Generator로 구독 계약 4건과 자동 청구 결제 1건을 생성하고 Bronze 수집·Warehouse
 Publish·Serving Export를 다시 수행했다. card 54는 `rpt_subscription_funnel_daily` 4행의 실제
 상태 전이 시계열을 표시하며, 빈 차트가 아님을 Customer Screenshot으로 확인했다.
+
+card 59는 `dim_subscription`에서 `is_current = true`인 계약 Version만 상태별로 세는 현재 상태 분포다.
+상태 전이 이벤트를 세는 card 54의 퍼널 시계열과 현재 계약 상태를 같은 지표로 합치지 않으며,
+`dashboard_subscription_status_distribution.sql`과 Snapshot·Customer Screenshot으로 재현한다.
 
 card 58은 `rpt_membership_tier_performance`와 같은 주문 Fact·주문 시점 고객 SCD2 결합을 날짜별로 펼친
 거래 실적 등급 고객 수 추이다. 등급별 주문·GMV 집계인 card 55와 현재 고객 버전만 쓰는 card 57을 대체하거나
@@ -200,8 +204,8 @@ Phase 10에는 별도 AC 번호가 없으므로 ROADMAP의 Connection/Dashboard 
 | `dbt/profiles.yml`, `src/warehouse/publish.py`, `dbt/models/intermediate/int_order_items_enriched.sql`, `dbt/models/marts/facts/`, `dbt/tests/`, `tests/test_warehouse_*` | Mart Build 세션을 UTC로 고정해 날짜 키·대체 키의 실행 환경 의존성을 없앴고, Publish CLI에 전체 새로고침 인자를 추가했다. 주문 항목 Fact에는 주문 원본에서 유도한 `purchase_date_key`와 날짜 차원 FK·주문 Fact 일치 Test를 추가했다. Run `a10d06c3-c32e-4407-afdc-a1167b820c44`는 UTC 기준 Run `5d74a326-954b-4850-a3d6-56d1556fec8d`와 비교해 `facts.fct_order_item`만 Hash가 변경됨을 검증했다. |
 | `docs/reference/metric-dictionary.md`, `metabase/queries/semantic_*.sql` | GMV·Orders·AOV와 카테고리·상품·고객 지표의 원본 Grain·가산성·계약 근거를 고정하고, Metabase 등록 지표와 Warehouse 대조 SQL을 추가했다. |
 | `dbt/models/marts/metrics/rpt_customer_order_activity_daily.sql`, `dbt/tests/rpt_customer_order_activity_daily_unique.sql`, `dbt/models/marts/metrics/schema.yml` | 신규·재구매 고객을 BI Native SQL로 재정의하지 않도록 주문일×고객 구분 Report Model과 계약 Test를 추가했다. Run `7472eb21-ef48-4c8d-bd5f-f5c3e6f4c1cf`의 Serving Export `191cafe0-8ce4-4570-a43d-418209dfd948`에 1,141행으로 반영했다. |
-| `metabase/queries/dashboard_*.sql`, `scripts/metabase_snapshot.sh`, `metabase/export/`, `docs/bi/` | Metabase Sales(2)·Product(3)·Customer(4) Dashboard와 카드 13개의 Query·UTC Filter·재생성 Snapshot, Warehouse 대조표와 식별 증적을 보존했다. card 56은 기본 Brazil Region Map 부재로 경고가 나는 `map` 대신 주별 주문 수 내림차순 `bar`로 고쳤고, card 58은 주문 시점 거래 실적 등급별 고객 수 추이를 line으로 추가해 Customer Snapshot·Screenshot을 재생성했다. |
-| `scripts/capture_metabase_dashboards.py`, `tests/test_capture_metabase_dashboards.py`, `docs/bi/screenshots/`, `docs/bi/dashboards.md`, `docs/bi/evidence.md`, `pyproject.toml`, `uv.lock` | Playwright headless Chromium으로 API Key 요청 헤더를 사용하는 Dashboard 2·3·4 재캡처 스크립트와 단위 Test를 추가하고, 실제 PNG 증적 경로·재실행 방법을 기록했다. |
+| `metabase/queries/dashboard_*.sql`, `scripts/metabase_snapshot.sh`, `metabase/export/`, `docs/bi/` | Metabase Sales(2)·Product(3)·Customer(4) Dashboard와 카드 14개의 Query·UTC Filter·재생성 Snapshot, Warehouse 대조표와 식별 증적을 보존했다. card 56은 기본 Brazil Region Map 부재로 경고가 나는 `map` 대신 주별 주문 수 내림차순 `bar`로 고쳤고, card 58은 주문 시점 거래 실적 등급별 고객 수 추이를 line으로, card 59는 최신 계약 상태 분포를 bar로 추가해 Customer Snapshot·Screenshot을 재생성했다. |
+| `scripts/capture_metabase_dashboards.py`, `tests/test_capture_metabase_dashboards.py`, `docs/bi/screenshots/`, `docs/bi/dashboards.md`, `docs/bi/evidence.md`, `pyproject.toml`, `uv.lock` | Playwright headless Chromium으로 API Key 요청 헤더를 사용하는 Dashboard 2·3·4 재캡처 스크립트와 단위 Test를 추가하고, 하단 카드도 실제 차트로 저장하도록 기본 화면 뒤 8초 렌더링 대기를 적용했다. 실제 PNG 증적 경로·재실행 방법을 기록했다. |
 | `data/serving/mart.duckdb`, `metabase/export/card-54.json`, `metabase/export/dashboard-4.json`, `docs/bi/totals-reconciliation.md`, `docs/bi/evidence.md` | 구독 계약 4건·자동 청구 결제 1건을 수집·Publish한 Run `8890b135-5391-4290-8b05-bf99f24668a6`과 Serving Export `0616bd30-7c38-4a3c-b03b-aaecb0cc6cec` 기준으로 card 54의 실제 상태 전이 시계열, Export Snapshot, Customer Screenshot, Dashboard 대조표를 재생성했다. |
 | `docs/adr/012-metabase-serving-strategy.md` | Serving DuckDB 경로를 채택하고 Driver 등록·read-only·재기동 지속성 Connection Gate 통과 결과를 기록했다(상태 Accepted). |
 
@@ -215,7 +219,7 @@ Phase 10에는 별도 AC 번호가 없으므로 ROADMAP의 Connection/Dashboard 
 - [x] Grain Fan-out과 Metric 의미 혼동이 없다.
 - [x] Screenshot에 Dataset/Run/Commit 식별 정보가 연결된다. (`P10-23` 참조)
 
-2026-09-23 대조 근거: Serving Manifest는 Export `191cafe0-8ce4-4570-a43d-418209dfd948`·Run `7472eb21-ef48-4c8d-bd5f-f5c3e6f4c1cf`(`PUBLISHED`)를 가리키고, `data/serving/mart.duckdb`에는 `dimensions`·`facts`·`metrics` Schema의 Relation 13개와 `serving_manifest`만 있다. 현재 카드 Snapshot 13개는 모두 Connection id 2를 쓴다. Serving 파일에서 다시 계산한 GMV 15,419,773.75, Orders 99,441, AOV 159.8268, Category GMV 15,843,553.24(112,650행), 신규 97,026·재구매 2,415 주문, 현재 등급 고객 96,096이 [대조표](../bi/totals-reconciliation.md)와 같다. Item Fact에 `dim_product`·`dim_date`를 Join해도 행 수와 `sum(line_gross_value)`가 바뀌지 않는다. ADR-012에 Driver 등록, WAL 부재, 교체 뒤 재연결, `access_mode=read_only`, 재기동 지속성 관측이 있다.
+2026-09-23 대조 근거: Serving Manifest는 Export `191cafe0-8ce4-4570-a43d-418209dfd948`·Run `7472eb21-ef48-4c8d-bd5f-f5c3e6f4c1cf`(`PUBLISHED`)를 가리키고, `data/serving/mart.duckdb`에는 `dimensions`·`facts`·`metrics` Schema의 Relation 13개와 `serving_manifest`만 있다. 현재 카드 Snapshot 14개는 모두 Connection id 2를 쓴다. Serving 파일에서 다시 계산한 GMV 15,419,773.75, Orders 99,441, AOV 159.8268, Category GMV 15,843,553.24(112,650행), 신규 97,026·재구매 2,415 주문, 현재 등급 고객 96,096이 [대조표](../bi/totals-reconciliation.md)와 같다. Item Fact에 `dim_product`·`dim_date`를 Join해도 행 수와 `sum(line_gross_value)`가 바뀌지 않는다. ADR-012에 Driver 등록, WAL 부재, 교체 뒤 재연결, `access_mode=read_only`, 재기동 지속성 관측이 있다.
 
 ## Portfolio Evidence
 

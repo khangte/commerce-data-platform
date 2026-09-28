@@ -14,6 +14,7 @@ DASHBOARD_IDS = (2, 3, 4)
 DEFAULT_METABASE_URL = "http://localhost:3000"
 DEFAULT_OUTPUT_DIR = Path("docs/bi/screenshots")
 DEFAULT_TIMEOUT_MS = 60_000
+DASHBOARD_RENDER_WAIT_MS = 8_000
 
 
 def dashboard_url(metabase_url: str, dashboard_id: int) -> str:
@@ -47,7 +48,7 @@ def wait_for_dashboard(page: Page, timeout_ms: int) -> None:
     """Dashboard의 기본 화면과 카드 요청이 안정화될 때까지 기다린다."""
     page.wait_for_load_state("domcontentloaded", timeout=timeout_ms)
     page.locator("main").wait_for(state="visible", timeout=timeout_ms)
-    page.wait_for_timeout(2_000)
+    page.wait_for_timeout(DASHBOARD_RENDER_WAIT_MS)
 
 
 def capture_dashboards(

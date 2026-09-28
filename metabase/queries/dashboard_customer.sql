@@ -26,3 +26,12 @@ select membership_tier, count(distinct customer_id) as customer_count
 from dimensions.dim_customer
 where is_current = true
 group by membership_tier;
+
+-- 현재 시점 구독 상태별 계약 수 분포. 상세 SQL은 dashboard_subscription_status_distribution.sql을 따른다.
+select
+    subscription_status,
+    count(distinct subscription_id) as contract_count
+from dimensions.dim_subscription
+where is_current = true
+group by subscription_status
+order by contract_count desc, subscription_status;

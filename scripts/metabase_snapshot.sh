@@ -21,7 +21,7 @@ for dashboard_id in 2 3 4; do
     -o "${OUTPUT_DIR}/dashboard-${dashboard_id}.json"
 done
 
-for card_id in $(seq 46 58); do
+for card_id in $(seq 46 59); do
   curl --fail --silent --show-error \
     -H "X-API-Key: ${METABASE_API_KEY}" \
     "${METABASE_URL}/api/card/${card_id}" \
