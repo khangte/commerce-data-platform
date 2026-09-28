@@ -155,6 +155,18 @@ Phase 9 Benchmark의 Cold Run은 `src/benchmark/cache.py`의 `reset_caches()`로
   내려가며, `services`를 넘기면 그 Compose Service들을 재시작해 대신 Cache 효과를 낮춥니다.
 - Cold Run과 Warm Run은 절대 같은 집계에 섞지 않습니다.
 
+## Dashboard 실행하기
+
+Phase 10은 Metabase로 Sales·Product·Customer 3개 Dashboard를 제공합니다.
+`Commerce Mart Serving`(database ID `2`) 하나만 읽고, Dashboard ID는 Sales `2`,
+Product `3`, Customer `4`입니다.
+
+빈 Metabase 앱 DB에서 Connection을 만든 뒤 `METABASE_API_KEY`를 설정하고
+`scripts/metabase_snapshot.sh`로 카드·Dashboard를 재생성합니다. 재현 절차와
+Source Model 매핑은 [`docs/bi/dashboards.md`](docs/bi/dashboards.md), Dashboard별
+Dataset/Run/Export 식별자와 Screenshot 증적 현황은
+[`docs/bi/evidence.md`](docs/bi/evidence.md)를 참고합니다.
+
 ## 로컬 데이터와 Secret
 
 `.env`, Raw/Generated Data, DuckDB Warehouse, Airflow Log는 Git에 포함하지 않습니다. `.env.example`의 예시 Secret은 실제 값으로 사용하지 않습니다.
