@@ -109,6 +109,7 @@ Context Manager를 Task 경계 전체에 걸쳐 사용할 수 없다. 아래 계
 - [x] `P4-04` DAG Import/Parse Smoke Test 구성
 - [x] 2026-09-28 운영 검증: Airflow 실행 API 연결·JWT 인증 설정 후 Source→Warehouse DAG 실제 실행 완료
 - [x] 2026-09-28 `source_simulation_dag`를 매시간 예약하고 과거 구간 자동 재실행 없이 다음 예약 시각 확인
+- [x] 2026-09-28 실제로 읽히지 않는 `WAREHOUSE_DAG_SCHEDULE` Compose·환경 변수 예시 항목 제거
 
 Runtime 계약:
 
@@ -554,10 +555,10 @@ Project/CLI와 Test를 완성한 뒤, Warehouse DAG의 `dbt_build` 호출 경계
 | `airflow/Dockerfile`                            | 생성 | Airflow 3.3.1 Python 3.12 Image에 프로젝트 런타임 의존성을 빌드 시 설치하도록 구성했다. |
 | `airflow/requirements.txt`                      | 생성 | Airflow Container에서 필요한 프로젝트 Python 의존성의 고정 Version을 정의했다. |
 | `airflow/logs/.gitkeep`                         | 생성 | Airflow Log Bind Mount의 추적 가능한 빈 디렉터리를 추가했다. |
-| `compose.yaml`                                  | 수정 | `airflow` Profile의 API Server·Scheduler·DAG Processor, LocalExecutor, 내부 Service 연결과 프로젝트 경로 Mount를 추가했다. `airflow-init` Metadata DB Migration Service와 세 Airflow Service의 Health Check, `airflow-runtime-depends-on` Anchor를 추가했다. `PostgresSettings.from_environment()`가 요구하는 `POSTGRES_USER`/`POSTGRES_PASSWORD`를 `airflow-common` 환경 변수에 추가했다. 2026-09-28 실제 실행에서 `AIRFLOW__WORKERS__EXECUTION_API_SERVER_URL`과 공통 `AIRFLOW__API_AUTH__JWT_SECRET` 주입을 추가했다. |
+| `compose.yaml`                                  | 수정 | `airflow` Profile의 API Server·Scheduler·DAG Processor, LocalExecutor, 내부 Service 연결과 프로젝트 경로 Mount를 추가했다. `airflow-init` Metadata DB Migration Service와 세 Airflow Service의 Health Check, `airflow-runtime-depends-on` Anchor를 추가했다. `PostgresSettings.from_environment()`가 요구하는 `POSTGRES_USER`/`POSTGRES_PASSWORD`를 `airflow-common` 환경 변수에 추가했다. 2026-09-28 실제 실행에서 `AIRFLOW__WORKERS__EXECUTION_API_SERVER_URL`과 공통 `AIRFLOW__API_AUTH__JWT_SECRET` 주입을 추가하고, 실제로 읽히지 않는 `WAREHOUSE_DAG_SCHEDULE`을 제거했다. |
 | `pyproject.toml`                                | 수정 | Airflow Image의 Amazon Provider와 호환되는 `boto3` Version으로 고정했다. |
 | `uv.lock`                                       | 수정 | 프로젝트 의존성 잠금 정보를 `boto3` Version 변경에 맞춰 갱신했다. |
-| `.env.example`                                  | 수정 | Airflow UI Port·LocalExecutor 병렬도와 Linux/WSL 파일 권한용 `AIRFLOW_UID` 설정 예시를 추가했다. 2026-09-28 공통 JWT 비밀값의 환경 변수 자리표시자를 추가했다. |
+| `.env.example`                                  | 수정 | Airflow UI Port·LocalExecutor 병렬도와 Linux/WSL 파일 권한용 `AIRFLOW_UID` 설정 예시를 추가했다. 2026-09-28 공통 JWT 비밀값의 환경 변수 자리표시자를 추가하고, 사용하지 않는 `WAREHOUSE_DAG_SCHEDULE` 예시를 제거했다. |
 | `.env`                                          | 로컬 수정 | 2026-09-28 실행에서 Airflow 서비스가 공유하는 JWT 비밀값을 생성해 추가했다. Git 추적 대상이 아니다. |
 | `.gitignore`                                    | 수정 | Airflow Log는 무시하되 빈 디렉터리 표시 파일은 추적하도록 변경했다. |
 | `airflow/dags/source_simulation_dag.py`         | 생성 | Airflow Param을 검증해 Phase 2 `run_generator` API를 호출하는 Generator DAG를 추가했다. |

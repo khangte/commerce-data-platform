@@ -79,7 +79,6 @@ Harness와 Ingestion 계층 장애 Scenario는 Mart 구성과 독립적이다. �
 | ID     | 시나리오                  | 핵심 검증                                        |
 | ------ | ------------------------- | ------------------------------------------------ |
 | `R-11` | Missing Schedule          | 누락 구간은 다음 실행이 자동 Self-heal(Gap 없음), 귀속만 명시 Batch로 복구 |
-
 | `R-12` | Backfill Replay           | Source Read 없이 COMMITTED Bronze 재적용         |
 | `R-13` | Re-extract                | 명시 범위를 새 `batch_id`로 추출                 |
 | `R-15` | Source Connection Failure | Object 생성/Watermark 전진 없이 재시도 가능 상태 |
@@ -89,6 +88,7 @@ Harness와 Ingestion 계층 장애 Scenario는 Mart 구성과 독립적이다. �
 > 새 시나리오는 필요 없다([architect-review 047](../architect-review/047_source-dag-hourly-r11-premise.md)).
 
 - [x] `P8-16` R-11 Missing Schedule 실행 및 문서화 — 증거: `RUN_POSTGRES_INTEGRATION=1 RUN_SEAWEEDFS_INTEGRATION=1 RUN_DBT_PUBLISH_INTEGRATION=1 uv run pytest tests/reliability -v` → PASSED. `pipeline_name=test_r11_43411123c19e486f82a3bf544a83ac14`, 건너뛴 창 없이 C 실행이 Gap 없이 회수, Mart Hash가 회복 전후 모두 Control과 일치([Runbook](../runbooks/r11-missing-schedule.md))
+- [x] 2026-09-28 R-11 전제 갱신 — Source 매시간 예약과 두 DAG의 `catchup=False`에서 Scheduler 누락의 두 경로를 [architect-review 047](../architect-review/047_source-dag-hourly-r11-premise.md)에 따라 기록하고 새 시나리오는 추가하지 않았다.
 - [x] `P8-17` R-12 Backfill Replay 실행 및 문서화 — 증거: 위 명령 → PASSED. `pipeline_name=test_r12_b5052dc9946743749f37fbc773f62f53`, Source Read 없이 COMMITTED Bronze만으로 재Build, `mart_hashes_match_control=true`([Runbook](../runbooks/r12-backfill-replay.md))
 - [x] `P8-18` R-13 Re-extract 실행 및 문서화 — 증거: 위 명령 → PASSED. `pipeline_name=test_r13_83a8eba240a347da9e4fe3bc92a605b4`, `original_batch_id`와 `re_extract_batch_id`가 별개 `batch_id`로 공존, 기존 Object 불변 유지([Runbook](../runbooks/r13-re-extract.md))
 - [x] `P8-20` R-15 Source Connection Failure 실행 및 문서화 — 증거: 위 명령 → PASSED. `batch_id=r15-02bb8fb6b4714ca3a1b6540e74f3c1e4__20260920T000000Z`, `classified_error=SOURCE_CONNECTION_ERROR`, Object 생성 0건, Watermark 불변, 재시도 성공([Runbook](../runbooks/r15-source-connection-failure.md))
@@ -180,10 +180,10 @@ AC-07은 동일 범위 Full Refresh와 Key별 값/Logical Hash가 같아야 한�
 
 | 경로                                  | 변경 내용                                                                                                       |
 | ------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `docs/phases/phase-08-reliability.md` | `P8-01`~`P8-20` 체크리스트에 명령·결과·식별자 증거 라인을 채우고, R-11 행을 explicit-batch/Self-heal 정의로 고치고, Definition of Done·Portfolio Evidence를 실측 근거로 채웠다. |
+| `docs/phases/phase-08-reliability.md` | `P8-01`~`P8-20` 체크리스트에 명령·결과·식별자 증거 라인을 채우고, R-11 행을 명시 Batch 실행과 다음 실행의 자동 회복 정의로 고치고, Definition of Done·Portfolio Evidence를 실측 근거로 채웠다. 2026-09-28 Source 매시간 예약에 따른 Scheduler 누락 주석과 완료 체크를 추가했다. |
 | `tests/reliability/` | 읽기 전용 플랫폼 상태 수집기, 상태 비교 도우미, JSON 증적 저장기를 추가했다. |
 | `tests/reliability/faults.py` | 기존 업로드·Commit·Source 연결 함수에 monkeypatch로 장애를 주입하고 Manifest 변조를 재현한다. |
-| `docs/runbooks/`, `docs/troubleshooting/` | Runbook 15편과 Troubleshooting 3편(Ingestion 오류, Commit과 Lease, Warehouse Publish)을 완성하고 오류 코드 역색인을 채웠다(미커밋). |
+| `docs/runbooks/`, `docs/troubleshooting/` | Runbook 15편과 Troubleshooting 3편(Ingestion 오류, Commit과 Lease, Warehouse Publish)을 완성하고 오류 코드 역색인을 채웠다(미커밋). 2026-09-28 `r11-missing-schedule.md`의 존재하지 않는 DAG 명칭을 바로잡고 Scheduler 누락 경로를 설명했다. |
 | `pyproject.toml`, `.gitignore` | `reliability` pytest 마커와 생성 증적 제외 경로를 등록했다. |
 
 ## Definition of Done
