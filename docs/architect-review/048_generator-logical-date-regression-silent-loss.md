@@ -271,7 +271,7 @@ paused DAG에 수동 Run을 넣지 않는다. `python -m src.generator`로 실�
 | 1. 수정 A | `_assert_source_cursor_forward`는 재사용 경로 다음, Source 트랜잭션 안에서 첫 쓰기 전에 실행된다. Table별 `TABLE_CONFIGS` Cursor 컬럼을 쓴다. `SourceCursorRegressionError`는 `SOURCE_CONTRACT_ERROR`로 분류된다. |
 | 보충 수정 | `subscription-payment-failed` Profile 전이가 실패 결제 행(회차 1, 시도 1, `failed`/`DECLINED`)을 같은 트랜잭션에서 쓴다. `plan_subscription_payment`에 `forced_status` 인자를 추가했다. |
 | 테스트 | `uv run pytest tests/generator`: 52 passed. `ruff check src tests` 통과. |
-| 2. 백업 | `data/generated/backups/2026-09-29-pre-rebaseline/`: DB dump 3건, SeaweedFS Manifest, DuckDB 2건, 재구성 dry-run·confirm 결과 JSON, Generator 실행 기록 JSONL. |
+| 2. 백업 | `data/generated/backups/2026-09-29-pre-rebaseline/`: DB dump 3건, SeaweedFS Manifest, DuckDB 2건, 재구성 dry-run·confirm 결과 JSON, Generator 실행 기록 JSONL. 사용자 지시로 2026-09-29 삭제했다. |
 | 3. 재구성 | 재실행 완료. Seed 기준 orders 99,441행. 구독 0행. |
 | 4. Generator | seed 42~48(09-04~09-10) 7건 성공. Source 결제 행: 09-07 회차 1 시도 1 `failed`, 09-09 회차 1 시도 2 `completed`. |
 | 5. Warehouse | logical_date 09-11 실행. 9개 Table 성공. orders `rows_extracted=70`. `fct_order` 99,511행. |
@@ -284,5 +284,5 @@ paused DAG에 수동 Run을 넣지 않는다. `python -m src.generator`로 실�
 - card 54의 `payment_failed_count`는 0이다. Warehouse를 Generator 7회 뒤 한 번만 실행해 중간 `PAYMENT_FAILED` 상태가 구독 차원 이력에 없다. 실패 결제 자체는 `facts.fct_subscription_payment`에 있다. `docs/bi/evidence.md`에 기록돼 있다.
 - `subscription-active` Profile의 `PAYMENT_FAILED` → `ACTIVE` 복귀는 결제 행을 쓰지 않는다. 범위 밖으로 기록만 한다.
 - PRD 4.1에 "새 합성 행의 Cursor는 기존 최대값보다 커야 한다" 규칙 줄을 추가할지는 lead가 결정한다.
-- 백업은 lead가 삭제를 지시할 때까지 보존한다.
+- 백업은 사용자 지시로 2026-09-29 삭제했다. 경로 `data/generated/backups/2026-09-29-pre-rebaseline/`는 더 이상 없다.
 - 코드와 문서 변경은 아직 커밋되지 않았다.
