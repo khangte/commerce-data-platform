@@ -286,3 +286,5 @@ paused DAG에 수동 Run을 넣지 않는다. `python -m src.generator`로 실�
 - PRD 4.1에 "새 합성 행의 Cursor는 기존 최대값보다 커야 한다" 규칙 줄을 추가할지는 lead가 결정한다.
 - 백업은 사용자 지시로 2026-09-29 삭제했다. 경로 `data/generated/backups/2026-09-29-pre-rebaseline/`는 더 이상 없다.
 - 코드와 문서 변경은 아직 커밋되지 않았다.
+
+> **정정 (2026-09-29, 053):** 위 "범위 밖"과 "잔여"의 `subscription-active` 복귀 기록은 오독이다. `subscription-active` Profile은 새 계약을 시작하고 기존 구독을 `ACTIVE`로 되돌리지 않는다. 판정은 [053](053_subscription-reactivation-payment-row.md)을 따른다.
