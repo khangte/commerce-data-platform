@@ -2,9 +2,9 @@
 
 | Dashboard | Metabase ID | Dataset / Run / Export | Commit | Snapshot | Screenshot |
 | --- | ---: | --- | --- | --- | --- |
-| Sales | 2 | `Commerce Mart Serving` / `c1bfae07-e7e9-4851-bf6b-9e687282a8f3` / `ae027aa3-c83c-4f61-8b2d-7516d4cedd87` | 미커밋 | `metabase/export/dashboard-2.json` | `docs/bi/screenshots/dashboard-2-2026-09-29.png` |
-| Product | 3 | `Commerce Mart Serving` / `c1bfae07-e7e9-4851-bf6b-9e687282a8f3` / `ae027aa3-c83c-4f61-8b2d-7516d4cedd87` | 미커밋 | `metabase/export/dashboard-3.json` | `docs/bi/screenshots/dashboard-3-2026-09-29.png` |
-| Customer | 4 | `Commerce Mart Serving` / `c1bfae07-e7e9-4851-bf6b-9e687282a8f3` / `ae027aa3-c83c-4f61-8b2d-7516d4cedd87` | 미커밋 | `metabase/export/dashboard-4.json` | `docs/bi/screenshots/dashboard-4-2026-09-29.png` |
+| Sales | 2 | `Commerce Mart Serving` / `c1bfae07-e7e9-4851-bf6b-9e687282a8f3` / `ae027aa3-c83c-4f61-8b2d-7516d4cedd87` | `454fe40` | `metabase/export/dashboard-2.json` | `docs/bi/screenshots/dashboard-2-2026-09-29.png` |
+| Product | 3 | `Commerce Mart Serving` / `c1bfae07-e7e9-4851-bf6b-9e687282a8f3` / `ae027aa3-c83c-4f61-8b2d-7516d4cedd87` | `454fe40` | `metabase/export/dashboard-3.json` | `docs/bi/screenshots/dashboard-3-2026-09-29.png` |
+| Customer | 4 | `Commerce Mart Serving` / `c1bfae07-e7e9-4851-bf6b-9e687282a8f3` / `ae027aa3-c83c-4f61-8b2d-7516d4cedd87` | `454fe40` | `metabase/export/dashboard-4.json` | `docs/bi/screenshots/dashboard-4-2026-09-29.png` |
 
 2026-09-29 04:30 UTC Warehouse 실행 `manual__2026-09-29T04:30:00+00:00`은 `success`로 종료됐다. 캡처 직전 Serving Manifest는
 Export `ae027aa3-c83c-4f61-8b2d-7516d4cedd87`와 Publish Run
