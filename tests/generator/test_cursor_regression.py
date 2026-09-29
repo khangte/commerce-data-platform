@@ -148,7 +148,7 @@ def test_generator_accepts_forward_cursor_with_empty_tables(monkeypatch) -> None
 
     assert result.reused_successful_run is False
     persist.assert_called_once()
-    assert source.execute.call_count == len(service.MUTABLE_SOURCE_TABLES)
+    assert source.execute.call_count == len(service.MUTABLE_SOURCE_TABLES) + 1
 
 
 def test_generator_reuses_identical_success_before_cursor_check(monkeypatch) -> None:
