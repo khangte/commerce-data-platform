@@ -16,6 +16,14 @@ Query 원본은 `metabase/queries/dashboard_*.sql`과 API Snapshot의 `dataset_q
 `METABASE_API_KEY`를 BrowserContext의 `X-API-Key` 요청 헤더로만 전달하며 URL·출력 파일에는 넣지 않는다.
 각 Dashboard는 하단 카드까지 실제 차트로 렌더링할 수 있도록 기본 화면이 보인 뒤 8초를 더 기다린다.
 
+2026-09-29 캡처에서는 Source 예약이 트리거한 최신 Warehouse 실행(04:30 UTC)이 끝난 뒤 Metabase만 재시작해
+교체 전 DuckDB 파일 연결을 끊고 같은 스크립트에 임시 `--output-dir`를 지정했다. 생성된 화면은
+`docs/bi/screenshots/dashboard-2-2026-09-29.png`, `dashboard-3-2026-09-29.png`,
+`dashboard-4-2026-09-29.png`로 저장했다. 해당 시점 Publish Run은
+`c1bfae07-e7e9-4851-bf6b-9e687282a8f3`, `facts.fct_order`는 99,541행이다.
+기존 `dashboard-{2,3,4}.png`는 이전 화면 이력으로 보존한다. 다시 캡처할 때도 임시 출력
+디렉터리를 써서 날짜가 붙은 새 파일을 만들고 기존 PNG를 덮어쓰지 않는다.
+
 Customer Dashboard의 card 56 `Region Analysis (주문 시점)`은 `fct_order.customer_state`별
 `order_count`를 내림차순으로 표시하는 `bar`다. Brazil 주 코드에 대응하는 기본 Region Map이 없는
 Metabase 환경에서도 같은 사건 시점 지역 분포를 화면에 안정적으로 표시하도록 `map`을 사용하지 않는다.
