@@ -241,7 +241,7 @@ def _hash_rows_with_payload_size(cursor) -> tuple[str, int, int]:
     Columnar Batch로 받아 Column 단위로 `to_pylist()`한 뒤 `zip`으로 Row를
     구성한다([[038_phase9-task16-bottleneck-selection]]) — DuckDB가 Row를
     1개씩 Python 객체로 변환하는 구간이 M Scale Duration의 절반을 차지하는
-    것이 측정으로 확인됐다(`scripts/profile_file_format_read.py`). Hash
+    것이 측정으로 확인됐다(git 이력의 `scripts/profile_file_format_read.py`). Hash
     알고리즘·JSON 직렬화·Row 순서는 그대로라 결과 Hash는 바뀌지 않는다.
     """
     column_names = [descriptor[0] for descriptor in cursor.description]
