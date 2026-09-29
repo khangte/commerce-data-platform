@@ -36,6 +36,16 @@ Customer의 구독 추이·등급 분포·등급 추이·현재 구독 상태 �
 또는 현재 상태를 표시한다. 저장된 필드 필터 매핑의 `variable`을 `dimension`으로 수정한 후
 Dashboard API에서 날짜 카드 9개와 주문 상태 카드 1개가 실제로 필터링되는 것을 확인했다.
 
+전체 너비 화면은 Dashboard 2·3·4의 `width=full` 설정으로 다시 캡처했다.
+Customer는 기존 카드 너비의 행별 합이 24칸보다 작아 화면 왼쪽에만 모였다.
+두 카드 행은 각각 12칸씩, 단독 카드 행은 24칸으로 `col`·`size_x`만 조정했다.
+카드 높이·순서·필터·SQL은 유지했다. `docs/bi/screenshots/dashboard-{2,3,4}-2026-09-29-full.png`는
+전체기간, `dashboard-{2,3,4}-2026-09-29-full-recent.png`는
+`UTC 주문일=2026-09-28~2026-09-29`(양일 포함)를 보여준다. 캡처 직전 Warehouse 실행
+`manual__2026-09-29T04:30:00+00:00`의 성공과 실행 중인 작업 0건을 확인하고 Metabase를
+재시작했다. 당시 Serving `facts.fct_order`는 99,541행, 최근 2일 주문은 30건이었다.
+이전 전체기간·최근 기간 PNG는 모두 화면 이력으로 보존한다.
+
 Customer Dashboard의 card 56 `Region Analysis (주문 시점)`은 `fct_order.customer_state`별
 `order_count`를 내림차순으로 표시하는 `bar`다. Brazil 주 코드에 대응하는 기본 Region Map이 없는
 Metabase 환경에서도 같은 사건 시점 지역 분포를 화면에 안정적으로 표시하도록 `map`을 사용하지 않는다.

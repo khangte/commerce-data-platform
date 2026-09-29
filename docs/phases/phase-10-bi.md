@@ -146,6 +146,7 @@ card 58은 `rpt_membership_tier_performance`와 같은 주문 Fact·주문 시�
 - [x] 2026-09-29 재구성된 Serving 파일 연결 재확인, Dashboard 3개 재캡처와 카드 54·59 및 합계 대조 갱신
 - [x] 2026-09-29 최신 Warehouse 실행 종료 확인·Metabase 재시작 후 기존 화면을 보존하며 날짜 접미사 Dashboard PNG 3개 생성, 현재 Serving 수치 대조
 - [x] 2026-09-29 Metabase 필드 필터 매핑을 바로잡아 Dashboard API에서 최근 주문일·주문 상태 조건을 검증하고 기존 화면을 보존하며 최근 기간 PNG 3개 추가
+- [x] 2026-09-29 Dashboard 2·3·4 전체 너비 설정과 Customer 카드의 24칸 행 배치를 적용하고, 기존 PNG를 보존하며 전체기간·최근 기간 PNG 6개 추가
 
 `P10-23`은 [Dashboard 증적](../bi/evidence.md)의 Dataset/Run/Export/Commit 식별자와 연결된 실제
 화면 PNG를 남겼다. `scripts/capture_metabase_dashboards.py`는 `METABASE_API_KEY`를 URL이 아닌
@@ -169,6 +170,14 @@ JSON Snapshot을 백업하고, 날짜 필드 필터 매핑의 잘못된 `variabl
 카드 47에서 먼저 Dashboard API의 643일→2일 변화를 확인한 뒤 날짜 매핑 카드 9개와 주문 상태 매핑을
 같은 방식으로 수정했다. 필터를 비운 전체기간 결과도 직접 카드 조회와 일치한다. 세부 근거는
 [Dashboard 증적](../bi/evidence.md)에 기록했다.
+
+Dashboard 2·3·4의 `width`를 `full`로 변경했다. Customer는 카드의 기존 `size_x` 합이
+행별 24칸에 못 미쳐 왼쪽에 쏠렸으므로 `col`·`size_x`만 조정했다. 최신 Warehouse 실행
+`manual__2026-09-29T04:30:00+00:00` 성공과 실행 중인 작업 0건을 확인한 뒤 Metabase를
+재시작하고, Serving 주문 99,541행 기준 전체기간·최근 2일 화면을 각각
+`docs/bi/screenshots/dashboard-{2,3,4}-2026-09-29-full.png`와
+`docs/bi/screenshots/dashboard-{2,3,4}-2026-09-29-full-recent.png`로 저장했다.
+기존 PNG를 모두 보존하고 캡처 조건과 Commit `미커밋`을 [Dashboard 증적](../bi/evidence.md)에 기록했다.
 
 ## 범위 밖
 
@@ -230,6 +239,7 @@ Phase 10에는 별도 AC 번호가 없으므로 ROADMAP의 Connection/Dashboard 
 | `data/serving/mart.duckdb`, `docs/bi/screenshots/`, `docs/bi/evidence.md`, `docs/bi/dashboards.md`, `docs/bi/totals-reconciliation.md` | 2026-09-29 논리 시각 09-10까지 복구한 Publish Run `cef6b673-dc20-49bd-8f40-d615b2146796`과 Serving Export `a9ffd423-4e3d-4e20-9362-c2f4d6fb2679` 기준으로 3개 Dashboard를 재캡처했다. Metabase 재기동 뒤 교체된 Serving 파일 연결과 카드 54·59의 비어 있지 않은 결과를 확인하고, 주문 99,511건·구독 결제 2건 및 정규 자동 청구 부재 사유를 기록했다. |
 | `docs/bi/screenshots/dashboard-{2,3,4}-2026-09-29.png`, `docs/bi/evidence.md`, `docs/bi/dashboards.md`, `docs/bi/totals-reconciliation.md`, `docs/phases/phase-10-bi.md` | 2026-09-29 Warehouse 04:30 UTC 실행 성공 후 Metabase를 재시작하고 세 Dashboard를 새 파일로 캡처했다. 기존 PNG는 보존하고 Publish Run `c1bfae07-e7e9-4851-bf6b-9e687282a8f3`의 주문 99,541행·상품 항목 112,841행 및 카드 합계를 문서와 대조했다. |
 | `metabase/export/`, `docs/bi/screenshots/dashboard-{2,3,4}-2026-09-29-recent.png`, `docs/bi/evidence.md`, `docs/bi/dashboards.md`, `docs/phases/phase-10-bi.md` | Metabase Dashboard의 필드 필터 매핑을 `dimension`으로 수정하고 JSON Snapshot을 재생성했다. Dashboard API에서 날짜·주문 상태 조건과 전체기간 결과를 검증한 뒤 최근 2일(주문 30건) 화면을 새 PNG로 보존했다. |
+| `metabase/export/dashboard-{2,3,4}.json`, `metabase/export/card-*.json`, `docs/bi/screenshots/dashboard-{2,3,4}-2026-09-29-full*.png`, `docs/bi/evidence.md`, `docs/bi/dashboards.md`, `docs/phases/phase-10-bi.md` | Dashboard 2·3·4를 전체 너비로 바꾸고, Customer의 카드 행이 24칸을 채우도록 `col`·`size_x`만 조정했다. Snapshot을 갱신하고 전체기간·최근 2일 PNG 6개 및 캡처 조건을 기록했다. |
 | `docs/adr/012-metabase-serving-strategy.md` | Serving DuckDB 경로를 채택하고 Driver 등록·read-only·재기동 지속성 Connection Gate 통과 결과를 기록했다(상태 Accepted). |
 
 ## Definition of Done

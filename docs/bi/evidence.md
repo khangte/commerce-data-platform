@@ -8,6 +8,12 @@
 | Sales (최근 주문일) | 2 | `Commerce Mart Serving` / `c1bfae07-e7e9-4851-bf6b-9e687282a8f3` / `ae027aa3-c83c-4f61-8b2d-7516d4cedd87` | `c13b483` | `metabase/export/dashboard-2.json` | `docs/bi/screenshots/dashboard-2-2026-09-29-recent.png` |
 | Product (최근 주문일) | 3 | `Commerce Mart Serving` / `c1bfae07-e7e9-4851-bf6b-9e687282a8f3` / `ae027aa3-c83c-4f61-8b2d-7516d4cedd87` | `c13b483` | `metabase/export/dashboard-3.json` | `docs/bi/screenshots/dashboard-3-2026-09-29-recent.png` |
 | Customer (최근 주문일) | 4 | `Commerce Mart Serving` / `c1bfae07-e7e9-4851-bf6b-9e687282a8f3` / `ae027aa3-c83c-4f61-8b2d-7516d4cedd87` | `c13b483` | `metabase/export/dashboard-4.json` | `docs/bi/screenshots/dashboard-4-2026-09-29-recent.png` |
+| Sales (전체 너비·전체기간) | 2 | `Commerce Mart Serving` / `c1bfae07-e7e9-4851-bf6b-9e687282a8f3` / `ae027aa3-c83c-4f61-8b2d-7516d4cedd87` | 미커밋 | `metabase/export/dashboard-2.json` | `docs/bi/screenshots/dashboard-2-2026-09-29-full.png` |
+| Product (전체 너비·전체기간) | 3 | `Commerce Mart Serving` / `c1bfae07-e7e9-4851-bf6b-9e687282a8f3` / `ae027aa3-c83c-4f61-8b2d-7516d4cedd87` | 미커밋 | `metabase/export/dashboard-3.json` | `docs/bi/screenshots/dashboard-3-2026-09-29-full.png` |
+| Customer (전체 너비·전체기간) | 4 | `Commerce Mart Serving` / `c1bfae07-e7e9-4851-bf6b-9e687282a8f3` / `ae027aa3-c83c-4f61-8b2d-7516d4cedd87` | 미커밋 | `metabase/export/dashboard-4.json` | `docs/bi/screenshots/dashboard-4-2026-09-29-full.png` |
+| Sales (전체 너비·최근 주문일) | 2 | `Commerce Mart Serving` / `c1bfae07-e7e9-4851-bf6b-9e687282a8f3` / `ae027aa3-c83c-4f61-8b2d-7516d4cedd87` | 미커밋 | `metabase/export/dashboard-2.json` | `docs/bi/screenshots/dashboard-2-2026-09-29-full-recent.png` |
+| Product (전체 너비·최근 주문일) | 3 | `Commerce Mart Serving` / `c1bfae07-e7e9-4851-bf6b-9e687282a8f3` / `ae027aa3-c83c-4f61-8b2d-7516d4cedd87` | 미커밋 | `metabase/export/dashboard-3.json` | `docs/bi/screenshots/dashboard-3-2026-09-29-full-recent.png` |
+| Customer (전체 너비·최근 주문일) | 4 | `Commerce Mart Serving` / `c1bfae07-e7e9-4851-bf6b-9e687282a8f3` / `ae027aa3-c83c-4f61-8b2d-7516d4cedd87` | 미커밋 | `metabase/export/dashboard-4.json` | `docs/bi/screenshots/dashboard-4-2026-09-29-full-recent.png` |
 
 2026-09-29 04:30 UTC Warehouse 실행 `manual__2026-09-29T04:30:00+00:00`은 `success`로 종료됐다. 캡처 직전 Serving Manifest는
 Export `ae027aa3-c83c-4f61-8b2d-7516d4cedd87`와 Publish Run
@@ -17,6 +23,16 @@ Export `ae027aa3-c83c-4f61-8b2d-7516d4cedd87`와 Publish Run
 `metrics.rpt_subscription_funnel_daily` 4행을 Serving에 포함한다. Dashboard API JSON은 카드와
 Filter 매핑을 보존하는 설정 Snapshot이며, 위의 PNG는 해당 Serving 파일을 읽어 캡처했다.
 기존 `dashboard-{2,3,4}.png`는 이전 시점의 화면 이력으로 그대로 남겨뒀다.
+
+전체 너비 재캡처는 최신 Warehouse 실행 `manual__2026-09-29T04:30:00+00:00`의 `success`와
+실행 중인 Warehouse 0건을 확인하고 Metabase를 재시작해 health 200을 받은 뒤 진행했다.
+Serving `facts.fct_order`는 99,541행이었다. `full` PNG는 필터 없는 전체기간,
+`full-recent` PNG는 `UTC 주문일=2026-09-28~2026-09-29`(양일 포함) 필터 화면이다.
+Dashboard 2·3·4의 `width`를 `fixed`에서 `full`로 바꿨다. Customer Dashboard가 여전히 왼쪽에
+쏠린 원인은 브라우저 캐시가 아니라 카드 배치였다. 두 카드 행의 너비 합이 12/24칸,
+단독 카드 행은 12/24칸 또는 6/24칸에 그쳤다. Customer의 `col`·`size_x`만 조정해
+두 카드 행은 각각 12칸씩, 단독 카드 행은 24칸을 채웠다. `size_y`·카드 순서·필터
+매개변수와 매핑·카드 SQL은 그대로 유지했다. 기존 PNG는 이력으로 모두 보존했다.
 
 추가 최근 기간 화면은 `UTC 주문일=2026-09-28~2026-09-29`(양일 포함) URL 필터를 적용했다.
 이 구간에는 주문 30건(28일 2건·29일 28건)과 상품 항목 56행이 있다. 최신 Warehouse 실행
@@ -55,14 +71,16 @@ Brazil 주 코드의 기본 Region Map이 없는 Metabase에서 `map`은 지역 
 2026-09-28에 이 설정으로 다시 생성했다.
 
 card 58 `Membership Tier Trend (주문 시점)`은 주문 Fact·주문 시점 고객 SCD2 결합을 날짜·거래 실적
-등급별 고객 수로 펼친 line 카드다. `metabase/export/card-58.json`과 `dashboard-4.json`에는 card 58의
-`calendar_date`·`membership_tier`·`customer_count` 시각화 설정과 Dashboard 4의 `(row 12, col 0, 12×4)`
-배치가 보존돼 있으며, `docs/bi/screenshots/dashboard-4-2026-09-29.png`를 같은 설정으로 재캡처했다.
+등급별 고객 수로 펼친 line 카드다. `metabase/export/card-58.json`에는
+`calendar_date`·`membership_tier`·`customer_count` 시각화 설정이 보존돼 있다.
+`docs/bi/screenshots/dashboard-4-2026-09-29.png`에는 당시 Dashboard 4의
+`(row 12, col 0, 12×4)` 배치가 남아 있으며, 현재 `dashboard-4.json`은 `(row 12, col 0, 24×4)`다.
 
 card 59 `Current Subscription Status Distribution`은 `is_current = true`인
-`dimensions.dim_subscription` 계약 Version만 상태별로 중복 없이 세는 bar다. `metabase/export/card-59.json`과
-`dashboard-4.json`에는 `subscription_status`·`contract_count` 시각화 설정과 Dashboard 4의
-`(row 16, col 0, 6×4)` 배치가 보존돼 있으며, 실제 상태 막대가 렌더링된 Customer PNG를 재생성했다.
+`dimensions.dim_subscription` 계약 Version만 상태별로 중복 없이 세는 bar다.
+`metabase/export/card-59.json`에는 `subscription_status`·`contract_count` 시각화 설정이 보존돼 있다.
+기존 Customer PNG에는 당시 `(row 16, col 0, 6×4)` 배치와 실제 상태 막대가 남아 있으며,
+현재 `dashboard-4.json`은 `(row 16, col 0, 24×4)`다.
 
 이번 화면 증적의 대조 수치와 구독 카드의 이벤트 합계는 [Dashboard 합계 대조](totals-reconciliation.md)에
 기록했다.
