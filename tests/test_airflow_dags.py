@@ -11,6 +11,7 @@ import os
 import re
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -304,15 +305,54 @@ def test_warehouse_pipeline_publishes_then_exports_the_serving_mart() -> None:
     )
     compile(dag_source, "warehouse_pipeline_dag.py", "exec")
 
-    for task_id in ("prepare_warehouse_build", "dbt_build", "publish_mart", "export_serving_mart"):
+    for task_id in ("prepare_warehouse_build", "dbt_build", "publish_mart", "export_serving_mart", "repoint_metabase_serving"):
         pattern = rf'@task\(\s*task_id="{task_id}",\s*trigger_rule="all_success"'
         assert re.search(pattern, dag_source)
     for task_id in ("dbt_build", "publish_mart", "export_serving_mart"):
         pattern = rf'task_id="{task_id}",\s*trigger_rule="all_success",\s*retries=0'
         assert re.search(pattern, dag_source)
-    assert "extract_results >> verification >> build >> dbt_result >> publish >> serving_export" in dag_source
-    assert "publish_run_summary(run_info, verification, build, publish, serving_export)" in dag_source
+    assert "extract_results >> verification >> build >> dbt_result >> publish >> serving_export >> metabase_repoint" in dag_source
+    assert "publish_run_summary(run_info, verification, build, publish, serving_export, metabase_repoint)" in dag_source
     assert 'serving_export_status = "SUCCESS" if serving_export else "SERVING_EXPORT_FAILED"' in dag_source
+    assert re.search(r'metabase_repoint_summary_status\(\s*serving_export, metabase_repoint\s*\)', dag_source)
+    assert 'raise AirflowException("METABASE_REPOINT_FAILED: ' in dag_source
+    assert '"retries": 2' in dag_source
+    assert 'repoint_and_prune_serving(' in dag_source
+    assert not re.search(r'task_id="repoint_metabase_serving"[^\n]*retries=0', dag_source)
     assert "sync_bronze_catalog" not in dag_source
     assert "subprocess" not in dag_source
     assert "CATALOG_PATH" not in dag_source
+
+
+def test_repoint_task_fails_when_repoint_result_is_failed(tmp_path: Path) -> None:
+    """재지정 결과가 FAILED이면 Airflow Task가 실패 예외를 던진다."""
+    source = (PROJECT_ROOT / "airflow/dags/warehouse_pipeline_dag.py").read_text(encoding="utf-8")
+    dag_block = next(node for node in ast.parse(source).body if isinstance(node, ast.With))
+    task_node = next(
+        node for node in dag_block.body
+        if isinstance(node, ast.FunctionDef) and node.name == "repoint_metabase_serving_task"
+    )
+    task_node.decorator_list = []
+
+    class StubAirflowException(Exception):
+        """테스트에서 재시도 가능한 Airflow 예외를 대신한다."""
+
+    class StubAirflowFailException(StubAirflowException):
+        """재시도하지 않는 하위 예외를 구분한다."""
+
+    def failed_repoint(*args):
+        """실패한 재지정 결과를 반환한다."""
+        return "FAILED"
+
+    namespace = {
+        "AirflowFailException": StubAirflowFailException,
+        "AirflowException": StubAirflowException,
+        "SERVING_PATHS": SimpleNamespace(serving=tmp_path / "mart.duckdb"),
+        "os": os,
+        "repoint_and_prune_serving": failed_repoint,
+    }
+    module = ast.fix_missing_locations(ast.Module(body=[task_node], type_ignores=[]))
+    exec(compile(module, "warehouse_pipeline_dag.py", "exec"), namespace)  # noqa: S102
+    with pytest.raises(StubAirflowException, match="METABASE_REPOINT_FAILED") as error:
+        namespace["repoint_metabase_serving_task"]({"export_id": "x"})
+    assert type(error.value) is StubAirflowException

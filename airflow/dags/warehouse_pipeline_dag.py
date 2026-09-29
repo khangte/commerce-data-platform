@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import os
 import tempfile
 import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from airflow.sdk import DAG, get_current_context, task
-from airflow.sdk.exceptions import AirflowFailException
+from airflow.sdk.exceptions import AirflowException, AirflowFailException
 
 from src.common.database import PROJECT_ROOT, PostgresSettings
 from src.generator.lease import (
@@ -25,6 +26,10 @@ from src.ingestion.service import TableIngestionRequest, ingest_table
 from src.ingestion.storage import SeaweedFSSettings
 from src.ingestion.verification import verify_bronze_commit
 from src.serving.export import ServingPaths, export_serving_mart
+from src.serving.metabase_repoint import (
+    metabase_repoint_summary_status,
+    repoint_and_prune_serving,
+)
 from src.warehouse.publish import (
     DEFAULT_WAREHOUSE_ROOT,
     WarehousePaths,
@@ -240,6 +245,7 @@ with DAG(
         build: dict | None,
         publish: dict | None,
         serving_export: dict | None,
+        metabase_repoint: str | None,
     ) -> dict:
         """DagRun의 Bronze 검증과 Mart Publish 결과를 작은 JSON Summary로 남긴다."""
         publish_status = "SKIPPED"
@@ -263,6 +269,9 @@ with DAG(
             "serving_export_status": serving_export_status,
             "serving_export_id": serving_export["export_id"] if serving_export else None,
             "serving_row_counts": serving_export["row_counts"] if serving_export else {},
+            "metabase_repoint_status": metabase_repoint_summary_status(
+                serving_export, metabase_repoint
+            ),
         }
         print(summary)
         return summary
@@ -279,6 +288,22 @@ with DAG(
     publish = publish_mart_task(build, dbt_result)
     serving_export = export_serving_mart_task(publish)
 
+    @task(task_id="repoint_metabase_serving", trigger_rule="all_success")
+    def repoint_metabase_serving_task(serving_export: dict) -> str:
+        """Metabase 연결을 새 Export 경로로 바꾸고 Manifest를 검증한다."""
+        status = repoint_and_prune_serving(
+            serving_export["export_id"],
+            os.environ.get("METABASE_URL", ""),
+            os.environ.get("METABASE_API_KEY", ""),
+            os.environ.get("METABASE_SERVING_DATABASE_ID", ""),
+            SERVING_PATHS.serving.parent / "exports",
+        )
+        if status == "FAILED":
+            raise AirflowException("METABASE_REPOINT_FAILED: API or Manifest validation failed")
+        return status
+
+    metabase_repoint = repoint_metabase_serving_task(serving_export)
+
     extract_results >> release_task
-    extract_results >> verification >> build >> dbt_result >> publish >> serving_export
-    publish_run_summary(run_info, verification, build, publish, serving_export)
+    extract_results >> verification >> build >> dbt_result >> publish >> serving_export >> metabase_repoint
+    publish_run_summary(run_info, verification, build, publish, serving_export, metabase_repoint)

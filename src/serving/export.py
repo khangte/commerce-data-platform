@@ -66,6 +66,7 @@ def export_serving_mart(
     export_id = uuid.uuid4()
     build_path = paths.build_file(export_id)
     paths.build_dir.mkdir(parents=True, exist_ok=True)
+    versioned_path: Path | None = None
     try:
         row_counts = _copy_mart_objects(published, build_path, storage_version)
         _record_manifest(
@@ -82,13 +83,30 @@ def export_serving_mart(
         if _wal_path(build_path).exists():
             raise ValueError(f"Serving build has a WAL: {_wal_path(build_path)}")
         paths.serving.parent.mkdir(parents=True, exist_ok=True)
+        versions_dir = paths.serving.parent / "exports"
+        versions_dir.mkdir(parents=True, exist_ok=True)
+        versioned_path = versions_dir / f"{export_id}.duckdb"
+        os.link(build_path, versioned_path)
         os.replace(build_path, paths.serving)
+        _fsync_directory(versions_dir)
         _fsync_directory(paths.serving.parent)
     except Exception:
         build_path.unlink(missing_ok=True)
         _wal_path(build_path).unlink(missing_ok=True)
+        if versioned_path is not None:
+            versioned_path.unlink(missing_ok=True)
         raise
     return ServingExportResult(export_id=export_id, row_counts=row_counts, serving_path=paths.serving)
+
+
+def prune_serving_exports(versions_dir: Path, keep: int = 3) -> None:
+    """재지정 결과를 확인한 뒤 오래된 Export 버전 파일을 정리한다."""
+    versions = sorted(
+        versions_dir.glob("*.duckdb"), key=lambda path: path.stat().st_mtime_ns, reverse=True
+    )
+    for old_version in versions[keep:]:
+        old_version.unlink()
+    _fsync_directory(versions_dir)
 
 
 def _copy_mart_objects(published: Path, build_path: Path, storage_version: str) -> dict[str, int]:

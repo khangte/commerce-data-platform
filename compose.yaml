@@ -33,6 +33,9 @@ x-airflow-common: &airflow-common
     WAREHOUSE_PATH: /opt/airflow/project/data/warehouse/warehouse.duckdb
     DBT_PROJECT_DIR: /opt/airflow/project/dbt
     DBT_PROFILES_DIR: /opt/airflow/project/dbt
+    METABASE_URL: ${METABASE_URL:-http://metabase:3000}
+    METABASE_API_KEY: ${METABASE_API_KEY:-}
+    METABASE_SERVING_DATABASE_ID: ${METABASE_SERVING_DATABASE_ID:-}
   user: "${AIRFLOW_UID:-50000}:0"
   working_dir: /opt/airflow/project
   volumes:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -10,6 +11,7 @@ import duckdb
 import pytest
 
 from src.serving.export import ServingPaths, export_serving_mart
+from src.serving.metabase_repoint import repoint_and_prune_serving
 
 
 def _create_published_mart(path: Path) -> None:
@@ -53,6 +55,9 @@ def test_export_copies_only_mart_objects_and_records_publish_evidence(
         "metrics.rpt_orders": 2,
     }
     assert result.serving_path == paths.serving
+    versioned = paths.serving.parent / "exports" / f"{export_id}.duckdb"
+    assert versioned.is_file()
+    assert os.stat(versioned).st_ino == os.stat(paths.serving).st_ino
     assert not paths.serving.with_suffix(".duckdb.wal").exists()
 
     with duckdb.connect(str(paths.serving), read_only=True) as connection:
@@ -98,3 +103,37 @@ def test_export_refuses_a_published_file_with_a_wal(tmp_path: Path) -> None:
             mart_hashes={},
             now=datetime(2026, 9, 22, tzinfo=UTC),
         )
+
+
+def test_export_keeps_all_versions_until_repoint_succeeds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """재지정 실패가 반복되면 모든 버전 파일을 보존한다."""
+    published = tmp_path / "warehouse.duckdb"
+    _create_published_mart(published)
+    paths = ServingPaths.under(tmp_path / "serving")
+    exported = []
+    status = "FAILED"
+
+    def fake_repoint(*args) -> str:
+        """재지정 실패와 성공을 순서대로 재현한다."""
+        return status
+
+    monkeypatch.setattr("src.serving.metabase_repoint.repoint_metabase_serving", fake_repoint)
+    for _ in range(4):
+        result = export_serving_mart(
+            published, paths, publish_run_id=uuid.uuid4(), mart_hashes={}, now=datetime.now(UTC)
+        )
+        exported.append(result.export_id)
+        assert repoint_and_prune_serving(
+            str(result.export_id), "url", "key", "2", paths.serving.parent / "exports"
+        ) == "FAILED"
+    versions = {path.stem for path in (paths.serving.parent / "exports").glob("*.duckdb")}
+    assert versions == {str(export_id) for export_id in exported}
+
+    status = "SUCCESS"
+    assert repoint_and_prune_serving(
+        str(exported[-1]), "url", "key", "2", paths.serving.parent / "exports"
+    ) == "SUCCESS"
+    versions = {path.stem for path in (paths.serving.parent / "exports").glob("*.duckdb")}
+    assert versions == {str(export_id) for export_id in exported[-3:]}
