@@ -1,7 +1,7 @@
 # Mart Grain 계약
 
 > 상태: Reference
-> 기준 문서: [PRD v1.19](../../PRD_v1.19.md), [데이터 변환 흐름](data-transformation-flow.md), [Phase 6](../phases/phase-06-dimensional-modeling.md)
+> 기준 문서: [PRD v1.20](../../PRD_v1.20.md), [데이터 변환 흐름](data-transformation-flow.md), [Phase 6](../phases/phase-06-dimensional-modeling.md)
 
 이 문서는 Warehouse Mart의 Grain, Unique Key, 컬럼, Measure 계약을 정의하는 단일 정본이다. `dbt/models/marts/*/schema.yml`은 이 문서에서 생성한다. 컬럼을 추가하거나 바꿀 때는 이 문서를 먼저 고치고 `schema.yml`을 다시 만든다.
 
@@ -591,7 +591,7 @@ models:
 ## 관련 문서
 
 - [데이터 변환 흐름](data-transformation-flow.md) — Source에서 Staging까지의 이름·타입·값 변환
-- [PRD v1.19](../../PRD_v1.19.md) — Section 14 dbt Model, Section 15 SCD2와 Temporal Join
+- [PRD v1.20](../../PRD_v1.20.md) — Section 14 dbt Model, Section 15 SCD2와 Temporal Join
 - [Phase 6. Dimensional Modeling](../phases/phase-06-dimensional-modeling.md) — Model 구현 순서와 Task
 - [Phase 7. Data Quality & Publish](../phases/phase-07-data-quality-publish.md) — Grain/Measure Test의 Publish Gate
 - [Phase 10. BI](../phases/phase-10-bi.md) — Report Model 소비와 Dashboard Metric 정의

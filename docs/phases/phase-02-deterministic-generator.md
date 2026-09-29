@@ -6,7 +6,7 @@
 >
 > 선행 Phase: [Phase 1. Source Environment](phase-01-source-environment.md)
 >
-> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.19](../../PRD_v1.19.md)
+> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.20](../../PRD_v1.20.md)
 
 ## 목표
 
@@ -107,6 +107,7 @@ Payment: pending → completed → refunded
 - [x] 2026-09-29 새 행의 `logical_date`가 대상 테이블별 수집 커서 최대값 이하이면 Lease 획득 뒤 쓰기 전에 실패하고 동일 성공 입력은 재사용하는 역행 방지 검증(`created_at` 커서 포함)
 - [x] 2026-09-29 빈 테이블과 이전 커서가 섞인 정상 전진 실행 및 실제 Cursor 뒤 시각을 사용하는 PostgreSQL 통합 검증
 - [x] 2026-09-29 `subscription-payment-failed` 전이에서 실패 결제 행을 함께 기록하고 이후 동일 회차 시도 2로 재시도하는 검증
+- [x] 2026-09-29 정기 실행이 Seed 이후 Generator 주문을 결정적 예정 시각에 따라 실행당 한 단계씩 전이하고 결제 상태를 함께 바꾸는 검증. 10:10 UTC 실행 뒤 Source와 Mart `fct_order`가 `DELIVERED` 70, `APPROVED` 41, `CREATED` 3으로 일치했다(architect 판정 052).
 
 CLI가 직접 실행하는 Profile은 `default`, `late-arrival`, `membership-change`,
 `subscription-active`, `subscription-payment-failed`, `subscription-cancel-requested`,
