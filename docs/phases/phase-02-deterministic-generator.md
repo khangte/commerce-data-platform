@@ -6,7 +6,7 @@
 >
 > 선행 Phase: [Phase 1. Source Environment](phase-01-source-environment.md)
 >
-> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.17](../../PRD_v1.17.md)
+> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.18](../../PRD_v1.18.md)
 
 ## 목표
 

@@ -3,7 +3,7 @@
 > 상태: Done  
 > Milestone: 2 — Data Platform Core  
 > 선행 Phase: [Phase 3. Incremental Ingestion](phase-03-incremental-ingestion.md)  
-> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.17](../../PRD_v1.17.md)
+> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.18](../../PRD_v1.18.md)
 
 ## 목표
 
@@ -109,6 +109,7 @@ Context Manager를 Task 경계 전체에 걸쳐 사용할 수 없다. 아래 계
 - [x] `P4-04` DAG Import/Parse Smoke Test 구성
 - [x] 2026-09-28 운영 검증: Airflow 실행 API 연결·JWT 인증 설정 후 Source→Warehouse DAG 실제 실행 완료
 - [x] 2026-09-28 `source_simulation_dag`를 매시간 예약하고 과거 구간 자동 재실행 없이 다음 예약 시각 확인
+- [x] 2026-09-29 원천 DAG 주기를 `SOURCE_DAG_SCHEDULE` 환경 변수로 설정하고 미설정·빈 값의 매시간 기본값과 로컬 10분 cron 주기 확인
 - [x] 2026-09-28 실제로 읽히지 않는 `WAREHOUSE_DAG_SCHEDULE` Compose·환경 변수 예시 항목 제거
 
 Runtime 계약:
@@ -246,6 +247,18 @@ Airflow DAG Processor 반영 후 `airflow dags details`는 Source의 주기를 `
 이 실행이 트리거한 Warehouse 실행 `manual__2026-09-28T14:00:00+00:00`도
 `success`로 종료됐다(41.262초, 태스크 18개 모두 성공). 당시 Source의 예약 실행은 1건만
 생성되어 과거 시간대별 소급 실행은 없었다. 다음 예약 시각은 계속 15:00 UTC였다.
+
+2026-09-29 원천 DAG 예약 주기를 `SOURCE_DAG_SCHEDULE` 환경 변수로 설정하도록 바꿨다.
+환경 변수가 없거나 빈 값이면 `@hourly`가 적용되며, `catchup=False`는 유지한다.
+로컬 `.env`에는 테스트용 `SOURCE_DAG_SCHEDULE='*/10 * * * *'`를 넣었다.
+Compose 설정을 확인한 결과 Airflow API Server·Scheduler·DAG Processor 모두 공백이 포함된
+cron 값을 `*/10 * * * *`로 받았다. 서비스 재기동 후 `airflow dags details`의
+`timetable_summary`는 `*/10 * * * *`, import error는 없음으로 표시됐고,
+`airflow dags next-execution source_simulation_dag`는 다음 예약을
+`2026-09-29T00:10:00+00:00`으로 표시했다. `tests/test_airflow_dags.py`에서 환경 변수
+미설정·빈 값·설정 값의 세 경우가 모두 통과했다. 같은 시각의 Source 예약 실행
+`scheduled__2026-09-29T00:10:00+00:00`과 이 실행이 트리거한 Warehouse 실행
+`manual__2026-09-29T00:10:00+00:00`이 모두 `success`로 종료됐다.
 
 ### 2. Generator DAG
 
@@ -576,5 +589,10 @@ Project/CLI와 Test를 완성한 뒤, Warehouse DAG의 `dbt_build` 호출 경계
 | `.env.example`                                  | 수정 | `RUN_AIRFLOW_SMOKE_TEST`/`RUN_SEAWEEDFS_INTEGRATION` Test Opt-in 환경 변수 안내 주석을 추가했다. |
 | `airflow/dags/source_simulation_dag.py`         | 수정 | Generator 성공 뒤 같은 `logical_date`로 `warehouse_pipeline_dag`를 자동 트리거하는 `TriggerDagRunOperator` Task를 추가했다. `skip_when_already_exists`로 중복 트리거를 skip 처리하고 `fail_when_dag_is_paused`로 Warehouse paused 상태의 무증상 미실행을 막는다. |
 | `airflow/dags/source_simulation_dag.py`         | 수정 | 2026-09-28 `schedule="@hourly"`로 매시간 실행을 예약하고 `catchup=False`와 기존 시작 시각을 유지했다. |
+| `airflow/dags/source_simulation_dag.py`         | 수정 | 2026-09-29 `SOURCE_DAG_SCHEDULE` 환경 변수로 예약 주기를 설정하고 미설정·빈 값이면 `@hourly`를 사용하도록 했다. `catchup=False`를 유지했다. |
+| `compose.yaml`                                  | 수정 | Airflow 공통 환경에 `SOURCE_DAG_SCHEDULE`을 전달하고 Compose 기본값을 `@hourly`로 지정했다. |
+| `.env.example`                                  | 수정 | 예약 주기 기본값과 공백을 포함한 cron 표현식의 따옴표 사용법을 추가했다. |
+| `.env`                                          | 로컬 수정 | 10분 주기 검증용 `SOURCE_DAG_SCHEDULE='*/10 * * * *'`를 설정하고 Airflow 서비스에 반영했다. |
+| `tests/test_airflow_dags.py`                    | 수정 | 원천 DAG의 환경 변수 미설정·빈 값·10분 cron 설정에 따른 예약 주기 선택을 검증하는 테스트를 추가했다. |
 | `tests/test_airflow_dags.py`                    | 수정 | Generator-Warehouse 트리거 순서, 중복 트리거 시 Warehouse DagRun 1개 유지, Generator 실패 시 Warehouse 미실행을 검증하는 테스트 3건을 `RUN_AIRFLOW_SMOKE_TEST=1` opt-in으로 추가했다. |
 | `docs/adr/010-use-metadata-backed-bronze-file-catalog.md`, `docs/adr/013-source-mutation-and-warehouse-extract-concurrency.md` | 생성 | DAG의 Catalog 입력 경계와 원천 변경·수집 동시성 결정을 ADR로 기록했다. |

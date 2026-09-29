@@ -6,6 +6,7 @@ Airflow Image를 빌드하고 Compose로 실행하므로 무겁다. `airflow` Ma
 
 from __future__ import annotations
 
+import ast
 import os
 import re
 import subprocess
@@ -19,6 +20,38 @@ _SMOKE_SKIP = pytest.mark.skipif(
     os.environ.get("RUN_AIRFLOW_SMOKE_TEST") != "1",
     reason="Set RUN_AIRFLOW_SMOKE_TEST=1 to build and run the airflow Compose profile.",
 )
+
+
+@pytest.mark.parametrize(
+    ("configured_schedule", "expected_schedule"),
+    [(None, "@hourly"), ("", "@hourly"), ("*/10 * * * *", "*/10 * * * *")],
+)
+def test_source_dag_schedule_from_environment(
+    monkeypatch: pytest.MonkeyPatch, configured_schedule: str | None, expected_schedule: str
+) -> None:
+    """원천 DAG 주기는 환경 변수 값 또는 기본 매시간 주기를 사용한다."""
+    if configured_schedule is None:
+        monkeypatch.delenv("SOURCE_DAG_SCHEDULE", raising=False)
+    else:
+        monkeypatch.setenv("SOURCE_DAG_SCHEDULE", configured_schedule)
+
+    dag_source = (PROJECT_ROOT / "airflow/dags/source_simulation_dag.py").read_text(
+        encoding="utf-8"
+    )
+    module = ast.parse(dag_source)
+    dag_call = next(
+        node.items[0].context_expr
+        for node in module.body
+        if isinstance(node, ast.With)
+        and isinstance(node.items[0].context_expr, ast.Call)
+        and isinstance(node.items[0].context_expr.func, ast.Name)
+        and node.items[0].context_expr.func.id == "DAG"
+    )
+    schedule = next(keyword.value for keyword in dag_call.keywords if keyword.arg == "schedule")
+    actual_schedule = eval(
+        compile(ast.Expression(schedule), "source_simulation_dag.py", "eval"), {"os": os}
+    )
+    assert actual_schedule == expected_schedule
 
 
 def _run_compose(*args: str) -> subprocess.CompletedProcess[str]:
