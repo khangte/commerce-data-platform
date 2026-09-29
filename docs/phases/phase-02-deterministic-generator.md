@@ -6,7 +6,7 @@
 >
 > 선행 Phase: [Phase 1. Source Environment](phase-01-source-environment.md)
 >
-> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.20](../../PRD_v1.20.md)
+> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.20](../../PRD_v1.21.md)
 
 ## 목표
 
@@ -108,6 +108,7 @@ Payment: pending → completed → refunded
 - [x] 2026-09-29 빈 테이블과 이전 커서가 섞인 정상 전진 실행 및 실제 Cursor 뒤 시각을 사용하는 PostgreSQL 통합 검증
 - [x] 2026-09-29 `subscription-payment-failed` 전이에서 실패 결제 행을 함께 기록하고 이후 동일 회차 시도 2로 재시도하는 검증
 - [x] 2026-09-29 정기 실행이 Seed 이후 Generator 주문을 결정적 예정 시각에 따라 실행당 한 단계씩 전이하고 결제 상태를 함께 바꾸는 검증. 10:10 UTC 실행 뒤 Source와 Mart `fct_order`가 `DELIVERED` 70, `APPROVED` 41, `CREATED` 3으로 일치했다(architect 판정 052).
+- [x] 054 구독 결제 기간 불변식: 성공 결제와 구독 기간 일치, 실패 재시도 2일 갱신, 이미 결제한 미래 기간 재정렬, 예정일 도래 실패 Profile, 버전 1.14.0을 구현하고 T1~T7을 검증했다.
 
 CLI가 직접 실행하는 Profile은 `default`, `late-arrival`, `membership-change`,
 `subscription-active`, `subscription-payment-failed`, `subscription-cancel-requested`,
@@ -195,6 +196,9 @@ AC-20과 AC-21의 전체 E2E 판정은 Phase 3의 Ingestion과 결합해 완료�
 | `src/generator/service.py`, `src/generator/errors.py`         | 수정·생성 | 2026-09-29 Generator 대상 테이블별 수집 커서 컬럼의 최대 시각보다 새 `logical_date`가 커야 한다는 검사를 Source 트랜잭션 첫 쓰기 전에 추가하고 역행 예외를 정의했다. `customers`와 `order_items`의 `created_at`도 검사한다. |
 | `tests/generator/test_cursor_regression.py` | 생성·수정 | 역행·동일 시각 차단, `created_at` 커서 차단, 빈 테이블을 포함한 정상 전진 경로, 동일 성공 입력 재사용, 재시도 불가 오류 분류를 검증한다. |
 | `src/generator/service.py`, `src/generator/subscription_payments.py`, `tests/generator/test_subscription_profile_payment.py` | 수정·생성 | 실패 결제 Profile 전이가 회차 1·시도 1의 실패 결제 행을 같은 거래에서 생성하도록 하고, 이틀 뒤 동일 회차 시도 2 재시도를 검증한다. |
+| `src/generator/service.py`, `src/generator/subscription_payments.py` | 수정 | 054: 결제 성공 시 청구 기간으로 구독 기간을 맞추고, 재시도 실패 시 다음 시도를 이틀 뒤로 갱신한다. 최근 완료 결제 기간 조회를 추가해 기간이 남은 구독은 결제 없이 재정렬하며, 실패 Profile은 예정일 도래 정기 청구를 스캔에서 강제 실패 처리한다. 이전 Profile의 직접 결제 쓰기와 사용하지 않는 계약 항목을 제거했다. |
+| `src/generator/config.py` | 수정 | 054: 결정적 출력 변경에 따라 `GENERATOR_VERSION`을 1.14.0으로 올렸다. |
+| `tests/generator/test_subscription_profile_payment.py`, `tests/integration/test_subscription_billing_invariant_integration.py` | 수정·생성 | 054: 정기 청구·재시도·재정렬·신규 계약을 단위 검증하고, 임시 PostgreSQL 테이블에서 105일 연속 실행과 I1~I5 감사 SQL을 검증한다. |
 | `src/generator/__main__.py`                                   | 생성·수정 | Generator CLI 기반을 만들고, 기본 실행 적재·`--validate-only`·실행 가능 Profile 선택을 지원하도록 변경했다.           |
 | `sql/metadata/002_create_generator_metadata.sql`              | 생성·수정 | Generator 실행 Metadata Schema를 만들고, 성공 실행 입력만 Unique하게 보관해 실패 실행의 재시도를 허용하도록 변경했다. |
 | `sql/metadata/003_create_source_mutation_leases.sql`          | 생성      | `commerce_source` 원천 데이터 동시성 잠금 Table을 추가했다.                                                           |

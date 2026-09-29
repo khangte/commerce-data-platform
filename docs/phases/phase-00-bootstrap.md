@@ -3,7 +3,7 @@
 > 상태: Done  
 > Milestone: 1 — Source Foundation  
 > 선행 Phase: 없음  
-> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.20](../../PRD_v1.20.md)
+> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.20](../../PRD_v1.21.md)
 
 ## 목표
 

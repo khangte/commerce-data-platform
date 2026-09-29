@@ -3,7 +3,7 @@
 > 상태: Done
 > Milestone: 2 — Data Platform Core  
 > 선행 Phase: [Phase 2. Deterministic Generator](phase-02-deterministic-generator.md)  
-> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.20](../../PRD_v1.20.md)
+> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.20](../../PRD_v1.21.md)
 
 ## 목표
 

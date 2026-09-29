@@ -8,7 +8,7 @@
 
 ## Phase 실행 문서
 
-ROADMAP은 전체 순서와 범위를 관리하고, 아래 문서는 Phase별 Task, 산출물, 검증 Evidence, Definition of Done을 관리한다. 공통 Architecture와 데이터 계약의 Source of Truth는 [PRD v1.20](../../PRD_v1.20.md)다.
+ROADMAP은 전체 순서와 범위를 관리하고, 아래 문서는 Phase별 Task, 산출물, 검증 Evidence, Definition of Done을 관리한다. 공통 Architecture와 데이터 계약의 Source of Truth는 [PRD v1.20](../../PRD_v1.21.md)다.
 
 | Phase | 실행 문서                                                      | 주요 Gate                        |
 | ----- | -------------------------------------------------------------- | -------------------------------- |
