@@ -4,6 +4,8 @@
 
 Accepted — DuckDB Serving Connection Gate 통과 (2026-09-22)
 
+Serving 파일 교체 뒤 Metabase 가시성은 [ADR-019](019-serving-file-visibility-for-metabase.md)로 보완한다.
+
 ## Context
 
 Published Warehouse에는 `control`·`staging`·`intermediate`와 Mart가 함께 있고 DuckDB는 Schema 단위 권한을 제공하지 않는다. BI가 Published 파일을 쓰기 가능하게 열면 WAL이 생겨 다음 Publish가 거부되며, `os.replace` 뒤 열린 Handle은 교체 전 inode를 유지한다. 기존 `marts.metrics` View는 Build 파일 이름을 Published 이름으로 바꾼 뒤 생성 당시 Catalog를 찾지 못해 실패했다.
