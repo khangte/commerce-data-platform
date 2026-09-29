@@ -5,6 +5,9 @@
 | Sales | 2 | `Commerce Mart Serving` / `c1bfae07-e7e9-4851-bf6b-9e687282a8f3` / `ae027aa3-c83c-4f61-8b2d-7516d4cedd87` | `454fe40` | `metabase/export/dashboard-2.json` | `docs/bi/screenshots/dashboard-2-2026-09-29.png` |
 | Product | 3 | `Commerce Mart Serving` / `c1bfae07-e7e9-4851-bf6b-9e687282a8f3` / `ae027aa3-c83c-4f61-8b2d-7516d4cedd87` | `454fe40` | `metabase/export/dashboard-3.json` | `docs/bi/screenshots/dashboard-3-2026-09-29.png` |
 | Customer | 4 | `Commerce Mart Serving` / `c1bfae07-e7e9-4851-bf6b-9e687282a8f3` / `ae027aa3-c83c-4f61-8b2d-7516d4cedd87` | `454fe40` | `metabase/export/dashboard-4.json` | `docs/bi/screenshots/dashboard-4-2026-09-29.png` |
+| Sales (최근 주문일) | 2 | `Commerce Mart Serving` / `c1bfae07-e7e9-4851-bf6b-9e687282a8f3` / `ae027aa3-c83c-4f61-8b2d-7516d4cedd87` | 미커밋 | `metabase/export/dashboard-2.json` | `docs/bi/screenshots/dashboard-2-2026-09-29-recent.png` |
+| Product (최근 주문일) | 3 | `Commerce Mart Serving` / `c1bfae07-e7e9-4851-bf6b-9e687282a8f3` / `ae027aa3-c83c-4f61-8b2d-7516d4cedd87` | 미커밋 | `metabase/export/dashboard-3.json` | `docs/bi/screenshots/dashboard-3-2026-09-29-recent.png` |
+| Customer (최근 주문일) | 4 | `Commerce Mart Serving` / `c1bfae07-e7e9-4851-bf6b-9e687282a8f3` / `ae027aa3-c83c-4f61-8b2d-7516d4cedd87` | 미커밋 | `metabase/export/dashboard-4.json` | `docs/bi/screenshots/dashboard-4-2026-09-29-recent.png` |
 
 2026-09-29 04:30 UTC Warehouse 실행 `manual__2026-09-29T04:30:00+00:00`은 `success`로 종료됐다. 캡처 직전 Serving Manifest는
 Export `ae027aa3-c83c-4f61-8b2d-7516d4cedd87`와 Publish Run
@@ -12,8 +15,30 @@ Export `ae027aa3-c83c-4f61-8b2d-7516d4cedd87`와 Publish Run
 `facts.fct_order` 99,541행, `facts.fct_order_item` 112,841행,
 `dimensions.dim_subscription` 4행, `facts.fct_subscription_payment` 2행,
 `metrics.rpt_subscription_funnel_daily` 4행을 Serving에 포함한다. Dashboard API JSON은 카드와
-Filter 매핑을 보존하는 이전 설정 Snapshot이며, 위의 새 PNG는 현재 Serving 파일을 읽어 다시 캡처했다.
+Filter 매핑을 보존하는 설정 Snapshot이며, 위의 PNG는 해당 Serving 파일을 읽어 캡처했다.
 기존 `dashboard-{2,3,4}.png`는 이전 시점의 화면 이력으로 그대로 남겨뒀다.
+
+추가 최근 기간 화면은 `UTC 주문일=2026-09-28~2026-09-29`(양일 포함) URL 필터를 적용했다.
+이 구간에는 주문 30건(28일 2건·29일 28건)과 상품 항목 56행이 있다. 최신 Warehouse 실행
+`manual__2026-09-29T04:30:00+00:00` 종료와 Serving `facts.fct_order` 99,541행을 다시 확인한 뒤
+Metabase만 재시작하고 Dashboard 2·3·4를 캡처했다. 최근 주문은 `CREATED` 상태여서 Sales의
+배송 완료 GMV·AOV는 빈 차트이고, Customer의 재구매 고객도 이 구간에 없다. Customer의 구독·등급
+카드 중 날짜 매핑이 없는 카드는 전체기간 또는 현재 상태를 계속 표시한다. 기존 전체기간
+`dashboard-{2,3,4}-2026-09-29.png`도 그대로 보존했다.
+
+추가 캡처 전, Metabase Dashboard의 날짜 필터 칩은 날짜를 표시했지만 카드 질의의 날짜 조건이
+빠지는 결함을 확인했다. 저장된 필드 필터 매핑이 `variable`을 가리킨 것이 원인이었다. 수정 전
+Metabase 앱 DB와 `metabase/export/` JSON Snapshot을
+`data/generated/backups/metabase-filter-2026-09-29/`에 백업했다. 카드 47 하나에서 매핑을
+`dimension`으로 바꾸자 Dashboard API 결과가 전체 643일에서 요청한 2일로 줄어드는 것을 확인한 뒤,
+날짜 매핑 카드 46·47·48·49·50·51·52·53·56과 카드 47의 주문 상태 매핑에 같은 수정을 적용했다.
+Dashboard ID·필터 ID·URL slug·카드 SQL은 유지했고, `scripts/metabase_snapshot.sh`로 JSON Snapshot을
+다시 저장했다. Dashboard API에서 날짜 카드 모두 최근 기간 조건이 SQL에 반영됐고, 필터를 비우면
+직접 카드 조회와 같은 전체기간 결과를 반환했다. 주문 상태 `CREATED`만 선택하면 전체 105건,
+최근 기간을 함께 적용하면 30건이다.
+검증 뒤 저장된 마지막 필터값을 세 Dashboard에서 비웠다. 실험 중 카드 47 직접 조회로 생긴
+필터 매개변수 ID의 고아 값 1건은 `user_parameter_value` 테이블 백업을 추가로 만든 뒤 해당 행만
+트랜잭션에서 제거했다. 이후 API Key 사용자의 Dashboard 2·3·4 `last_used_param_values`는 모두 비었다.
 
 논리 시각 2026-09-04~09-10의 Generator 실행으로 만든 결제 2건은 실패 Profile의 최초 실패와
 2026-09-09 재시도다. 정규 자동 청구 예정일은 2026-10-04 이후여서 이 증적 구간에는 정규 자동 청구 결제가 없다.

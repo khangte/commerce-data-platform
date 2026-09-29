@@ -95,7 +95,7 @@ Metabase
 - [x] `P10-06` Order/Customer/Product/Date Model 관계 설정
 - [x] `P10-07` GMV, Orders, AOV 정의 등록
 - [x] `P10-08` Category/Product/Customer Metric 정의 등록
-- [x] `P10-09` UTC Date와 Filter 기본값 검증
+- [x] `P10-09` UTC Date와 Filter 기본값 검증 (2026-09-29 매핑 수정 전에는 카드 SQL에 필터 미적용; 재검증은 아래 기록 참조)
 
 핵심 Metric의 계산식은 [Mart Grain 계약](../reference/mart-grain.md)의 Measure 계약에서
 가져온다. BI는 Measure를 재정의하지 않고 Mart가 제공하는 값을 그대로 집계한다.
@@ -105,7 +105,7 @@ Metabase
 - [x] `P10-10` Daily GMV
 - [x] `P10-11` Daily Orders
 - [x] `P10-12` AOV
-- [x] Date/Order Status Filter와 합계 검증
+- [x] Date/Order Status Filter와 합계 검증 (2026-09-29 매핑 수정 전에는 카드 SQL에 필터 미적용; 재검증은 아래 기록 참조)
 
 ### 10-2-3. Product Dashboard
 
@@ -145,6 +145,7 @@ card 58은 `rpt_membership_tier_performance`와 같은 주문 Fact·주문 시�
 - [x] `P10-23` Screenshot과 Dataset/Run/Commit 식별자 기록
 - [x] 2026-09-29 재구성된 Serving 파일 연결 재확인, Dashboard 3개 재캡처와 카드 54·59 및 합계 대조 갱신
 - [x] 2026-09-29 최신 Warehouse 실행 종료 확인·Metabase 재시작 후 기존 화면을 보존하며 날짜 접미사 Dashboard PNG 3개 생성, 현재 Serving 수치 대조
+- [x] 2026-09-29 Metabase 필드 필터 매핑을 바로잡아 Dashboard API에서 최근 주문일·주문 상태 조건을 검증하고 기존 화면을 보존하며 최근 기간 PNG 3개 추가
 
 `P10-23`은 [Dashboard 증적](../bi/evidence.md)의 Dataset/Run/Export/Commit 식별자와 연결된 실제
 화면 PNG를 남겼다. `scripts/capture_metabase_dashboards.py`는 `METABASE_API_KEY`를 URL이 아닌
@@ -159,7 +160,15 @@ BrowserContext의 `X-API-Key` 요청 헤더로 전달해 Dashboard 2·3·4를 �
 2026-09-29 UTC 주문 28건, `facts.fct_order_item` 112,841행이다.
 Dashboard 2·3·4를 `docs/bi/screenshots/dashboard-{2,3,4}-2026-09-29.png`로 새로 캡처했고,
 기존 접미사 없는 PNG는 이전 화면 이력으로 보존했다. [Dashboard 합계 대조](../bi/totals-reconciliation.md)는
-같은 Serving 파일과 Metabase 카드 조회 결과로 갱신했으며, 증적의 Commit은 미커밋으로 기록했다.
+같은 Serving 파일과 Metabase 카드 조회 결과로 갱신했고, 해당 전체기간 증적의 Commit은 후속 커밋에서 기록했다.
+
+같은 Publish Run에서 `UTC 주문일=2026-09-28~2026-09-29`를 적용한 Dashboard 2·3·4 화면을
+`docs/bi/screenshots/dashboard-{2,3,4}-2026-09-29-recent.png`로 추가했다. 28일 2건·29일 28건의
+주문과 상품 항목 56행이 있는 구간이다. 기존 전체기간 PNG는 유지했다. 캡처 전 Metabase 앱 DB와
+JSON Snapshot을 백업하고, 날짜 필드 필터 매핑의 잘못된 `variable` 대상을 `dimension`으로 바로잡았다.
+카드 47에서 먼저 Dashboard API의 643일→2일 변화를 확인한 뒤 날짜 매핑 카드 9개와 주문 상태 매핑을
+같은 방식으로 수정했다. 필터를 비운 전체기간 결과도 직접 카드 조회와 일치한다. 세부 근거는
+[Dashboard 증적](../bi/evidence.md)에 기록했다.
 
 ## 범위 밖
 
@@ -220,6 +229,7 @@ Phase 10에는 별도 AC 번호가 없으므로 ROADMAP의 Connection/Dashboard 
 | `data/serving/mart.duckdb`, `metabase/export/card-54.json`, `metabase/export/dashboard-4.json`, `docs/bi/totals-reconciliation.md`, `docs/bi/evidence.md` | 구독 계약 4건·자동 청구 결제 1건을 수집·Publish한 Run `8890b135-5391-4290-8b05-bf99f24668a6`과 Serving Export `0616bd30-7c38-4a3c-b03b-aaecb0cc6cec` 기준으로 card 54의 실제 상태 전이 시계열, Export Snapshot, Customer Screenshot, Dashboard 대조표를 재생성했다. |
 | `data/serving/mart.duckdb`, `docs/bi/screenshots/`, `docs/bi/evidence.md`, `docs/bi/dashboards.md`, `docs/bi/totals-reconciliation.md` | 2026-09-29 논리 시각 09-10까지 복구한 Publish Run `cef6b673-dc20-49bd-8f40-d615b2146796`과 Serving Export `a9ffd423-4e3d-4e20-9362-c2f4d6fb2679` 기준으로 3개 Dashboard를 재캡처했다. Metabase 재기동 뒤 교체된 Serving 파일 연결과 카드 54·59의 비어 있지 않은 결과를 확인하고, 주문 99,511건·구독 결제 2건 및 정규 자동 청구 부재 사유를 기록했다. |
 | `docs/bi/screenshots/dashboard-{2,3,4}-2026-09-29.png`, `docs/bi/evidence.md`, `docs/bi/dashboards.md`, `docs/bi/totals-reconciliation.md`, `docs/phases/phase-10-bi.md` | 2026-09-29 Warehouse 04:30 UTC 실행 성공 후 Metabase를 재시작하고 세 Dashboard를 새 파일로 캡처했다. 기존 PNG는 보존하고 Publish Run `c1bfae07-e7e9-4851-bf6b-9e687282a8f3`의 주문 99,541행·상품 항목 112,841행 및 카드 합계를 문서와 대조했다. |
+| `metabase/export/`, `docs/bi/screenshots/dashboard-{2,3,4}-2026-09-29-recent.png`, `docs/bi/evidence.md`, `docs/bi/dashboards.md`, `docs/phases/phase-10-bi.md` | Metabase Dashboard의 필드 필터 매핑을 `dimension`으로 수정하고 JSON Snapshot을 재생성했다. Dashboard API에서 날짜·주문 상태 조건과 전체기간 결과를 검증한 뒤 최근 2일(주문 30건) 화면을 새 PNG로 보존했다. |
 | `docs/adr/012-metabase-serving-strategy.md` | Serving DuckDB 경로를 채택하고 Driver 등록·read-only·재기동 지속성 Connection Gate 통과 결과를 기록했다(상태 Accepted). |
 
 ## Definition of Done
