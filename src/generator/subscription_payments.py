@@ -96,7 +96,10 @@ def plan_subscription_payment(
         payment_provider="simulator",
         provider_payment_id=str(
             deterministic_uuid(
-                "subscription-provider-payment", subscription_id, billing_cycle_sequence, attempt_sequence
+                "subscription-provider-payment",
+                subscription_id,
+                billing_cycle_sequence,
+                attempt_sequence,
             )
         ),
         failure_code="DECLINED" if status == "failed" else None,
@@ -131,6 +134,23 @@ def next_attempt_sequence(
         (subscription_id, billing_cycle_sequence),
     ).fetchone()
     return int(row[0]) + 1
+
+
+def latest_completed_billing_period(
+    connection: psycopg.Connection, subscription_id: UUID
+) -> tuple[datetime, datetime] | None:
+    """가장 최근 완료 결제의 청구 시작·종료 시각을 조회한다."""
+    row = connection.execute(
+        """
+        SELECT billing_period_start_at, billing_period_end_at
+        FROM subscription_payments
+        WHERE subscription_id = %s AND payment_status = 'completed'
+        ORDER BY billing_cycle_sequence DESC, attempt_sequence DESC
+        LIMIT 1
+        """,
+        (subscription_id,),
+    ).fetchone()
+    return (row[0], row[1]) if row is not None else None
 
 
 def persist_subscription_payments(
