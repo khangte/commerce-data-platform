@@ -36,16 +36,16 @@ def repoint_metabase_serving(
         database_url = f"{base}/api/database/{numeric_id}"
         database = _request_json(database_url, api_key, "GET")
     except HTTPError as error:
-        print(f"Metabase database request failed: HTTP {error.code}")
+        print(f"Metabase 데이터베이스 조회 실패: HTTP {error.code}")
         return "FAILED"
     except URLError:
-        print("Metabase Serving repoint failed: server unreachable")
+        print("Metabase 서빙 파일 재지정 실패: 서버에 연결할 수 없음")
         return "FAILED"
-    except (TimeoutError, OSError, HTTPException) as error:
-        print(f"Metabase database 요청 실패(Timeout 또는 연결 끊김): {type(error).__name__}")
+    except (OSError, HTTPException) as error:
+        print(f"Metabase 데이터베이스 요청 실패(시간 초과 또는 연결 끊김): {type(error).__name__}")
         return "FAILED"
     except (ValueError, TypeError, KeyError) as error:
-        print(f"Metabase database 설정 또는 응답 형식 오류: {type(error).__name__}")
+        print(f"Metabase 데이터베이스 설정 또는 응답 형식 오류: {type(error).__name__}")
         return "FAILED"
 
     try:
@@ -64,19 +64,19 @@ def repoint_metabase_serving(
         )
         rows = result["data"]["rows"]
         if rows != [[export_id]]:
-            print("Metabase Serving Manifest does not match the new Export")
+            print("Metabase 서빙 매니페스트의 export_id가 새 내보내기와 일치하지 않음")
             return "FAILED"
     except HTTPError as error:
-        print(f"Metabase Serving repoint failed: HTTP {error.code}")
+        print(f"Metabase 서빙 파일 재지정 실패: HTTP {error.code}")
         return "FAILED"
     except URLError:
-        print("Metabase Serving repoint failed: server unreachable")
+        print("Metabase 서빙 파일 재지정 실패: 서버에 연결할 수 없음")
         return "FAILED"
-    except (TimeoutError, OSError, HTTPException) as error:
-        print(f"Metabase Serving 요청 실패(Timeout 또는 연결 끊김): {type(error).__name__}")
+    except (OSError, HTTPException) as error:
+        print(f"Metabase 서빙 파일 요청 실패(시간 초과 또는 연결 끊김): {type(error).__name__}")
         return "FAILED"
     except (ValueError, TypeError, KeyError) as error:
-        print(f"Metabase Serving 설정 또는 응답 형식 오류: {type(error).__name__}")
+        print(f"Metabase 서빙 파일 설정 또는 응답 형식 오류: {type(error).__name__}")
         return "FAILED"
     return "SUCCESS"
 

@@ -98,7 +98,7 @@ def test_repoint_reports_failed_on_incomplete_responses(monkeypatch, capsys) -> 
 
         monkeypatch.setattr("src.serving.metabase_repoint._request_json", incomplete)
         assert repoint_metabase_serving(str(uuid.uuid4()), "http://metabase:3000", "secret", "2") == "FAILED"
-        assert "요청 실패(Timeout 또는 연결 끊김)" in capsys.readouterr().out
+        assert "요청 실패(시간 초과 또는 연결 끊김)" in capsys.readouterr().out
 
 
 def test_repoint_reports_failed_on_timeout(monkeypatch, capsys) -> None:
@@ -109,7 +109,7 @@ def test_repoint_reports_failed_on_timeout(monkeypatch, capsys) -> None:
 
     monkeypatch.setattr("src.serving.metabase_repoint._request_json", timeout)
     assert repoint_metabase_serving(str(uuid.uuid4()), "http://metabase:3000", "secret", "2") == "FAILED"
-    assert "요청 실패(Timeout 또는 연결 끊김)" in capsys.readouterr().out
+    assert "요청 실패(시간 초과 또는 연결 끊김)" in capsys.readouterr().out
 
 
 def test_repoint_identifies_response_format_errors(monkeypatch, capsys) -> None:
