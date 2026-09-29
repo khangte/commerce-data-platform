@@ -2,16 +2,17 @@
 
 from __future__ import annotations
 
+import csv
 import hashlib
 import json
 import uuid
+from collections import Counter
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
-import pandas as pd
 import psycopg
 from psycopg.types.json import Jsonb
 
@@ -145,26 +146,30 @@ def parse_seeded_at(value: str) -> datetime:
     return parsed.astimezone(UTC)
 
 
-def _read_raw_frame(input_dir: Path, table_name: str) -> pd.DataFrame:
+Row = dict[str, Any]
+
+
+def _read_raw_rows(input_dir: Path, table_name: str) -> list[Row]:
+    """원본 CSV를 선택 컬럼만 문자열로 읽고 빈 값은 None으로 바꾼다."""
     contract = CONTRACT_BY_TABLE[table_name]
-    frame = pd.read_csv(
-        input_dir / contract.file_name,
-        usecols=list(contract.selected_columns),
-        dtype=str,
-        keep_default_na=False,
-    )
-    return frame.replace("", None).astype(object).where(lambda values: pd.notna(values), None)
+    with (input_dir / contract.file_name).open(newline="", encoding="utf-8") as file:
+        return [
+            {column: record[column] or None for column in contract.selected_columns}
+            for record in csv.DictReader(file)
+        ]
 
 
-def _timestamps(frame: pd.DataFrame, column: str, *, required: bool) -> list[datetime | None]:
+def _timestamp(value: str | None, column: str, *, required: bool) -> datetime | None:
+    """문자열을 UTC datetime으로 변환한다. Offset이 없으면 UTC로 간주한다."""
+    if value is None:
+        if required:
+            raise ValueError(f"{column} must not contain an empty value")
+        return None
     try:
-        parsed = pd.to_datetime(frame[column], utc=True, format="mixed", errors="raise")
-    except (TypeError, ValueError) as error:
+        parsed = datetime.fromisoformat(value)
+    except ValueError as error:
         raise ValueError(f"Invalid timestamp in {column}") from error
-    result = [None if pd.isna(value) else value.to_pydatetime() for value in parsed]
-    if required and any(value is None for value in result):
-        raise ValueError(f"{column} must not contain an empty value")
-    return result
+    return parsed.replace(tzinfo=UTC) if parsed.tzinfo is None else parsed.astimezone(UTC)
 
 
 def _optional_integer(value: object, column: str) -> int | None:
@@ -188,27 +193,20 @@ def _required_decimal(value: object, column: str) -> Decimal:
         raise ValueError(f"Invalid decimal in {column}: {value}") from error
 
 
-def _parse_integer_column(frame: pd.DataFrame, column: str) -> None:
-    """Preserve Python ``int`` and ``None`` values instead of pandas float coercion."""
-    frame[column] = pd.Series(
-        [_optional_integer(value, column) for value in frame[column]],
-        index=frame.index,
-        dtype=object,
-    )
-
-
-def _assert_primary_keys(frame: pd.DataFrame, table_name: str) -> None:
-    primary_key = list(PRIMARY_KEYS[table_name])
-    if frame[primary_key].isna().any().any():
+def _assert_primary_keys(rows: list[Row], table_name: str) -> None:
+    """Primary Key의 빈 값과 중복을 거부한다."""
+    keys = [tuple(row[column] for column in PRIMARY_KEYS[table_name]) for row in rows]
+    if any(value is None for key in keys for value in key):
         raise ValueError(f"{table_name} contains an empty primary key")
-    if frame.duplicated(primary_key).any():
+    if len(set(keys)) != len(keys):
         raise ValueError(f"{table_name} contains a duplicate primary key")
 
 
 def _assert_references(
-    child: pd.DataFrame, child_column: str, parent: pd.DataFrame, parent_column: str, name: str
+    child: list[Row], child_column: str, parent: list[Row], parent_column: str, name: str
 ) -> None:
-    missing = set(child[child_column]) - set(parent[parent_column])
+    """자식 행의 참조 값이 모두 부모 테이블에 있는지 검증한다."""
+    missing = {row[child_column] for row in child} - {row[parent_column] for row in parent}
     if missing:
         raise ValueError(f"{name} contains a reference absent from its parent table")
 
@@ -222,35 +220,22 @@ def _membership_tier(delivered_orders: int) -> str:
     return "BRONZE"
 
 
-def _table_rows(frame: pd.DataFrame, columns: tuple[str, ...]) -> list[tuple[Any, ...]]:
-    return [
-        tuple(_python_value(value) for value in row)
-        for row in frame.loc[:, columns].itertuples(index=False, name=None)
-    ]
-
-
-def _python_value(value: object) -> object:
-    """Convert pandas scalar values to COPY-compatible Python values."""
-    if value is None or value is pd.NA or value is pd.NaT:
-        return None
-    if isinstance(value, pd.Timestamp):
-        return value.to_pydatetime()
-    if hasattr(value, "item") and not isinstance(value, (str, bytes, Decimal, datetime)):
-        return value.item()
-    return value
+def _table_rows(rows: list[Row], columns: tuple[str, ...]) -> list[tuple[Any, ...]]:
+    """행 dict를 COPY 컬럼 순서의 튜플로 변환한다."""
+    return [tuple(row[column] for column in columns) for row in rows]
 
 
 def build_seed_dataset(input_dir: Path, seeded_at: datetime) -> SeedDataset:
     """Read, type-convert, and validate all raw files before any source mutation."""
     raw_checksum = combined_checksum(validate_input_directory(input_dir))
-    customers = _read_raw_frame(input_dir, "customers")
-    products = _read_raw_frame(input_dir, "products")
-    sellers = _read_raw_frame(input_dir, "sellers")
-    orders = _read_raw_frame(input_dir, "orders")
-    order_items = _read_raw_frame(input_dir, "order_items")
-    order_payments = _read_raw_frame(input_dir, "order_payments")
+    customers = _read_raw_rows(input_dir, "customers")
+    products = _read_raw_rows(input_dir, "products")
+    sellers = _read_raw_rows(input_dir, "sellers")
+    orders = _read_raw_rows(input_dir, "orders")
+    order_items = _read_raw_rows(input_dir, "order_items")
+    order_payments = _read_raw_rows(input_dir, "order_payments")
 
-    for table_name, frame in (
+    for table_name, rows in (
         ("customers", customers),
         ("products", products),
         ("sellers", sellers),
@@ -258,26 +243,25 @@ def build_seed_dataset(input_dir: Path, seeded_at: datetime) -> SeedDataset:
         ("order_items", order_items),
         ("order_payments", order_payments),
     ):
-        _assert_primary_keys(frame, table_name)
+        _assert_primary_keys(rows, table_name)
 
-    parsed_order_timestamps = {
-        column: _timestamps(orders, column, required=column == "order_purchase_timestamp")
+    for order in orders:
+        for column in ORDER_TIMESTAMP_COLUMNS:
+            order[column] = _timestamp(
+                order[column], column, required=column == "order_purchase_timestamp"
+            )
+    maximum_event_time = max(
+        order[column]
+        for order in orders
         for column in ORDER_TIMESTAMP_COLUMNS
-    }
-    event_times = [
-        value
-        for values in parsed_order_timestamps.values()
-        for value in values
-        if value is not None
-    ]
-    maximum_event_time = max(event_times)
+        if order[column] is not None
+    )
     if seeded_at < maximum_event_time:
         raise ValueError("--seeded-at must be greater than or equal to every raw event timestamp")
 
-    for column, values in parsed_order_timestamps.items():
-        orders[column] = pd.Series(values, index=orders.index, dtype=object)
-    orders["created_at"] = orders["order_purchase_timestamp"]
-    orders["updated_at"] = seeded_at
+    for order in orders:
+        order["created_at"] = order["order_purchase_timestamp"]
+        order["updated_at"] = seeded_at
 
     _assert_references(orders, "customer_id", customers, "customer_id", "orders.customer_id")
     _assert_references(order_items, "order_id", orders, "order_id", "order_items.order_id")
@@ -285,75 +269,83 @@ def build_seed_dataset(input_dir: Path, seeded_at: datetime) -> SeedDataset:
     _assert_references(order_items, "seller_id", sellers, "seller_id", "order_items.seller_id")
     _assert_references(order_payments, "order_id", orders, "order_id", "order_payments.order_id")
 
-    customer_first_order = orders.groupby("customer_id")["order_purchase_timestamp"].min()
-    customers["created_at"] = customers["customer_id"].map(customer_first_order)
-    if customers["created_at"].isna().any():
-        raise ValueError("customers contains a record without a linked order")
-    customers["updated_at"] = seeded_at
+    customer_first_order: dict[str, datetime] = {}
+    for order in orders:
+        first = customer_first_order.get(order["customer_id"])
+        if first is None or order["created_at"] < first:
+            customer_first_order[order["customer_id"]] = order["created_at"]
+    for customer in customers:
+        customer["created_at"] = customer_first_order.get(customer["customer_id"])
+        if customer["created_at"] is None:
+            raise ValueError("customers contains a record without a linked order")
+        customer["updated_at"] = seeded_at
 
-    customer_identity = customers.set_index("customer_id")["customer_unique_id"]
-    delivered_counts = (
-        orders.loc[orders["order_status"] == "delivered", "customer_id"]
-        .map(customer_identity)
-        .value_counts()
+    customer_identity = {row["customer_id"]: row["customer_unique_id"] for row in customers}
+    delivered_counts = Counter(
+        customer_identity[order["customer_id"]]
+        for order in orders
+        if order["order_status"] == "delivered"
     )
-    customer_axis_base = (
-        customers.loc[:, ["customer_unique_id", "created_at"]]
-        .groupby("customer_unique_id", as_index=False)["created_at"]
-        .min()
-    )
-    customer_membership_tiers = customer_axis_base.copy()
-    customer_membership_tiers["membership_tier"] = customer_membership_tiers[
-        "customer_unique_id"
-    ].map(
-        lambda customer_unique_id: _membership_tier(
-            int(delivered_counts.get(customer_unique_id, 0))
+    first_created_at: dict[str, datetime] = {}
+    for customer in customers:
+        unique_id = customer["customer_unique_id"]
+        if (
+            unique_id not in first_created_at
+            or customer["created_at"] < first_created_at[unique_id]
+        ):
+            first_created_at[unique_id] = customer["created_at"]
+    customer_membership_tiers = [
+        {
+            "customer_unique_id": unique_id,
+            "created_at": created_at,
+            "membership_tier": _membership_tier(delivered_counts[unique_id]),
+            "updated_at": seeded_at,
+        }
+        for unique_id, created_at in sorted(first_created_at.items())
+    ]
+
+    for product in products:
+        for column in (
+            "product_weight_g",
+            "product_length_cm",
+            "product_height_cm",
+            "product_width_cm",
+        ):
+            product[column] = _optional_integer(product[column], column)
+        product["created_at"] = seeded_at
+        product["updated_at"] = seeded_at
+    for seller in sellers:
+        seller["created_at"] = seeded_at
+        seller["updated_at"] = seeded_at
+
+    order_by_id = {order["order_id"]: order for order in orders}
+    for item in order_items:
+        item["order_item_id"] = _optional_integer(item["order_item_id"], "order_item_id")
+        item["price"] = _required_decimal(item["price"], "price")
+        item["freight_value"] = _required_decimal(item["freight_value"], "freight_value")
+        item["shipping_limit_date"] = _timestamp(
+            item["shipping_limit_date"], "shipping_limit_date", required=True
         )
-    )
-    customer_membership_tiers["updated_at"] = seeded_at
+        item["created_at"] = order_by_id[item["order_id"]]["order_purchase_timestamp"]
 
-    for column in (
-        "product_weight_g",
-        "product_length_cm",
-        "product_height_cm",
-        "product_width_cm",
-    ):
-        _parse_integer_column(products, column)
-    products["created_at"] = seeded_at
-    products["updated_at"] = seeded_at
-    sellers["created_at"] = seeded_at
-    sellers["updated_at"] = seeded_at
-
-    order_purchase_timestamp = orders.set_index("order_id")["order_purchase_timestamp"]
-    _parse_integer_column(order_items, "order_item_id")
-    order_items["price"] = order_items["price"].map(lambda value: _required_decimal(value, "price"))
-    order_items["freight_value"] = order_items["freight_value"].map(
-        lambda value: _required_decimal(value, "freight_value")
-    )
-    order_items["shipping_limit_date"] = pd.Series(
-        _timestamps(order_items, "shipping_limit_date", required=True),
-        index=order_items.index,
-        dtype=object,
-    )
-    order_items["created_at"] = order_items["order_id"].map(order_purchase_timestamp)
-
-    _parse_integer_column(order_payments, "payment_sequential")
-    _parse_integer_column(order_payments, "payment_installments")
-    order_payments["payment_value"] = order_payments["payment_value"].map(
-        lambda value: _required_decimal(value, "payment_value")
-    )
-    order_status = orders.set_index("order_id")["order_status"]
-    order_payments["payment_status"] = order_payments["order_id"].map(
-        lambda order_id: (
-            "failed" if order_status[order_id] in {"canceled", "unavailable"} else "completed"
+    for payment in order_payments:
+        order = order_by_id[payment["order_id"]]
+        payment["payment_sequential"] = _optional_integer(
+            payment["payment_sequential"], "payment_sequential"
         )
-    )
-    order_payments["payment_initiated_at"] = None
-    order_payments["payment_completed_at"] = None
-    order_payments["payment_failed_at"] = None
-    order_payments["payment_refunded_at"] = None
-    order_payments["created_at"] = order_payments["order_id"].map(order_purchase_timestamp)
-    order_payments["updated_at"] = seeded_at
+        payment["payment_installments"] = _optional_integer(
+            payment["payment_installments"], "payment_installments"
+        )
+        payment["payment_value"] = _required_decimal(payment["payment_value"], "payment_value")
+        payment["payment_status"] = (
+            "failed" if order["order_status"] in {"canceled", "unavailable"} else "completed"
+        )
+        payment["payment_initiated_at"] = None
+        payment["payment_completed_at"] = None
+        payment["payment_failed_at"] = None
+        payment["payment_refunded_at"] = None
+        payment["created_at"] = order["order_purchase_timestamp"]
+        payment["updated_at"] = seeded_at
 
     rows = {
         "customers": _table_rows(customers, TARGET_COLUMNS["customers"]),

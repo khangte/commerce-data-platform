@@ -10,7 +10,6 @@ dependencies = [
     "dbt-duckdb==1.11.0",
     "duckdb==1.5.5",
     "kagglehub==1.0.2",
-    "pandas==3.0.5",
     "psycopg[binary]==3.3.5",
     "pyarrow==25.0.1",
 ]
