@@ -102,3 +102,14 @@ developer 반영본을 검수했다. 판정은 **코드 승인, 통합 게이트
 ### 경미 사항
 
 `test_fenced_source_commit_blocks_lease_takeover_until_source_commit`가 모듈의 `pytestmark = pytest.mark.integration` 선언보다 위에 있다. 동작에는 영향이 없다. 기존 배치 관례에 맞게 선언 아래로 옮긴다.
+
+## 통합 게이트 종결 (2026-10-06)
+
+**종결한다.** 통합 게이트를 통과했다.
+
+- Docker Desktop WSL Integration이 활성화됐고 Phase 1 PostgreSQL 컨테이너가 healthy 상태다.
+- architect 직접 실행: Lease·Generator·구독 결제 불변식 통합 9건 `9 passed`. `RUN_POSTGRES_INTEGRATION=1` 전체 `tests`는 `329 passed, 54 skipped`다.
+- `test_fenced_source_commit_blocks_lease_takeover_until_source_commit`가 통과했다. Fence 보유 중 `FOR UPDATE NOWAIT`는 `LockNotAvailable`이고, 종료 뒤에는 성공한다. 이 수정의 핵심 보장이 실제 PostgreSQL에서 확인됐다.
+- reviewer 최종 승인(지적 0건)을 받았다.
+- `tests/integration/test_subscription_billing_invariant_integration.py`의 격리 수정을 수용한다. 이 테스트는 임시 테이블로 결제 불변식만 검증한다. 새로 생긴 `fenced_source_commit`, `committed_result`, `record_source_commit`, `ensure_generator_commits`를 다른 Lease·Metadata 스텁과 같은 방식으로 막았다. 검증 대상은 바뀌지 않았다.
+- Phase 2 체크 항목의 완료 표시를 확정한다.
