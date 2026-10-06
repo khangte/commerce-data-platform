@@ -77,3 +77,28 @@ Global Source Mutation Lease가 지키는 것은 "Ingestion이 Source를 읽는 
 ## 미결
 
 PostgreSQL 통합 테스트는 Docker 부재로 아직 실행하지 못했다. 이 수정의 핵심 보장은 잠금 동작이므로 통합 테스트 통과 전에는 완료로 보지 않는다.
+
+## 검수 (2026-10-06)
+
+developer 반영본을 검수했다. 판정은 **코드 승인, 통합 게이트 미통과**다.
+
+| 항목 | 결과 |
+| ---- | ---- |
+| `fenced_source_commit` | Pipeline 트랜잭션에서 `FOR SHARE`로 잠그고 확인한 뒤 `yield`한다. 쓰기는 없다. 설계와 같다. |
+| `service.py` 구조 | `source_connection`, `ExitStack`, `transaction()` 순서다. Source COMMIT이 Fence 종료보다 먼저 일어난다. 최종 단순 확인은 제거됐고 중간 확인은 유지됐다. |
+| `_locked_lease(mode=...)` | f-string으로 잠금 모드를 넣는다. 호출자는 모듈 내부 리터럴(`UPDATE`, `SHARE`)뿐이라 주입 경로는 없다. 수용한다. |
+| 단위 테스트 | `tests/generator` 67 passed, `ruff check` 통과. architect가 직접 실행했다. |
+| 통합 테스트 | 8건 모두 skip이다. 잠금 충돌 테스트 1건, 스캔 롤백 테스트, 기존 Lease·Generator 통합 테스트가 포함된다. |
+
+### 통합 게이트
+
+이 수정의 보장은 PostgreSQL 행 잠금 동작에 있다. 단위 테스트는 호출 순서만 증명한다. 잠금 충돌은 증명하지 않는다. 따라서 통합 테스트 통과 전에는 이 항목을 완료로 닫지 않는다.
+
+- 코드 커밋은 허용한다. 동작이 단위 수준에서 검증됐고, 통합 미실행 상태가 Phase 2 문서에 표시돼 있다.
+- Phase 2 체크 항목의 완료 표시는 통합 통과 뒤에 확정한다.
+- 실행 환경: WSL에는 Docker CLI가 없다. Windows Docker Desktop은 설치돼 있다(`/mnt/c/Program Files/Docker/...`). Docker Desktop의 WSL Integration을 이 배포판에 켜면 Phase 1 PostgreSQL 컨테이너를 띄울 수 있다. 이 설정은 사용자 조치다.
+- 실행 명령: 컨테이너 기동 후 `RUN_POSTGRES_INTEGRATION=1 pytest tests/integration/test_source_mutation_lease_integration.py tests/integration/test_generator_service_integration.py`.
+
+### 경미 사항
+
+`test_fenced_source_commit_blocks_lease_takeover_until_source_commit`가 모듈의 `pytestmark = pytest.mark.integration` 선언보다 위에 있다. 동작에는 영향이 없다. 기존 배치 관례에 맞게 선언 아래로 옮긴다.
