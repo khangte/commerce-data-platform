@@ -111,6 +111,7 @@ Payment: pending → completed → refunded
 - [x] 054 구독 결제 기간 불변식: 성공 결제와 구독 기간 일치, 실패 재시도 2일 갱신, 이미 결제한 미래 기간 재정렬, 예정일 도래 실패 Profile, 버전 1.14.0을 구현하고 T1~T7을 검증했다.
 - [x] Source 커밋과 같은 트랜잭션에 실행 결과 마커를 저장하고, 성공 메타데이터 기록 실패 시 동일 입력 재시도에서 기존 실행을 성공으로 복구한다.
 - [x] 구독 만료 스캔과 결제·프로필 전이 후 원천 데이터 동시성 잠금 행을 `FOR SHARE`로 잡고 Source 커밋까지 유지한다. 대상 PostgreSQL 통합 테스트 8건과 전체 테스트(329 passed, 54 skipped)를 확인했다.
+- [x] Generator 실패 뒤 원천 데이터 동시성 잠금 해제도 실패하면 최초 오류 분류를 유지한다. 성공 뒤 해제 실패는 호출자에게 전달한다.
 
 CLI가 직접 실행하는 Profile은 `default`, `late-arrival`, `membership-change`,
 `subscription-active`, `subscription-payment-failed`, `subscription-cancel-requested`,
@@ -197,6 +198,7 @@ AC-20과 AC-21의 전체 E2E 판정은 Phase 3의 Ingestion과 결합해 완료�
 | `src/generator/service.py`                                    | 수정      | Seed Snapshot 검증, Lease 보호 Source 생성, 실행 결과 재사용과 거래 실적 등급·구독 상태 변경 Profile 실행을 추가했다.          |
 | `src/generator/service.py`, `src/generator/commits.py`, `sql/source/004_create_generator_commits.sql` | 수정·생성 | Source 트랜잭션에 결정성 입력·결과 마커를 함께 커밋하고 성공 기록 실패의 재시도에서 기존 실행 ID·집계·해시를 복구한다. `ExitStack`으로 Source 커밋이 원천 데이터 동시성 잠금의 공유 행 잠금 안에서 끝나게 한다. |
 | `src/generator/lease.py` | 수정 | Source 커밋까지 Pipeline DB의 원천 데이터 동시성 잠금 행을 `FOR SHARE`로 잡는 `fenced_source_commit`을 추가한다. |
+| `src/generator/service.py`, `tests/generator/test_cursor_regression.py` | 수정 | Generator 실패 시에만 잠금 해제 오류를 억제해 최초 커서 역행 예외를 유지한다. 성공 뒤 해제 오류 전파도 단위 테스트로 확인했다. |
 | `tests/generator/test_cursor_regression.py`, `tests/integration/test_generator_service_integration.py`, `tests/integration/test_source_mutation_lease_integration.py` | 수정 | 메타데이터 성공 기록 오류 뒤 복구, Source 마커·잠금·커밋 순서, 소유권 상실 시 주문 0건·1건 롤백, PostgreSQL `FOR UPDATE NOWAIT` 잠금 충돌을 검증했다. 대상 통합 테스트 8건이 통과했다. |
 | `tests/integration/test_subscription_billing_invariant_integration.py` | 수정 | 임시 테이블로 실행하는 105일 구독 결제 불변식 검증에서 Source 커밋 마커와 커밋 시점 잠금을 함께 격리해 공유 트랜잭션을 유지한다. |
 | `src/generator/service.py`, `src/generator/errors.py`         | 수정·생성 | 2026-09-29 Generator 대상 테이블별 수집 커서 컬럼의 최대 시각보다 새 `logical_date`가 커야 한다는 검사를 Source 트랜잭션 첫 쓰기 전에 추가하고 역행 예외를 정의했다. `customers`와 `order_items`의 `created_at`도 검사한다. |
