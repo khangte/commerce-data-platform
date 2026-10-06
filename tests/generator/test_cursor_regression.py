@@ -190,6 +190,68 @@ def test_cursor_regression_is_non_retryable_source_contract_error() -> None:
     assert is_retryable(error) is False
 
 
+def test_generator_preserves_cursor_error_when_lease_release_fails(monkeypatch) -> None:
+    """원천 커서 오류 뒤 잠금 해제도 실패하면 최초 계약 오류를 유지한다."""
+    from src.generator import service
+
+    settings = MagicMock()
+    config = _config(datetime(2026, 9, 29, 12, tzinfo=UTC))
+    monkeypatch.setattr(service, "resolve_source_snapshot_id", lambda _: "seed:test")
+    monkeypatch.setattr(service, "ensure_generator_metadata", lambda _: None)
+    monkeypatch.setattr(service, "ensure_source_mutation_lease_metadata", lambda _: None)
+    monkeypatch.setattr(service, "ensure_generator_commits", lambda _: None)
+    monkeypatch.setattr(service, "_successful_result", lambda *_: None)
+    monkeypatch.setattr(service, "committed_result", lambda *_: None)
+    monkeypatch.setattr(service, "acquire_source_mutation_lease", lambda *_, **__: MagicMock())
+    monkeypatch.setattr(service, "record_started_run", lambda *_: None)
+    monkeypatch.setattr(service, "record_finished_run", lambda *_, **__: None)
+
+    def reject_cursor(*_) -> None:
+        """원래 실행에서 발생하는 재시도 불가 커서 오류를 모의한다."""
+        raise SourceCursorRegressionError("cursor regression")
+
+    monkeypatch.setattr(
+        service, "_assert_source_cursor_forward",
+        reject_cursor,
+    )
+    release = MagicMock(side_effect=OSError("lease release failed"))
+    monkeypatch.setattr(service, "release_source_mutation_lease", release)
+
+    with pytest.raises(SourceCursorRegressionError, match="cursor regression") as captured:
+        run_generator(config, settings)
+
+    assert classify_error(captured.value) == SOURCE_CONTRACT_ERROR
+    assert is_retryable(captured.value) is False
+    release.assert_called_once()
+
+
+def test_generator_reports_lease_release_failure_after_success(monkeypatch) -> None:
+    """성공 결과를 복구한 뒤 잠금 해제가 실패하면 호출자에게 오류를 알린다."""
+    from src.generator import service
+
+    settings = MagicMock()
+    config = _config(datetime(2026, 9, 29, 12, tzinfo=UTC))
+    committed = CommittedResult(uuid.uuid4(), {"orders_inserted": 1}, "a" * 64)
+    monkeypatch.setattr(service, "resolve_source_snapshot_id", lambda _: "seed:test")
+    monkeypatch.setattr(service, "ensure_generator_metadata", lambda _: None)
+    monkeypatch.setattr(service, "ensure_source_mutation_lease_metadata", lambda _: None)
+    monkeypatch.setattr(service, "ensure_generator_commits", lambda _: None)
+    monkeypatch.setattr(service, "_successful_result", lambda *_: None)
+    monkeypatch.setattr(service, "committed_result", lambda *_: committed)
+    monkeypatch.setattr(service, "acquire_source_mutation_lease", lambda *_, **__: MagicMock())
+    monkeypatch.setattr(service, "record_finished_run", lambda *_, **__: None)
+    release = MagicMock(side_effect=OSError("lease release failed"))
+    monkeypatch.setattr(service, "release_source_mutation_lease", release)
+
+    try:
+        raise RuntimeError("outer error being handled")
+    except RuntimeError:
+        with pytest.raises(OSError, match="lease release failed"):
+            run_generator(config, settings)
+
+    release.assert_called_once()
+
+
 def test_generator_recovers_failed_metadata_write_from_source_commit(monkeypatch) -> None:
     """성공 기록 실패 뒤 재시도가 Source 마커로 원래 실행을 성공으로 복구한다."""
     from src.generator import service

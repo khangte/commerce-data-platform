@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from contextlib import ExitStack
+from contextlib import ExitStack, suppress
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 
@@ -124,6 +124,7 @@ def run_generator(config: GeneratorConfig, settings: PostgresSettings) -> Genera
     generator_run_id = uuid.uuid4()
     lease: SourceMutationLease | None = None
     started = False
+    failed = False
     try:
         lease = acquire_source_mutation_lease(
             settings,
@@ -235,8 +236,9 @@ def run_generator(config: GeneratorConfig, settings: PostgresSettings) -> Genera
             logical_content_hash=logical_content_hash,
             reused_successful_run=False,
         )
-    except Exception as error:
-        if started:
+    except BaseException as error:
+        failed = True
+        if started and isinstance(error, Exception):
             record_finished_run(
                 settings,
                 generator_run_id,
@@ -246,7 +248,11 @@ def run_generator(config: GeneratorConfig, settings: PostgresSettings) -> Genera
         raise
     finally:
         if lease is not None:
-            release_source_mutation_lease(settings, lease)
+            if failed:
+                with suppress(Exception):
+                    release_source_mutation_lease(settings, lease)
+            else:
+                release_source_mutation_lease(settings, lease)
 
 
 def _assert_source_cursor_forward(connection: psycopg.Connection, logical_date: datetime) -> None:
