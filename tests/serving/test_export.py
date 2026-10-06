@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import uuid
 from datetime import UTC, datetime
@@ -12,6 +13,7 @@ import pytest
 
 from src.serving.export import ServingPaths, export_serving_mart
 from src.serving.metabase_repoint import repoint_and_prune_serving
+from src.warehouse.mart_hash import mart_logical_hashes, target_for
 
 
 def _create_published_mart(path: Path) -> None:
@@ -44,7 +46,9 @@ def test_export_copies_only_mart_objects_and_records_publish_evidence(
         published,
         paths,
         publish_run_id=publish_run_id,
-        mart_hashes={"dimensions.dim_date": "a" * 64, "facts.fct_order": "b" * 64},
+        mart_hashes=mart_logical_hashes(
+            published, (target_for("dimensions.dim_date"), target_for("facts.fct_order"))
+        ),
         now=datetime(2026, 9, 22, tzinfo=UTC),
     )
 
@@ -83,9 +87,35 @@ def test_export_copies_only_mart_objects_and_records_publish_evidence(
         export_id,
         publish_run_id,
         "v1.0.0",
-        '{"dimensions.dim_date":"' + "a" * 64 + '","facts.fct_order":"' + "b" * 64 + '"}',
+        json.dumps(
+            mart_logical_hashes(
+                published, (target_for("dimensions.dim_date"), target_for("facts.fct_order"))
+            ),
+            separators=(",", ":"),
+            sort_keys=True,
+        ),
         '{"dimensions.dim_date":1,"facts.fct_order":2,"metrics.rpt_orders":2}',
     )
+
+
+def test_export_rejects_mismatched_publish_hash_before_creating_files(tmp_path: Path) -> None:
+    """기록된 Mart Hash가 Published 파일과 다르면 파일과 Manifest를 만들지 않는다."""
+    published = tmp_path / "warehouse.duckdb"
+    _create_published_mart(published)
+    paths = ServingPaths.under(tmp_path / "serving")
+
+    with pytest.raises(ValueError, match="dimensions.dim_date"):
+        export_serving_mart(
+            published,
+            paths,
+            publish_run_id=uuid.uuid4(),
+            mart_hashes={"dimensions.dim_date": "0" * 64},
+            now=datetime(2026, 9, 22, tzinfo=UTC),
+        )
+
+    assert not paths.serving.exists()
+    assert not paths.build_dir.exists()
+    assert not (paths.serving.parent / "exports").exists()
 
 
 def test_export_refuses_a_published_file_with_a_wal(tmp_path: Path) -> None:

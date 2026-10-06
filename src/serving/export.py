@@ -14,6 +14,7 @@ from pathlib import Path
 import duckdb
 
 from src.common.database import PROJECT_ROOT, PostgresSettings
+from src.warehouse.mart_hash import mart_logical_hashes, mismatched_relations, target_for
 from src.warehouse.publish import DEFAULT_WAREHOUSE_ROOT, _fsync_directory, _wal_path
 from src.warehouse.publish_metadata import PUBLISHED, get_latest_publish_run, get_publish_run
 
@@ -62,6 +63,12 @@ def export_serving_mart(
         raise ValueError(f"Published warehouse has a WAL: {_wal_path(published)}")
     if not published.is_file():
         raise FileNotFoundError(f"Published warehouse does not exist: {published}")
+    targets = tuple(target_for(relation) for relation in mart_hashes)
+    computed_hashes = mart_logical_hashes(published, targets)
+    expected_hashes = dict(mart_hashes)
+    if computed_hashes != expected_hashes:
+        mismatched = ", ".join(mismatched_relations(computed_hashes, expected_hashes))
+        raise ValueError(f"Published mart hashes do not match the requested publish run: {mismatched}")
 
     export_id = uuid.uuid4()
     build_path = paths.build_file(export_id)
