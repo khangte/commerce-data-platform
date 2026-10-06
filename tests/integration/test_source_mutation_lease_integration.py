@@ -17,12 +17,43 @@ from src.generator.lease import (
     acquire_source_mutation_lease,
     assert_source_mutation_lease,
     ensure_source_mutation_lease_metadata,
+    fenced_source_commit,
     release_source_mutation_lease,
     renew_source_mutation_lease,
 )
 
 pytestmark = pytest.mark.integration
 
+
+@pytest.mark.skipif(
+    os.environ.get("RUN_POSTGRES_INTEGRATION") != "1",
+    reason="Set RUN_POSTGRES_INTEGRATION=1 after starting the Phase 1 PostgreSQL container.",
+)
+def test_fenced_source_commit_blocks_lease_takeover_until_source_commit() -> None:
+    """커밋 fencing 잠금은 다른 연결의 FOR UPDATE를 종료까지 막는다."""
+    import psycopg
+
+    settings = PostgresSettings.from_environment()
+    lease = acquire_source_mutation_lease(
+        settings, owner_type=GENERATOR_OWNER_TYPE, owner_id=uuid.uuid4()
+    )
+    try:
+        with (
+            fenced_source_commit(settings, lease),
+            settings.pipeline_connection() as connection,
+            pytest.raises(psycopg.errors.LockNotAvailable),
+        ):
+            connection.execute(
+                "SELECT 1 FROM source_mutation_leases WHERE resource_name = %s FOR UPDATE NOWAIT",
+                ("commerce_source",),
+            )
+        with settings.pipeline_connection() as connection:
+            assert connection.execute(
+                "SELECT 1 FROM source_mutation_leases WHERE resource_name = %s FOR UPDATE NOWAIT",
+                ("commerce_source",),
+            ).fetchone() == (1,)
+    finally:
+        release_source_mutation_lease(settings, lease)
 
 @pytest.mark.skipif(
     os.environ.get("RUN_POSTGRES_INTEGRATION") != "1",

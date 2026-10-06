@@ -3,16 +3,31 @@
 from __future__ import annotations
 
 import uuid
+from contextlib import contextmanager, nullcontext
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
 
+from src.generator.commits import CommittedResult
 from src.generator.config import GENERATOR_VERSION, GeneratorConfig
 from src.generator.errors import SourceCursorRegressionError
+from src.generator.lease import LeaseOwnershipLostError
 from src.generator.service import GeneratorResult, run_generator
 from src.ingestion.errors import SOURCE_CONTRACT_ERROR, classify_error, is_retryable
+
+
+@pytest.fixture(autouse=True)
+def mock_source_commit_metadata(monkeypatch) -> None:
+    """커서 단위 테스트에서 Source 실행 마커 저장소를 격리한다."""
+    from src.generator import service
+
+    monkeypatch.setattr(service, "ensure_generator_commits", lambda _: None)
+    monkeypatch.setattr(service, "committed_result", lambda *_: None)
+    monkeypatch.setattr(service, "record_source_commit", lambda *_, **__: None)
+    monkeypatch.setattr(service, "fenced_source_commit", lambda *_: nullcontext())
 
 
 def _config(logical_date: datetime) -> GeneratorConfig:
@@ -173,3 +188,116 @@ def test_cursor_regression_is_non_retryable_source_contract_error() -> None:
 
     assert classify_error(error) == SOURCE_CONTRACT_ERROR
     assert is_retryable(error) is False
+
+
+def test_generator_recovers_failed_metadata_write_from_source_commit(monkeypatch) -> None:
+    """성공 기록 실패 뒤 재시도가 Source 마커로 원래 실행을 성공으로 복구한다."""
+    from src.generator import service
+
+    config = replace(_config(datetime(2026, 9, 29, 12, tzinfo=UTC)), order_count=0)
+    settings = MagicMock()
+    source = settings.source_connection.return_value.__enter__.return_value
+    source.execute.return_value.fetchone.return_value = (config.logical_date - timedelta(days=1),)
+    committed = None
+    statuses = []
+
+    def save_commit(_, run_id, __, counts, content_hash) -> None:
+        """같은 Source 트랜잭션에 저장될 실행 결과를 포착한다."""
+        nonlocal committed
+        committed = CommittedResult(run_id, counts.copy(), content_hash)
+
+    def finish(_, run_id, *, status, **kwargs) -> None:
+        """첫 성공 기록만 실패시키고 이후 상태 전이를 기록한다."""
+        if status == "SUCCESS" and not statuses:
+            statuses.append("WRITE_ERROR")
+            raise OSError("metadata unavailable")
+        statuses.append(status)
+
+    monkeypatch.setattr(service, "resolve_source_snapshot_id", lambda _: "seed:test")
+    monkeypatch.setattr(service, "ensure_generator_metadata", lambda _: None)
+    monkeypatch.setattr(service, "ensure_source_mutation_lease_metadata", lambda _: None)
+    monkeypatch.setattr(service, "_successful_result", lambda *_: None)
+    monkeypatch.setattr(service, "committed_result", lambda *_: committed)
+    monkeypatch.setattr(service, "record_source_commit", save_commit)
+    monkeypatch.setattr(service, "record_finished_run", finish)
+    monkeypatch.setattr(service, "record_started_run", lambda *_: None)
+    monkeypatch.setattr(service, "acquire_source_mutation_lease", lambda *_, **__: MagicMock())
+    monkeypatch.setattr(service, "assert_source_mutation_lease", lambda *_: None)
+    monkeypatch.setattr(service, "release_source_mutation_lease", lambda *_: None)
+    monkeypatch.setattr(service, "fetch_order_catalog", lambda *_: [])
+    monkeypatch.setattr(service, "_run_existing_order_transitions", lambda *_: None)
+    monkeypatch.setattr(service, "_run_subscription_expiry_scan", lambda *_: None)
+
+    with pytest.raises(OSError, match="metadata unavailable"):
+        run_generator(config, settings)
+    recovered = run_generator(config, settings)
+
+    assert statuses == ["WRITE_ERROR", "FAILED", "SUCCESS"]
+    assert recovered.generator_run_id == committed.generator_run_id
+    assert recovered.reused_successful_run is True
+    assert source.execute.call_count == len(service.MUTABLE_SOURCE_TABLES)
+
+
+@pytest.mark.parametrize("fence_fails", [False, True])
+def test_source_commit_fence_order_and_rollback(monkeypatch, fence_fails) -> None:
+    """마커 기록 뒤 잠금을 잡아 Source 커밋까지 유지하고 진입 실패 시 롤백한다."""
+    from src.generator import service
+
+    config = replace(_config(datetime(2026, 9, 29, 12, tzinfo=UTC)), order_count=0)
+    settings = MagicMock()
+    source = settings.source_connection.return_value.__enter__.return_value
+    source.execute.return_value.fetchone.return_value = (config.logical_date - timedelta(days=1),)
+    events = []
+    markers = []
+
+    def save_marker(*args) -> None:
+        """거래 내 Source 마커 생성을 추적한다."""
+        markers.append(args[1])
+        events.append("marker")
+
+    def transaction_exit(error_type, *_):
+        """가짜 Source 거래의 커밋 또는 롤백을 기록한다."""
+        if error_type is None:
+            events.append("commit")
+        else:
+            markers.clear()
+            events.append("rollback")
+        return False
+
+    @contextmanager
+    def fence(*_):
+        """잠금 진입·종료 순서와 진입 실패를 모의한다."""
+        events.append("fence-enter")
+        if fence_fails:
+            raise LeaseOwnershipLostError("lease lost")
+        try:
+            yield
+        finally:
+            events.append("fence-exit")
+
+    source.transaction.return_value.__exit__.side_effect = transaction_exit
+    monkeypatch.setattr(service, "resolve_source_snapshot_id", lambda _: "seed:test")
+    monkeypatch.setattr(service, "ensure_generator_metadata", lambda _: None)
+    monkeypatch.setattr(service, "ensure_source_mutation_lease_metadata", lambda _: None)
+    monkeypatch.setattr(service, "_successful_result", lambda *_: None)
+    monkeypatch.setattr(service, "committed_result", lambda *_: None)
+    monkeypatch.setattr(service, "acquire_source_mutation_lease", lambda *_, **__: MagicMock())
+    monkeypatch.setattr(service, "release_source_mutation_lease", lambda *_: None)
+    monkeypatch.setattr(service, "assert_source_mutation_lease", lambda *_: None)
+    monkeypatch.setattr(service, "record_started_run", lambda *_: None)
+    monkeypatch.setattr(service, "record_finished_run", lambda *_, **__: None)
+    monkeypatch.setattr(service, "fetch_order_catalog", lambda *_: [])
+    monkeypatch.setattr(service, "_run_existing_order_transitions", lambda *_: None)
+    monkeypatch.setattr(service, "_run_subscription_expiry_scan", lambda *_: None)
+    monkeypatch.setattr(service, "record_source_commit", save_marker)
+    monkeypatch.setattr(service, "fenced_source_commit", fence, raising=False)
+
+    if fence_fails:
+        with pytest.raises(LeaseOwnershipLostError):
+            run_generator(config, settings)
+        assert events == ["marker", "fence-enter", "rollback"]
+        assert markers == []
+    else:
+        run_generator(config, settings)
+        assert events == ["marker", "fence-enter", "commit", "fence-exit"]
+        assert len(markers) == 1

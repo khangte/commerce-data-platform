@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 import uuid
+from contextlib import ExitStack
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 
 import psycopg
 
 from src.common.database import PostgresSettings
+from src.generator.commits import (
+    committed_result,
+    ensure_generator_commits,
+    record_source_commit,
+)
 from src.generator.config import EXECUTABLE_ANOMALY_PROFILES, GeneratorConfig
 from src.generator.customers import (
     MembershipTierRecord,
@@ -28,6 +34,7 @@ from src.generator.lease import (
     acquire_source_mutation_lease,
     assert_source_mutation_lease,
     ensure_source_mutation_lease_metadata,
+    fenced_source_commit,
     release_source_mutation_lease,
 )
 from src.generator.metadata import (
@@ -123,11 +130,31 @@ def run_generator(config: GeneratorConfig, settings: PostgresSettings) -> Genera
             owner_type=GENERATOR_OWNER_TYPE,
             owner_id=generator_run_id,
         )
+        ensure_generator_commits(settings)
+        committed = committed_result(settings, config)
+        if committed is not None:
+            record_finished_run(
+                settings,
+                committed.generator_run_id,
+                status="SUCCESS",
+                result_counts=committed.result_counts,
+                logical_content_hash=committed.logical_content_hash,
+            )
+            return GeneratorResult(
+                generator_run_id=committed.generator_run_id,
+                result_counts=committed.result_counts,
+                logical_content_hash=committed.logical_content_hash,
+                reused_successful_run=True,
+            )
         with settings.pipeline_connection() as connection:
             record_started_run(connection, generator_run_id, config)
         started = True
 
-        with settings.source_connection() as connection, connection.transaction():
+        with (
+            settings.source_connection() as connection,
+            ExitStack() as fence,
+            connection.transaction(),
+        ):
             _assert_source_cursor_forward(connection, config.logical_date)
             catalog = fetch_order_catalog(connection)
             result_counts = _empty_result_counts()
@@ -184,14 +211,17 @@ def run_generator(config: GeneratorConfig, settings: PostgresSettings) -> Genera
                 result_counts["subscriptions_updated"] += subscription_result.updated
                 result_counts["subscriptions_skipped"] += subscription_result.skipped
                 logical_rows.append(subscription_row)
-
-        logical_content_hash = logical_hash(
-            {
-                "generator_inputs": config.deterministic_inputs(),
-                "result_counts": result_counts,
-                "rows": logical_rows,
-            }
-        )
+            logical_content_hash = logical_hash(
+                {
+                    "generator_inputs": config.deterministic_inputs(),
+                    "result_counts": result_counts,
+                    "rows": logical_rows,
+                }
+            )
+            record_source_commit(
+                connection, generator_run_id, config, result_counts, logical_content_hash
+            )
+            fence.enter_context(fenced_source_commit(settings, lease))
         record_finished_run(
             settings,
             generator_run_id,

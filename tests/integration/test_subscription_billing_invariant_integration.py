@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from contextlib import nullcontext
 from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock
 
@@ -60,12 +61,16 @@ def test_run_generator_preserves_subscription_billing_invariants(monkeypatch) ->
         monkeypatch.setattr(service, "resolve_source_snapshot_id", lambda _: "seed:test")
         monkeypatch.setattr(service, "ensure_generator_metadata", lambda _: None)
         monkeypatch.setattr(service, "ensure_source_mutation_lease_metadata", lambda _: None)
+        monkeypatch.setattr(service, "ensure_generator_commits", lambda _: None)
         monkeypatch.setattr(service, "_successful_result", lambda *_: None)
+        monkeypatch.setattr(service, "committed_result", lambda *_: None)
         monkeypatch.setattr(
             service, "acquire_source_mutation_lease", lambda *_args, **_kwargs: MagicMock()
         )
         monkeypatch.setattr(service, "assert_source_mutation_lease", lambda *_: None)
+        monkeypatch.setattr(service, "fenced_source_commit", lambda *_args, **_kwargs: nullcontext())
         monkeypatch.setattr(service, "release_source_mutation_lease", lambda *_: None)
+        monkeypatch.setattr(service, "record_source_commit", lambda *_: None)
         monkeypatch.setattr(service, "record_started_run", lambda *_: None)
         monkeypatch.setattr(service, "record_finished_run", lambda *_args, **_kwargs: None)
         monkeypatch.setattr(service, "_assert_source_cursor_forward", lambda *_: None)

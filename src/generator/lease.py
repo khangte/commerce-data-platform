@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -134,6 +136,17 @@ def assert_source_mutation_lease(
     _assert_current_lease(current, lease, current_time)
 
 
+@contextmanager
+def fenced_source_commit(
+    settings: PostgresSettings, lease: SourceMutationLease, *, now: datetime | None = None
+) -> Iterator[None]:
+    """Source 커밋이 끝날 때까지 Pipeline Lease 행의 공유 잠금을 유지한다."""
+    with settings.pipeline_connection() as connection, connection.transaction():
+        current = _locked_lease(connection, mode="SHARE")
+        _assert_current_lease(current, lease, _utc_now(now))
+        yield
+
+
 def release_source_mutation_lease(
     settings: PostgresSettings, lease: SourceMutationLease, *, now: datetime | None = None
 ) -> None:
@@ -159,14 +172,14 @@ def release_source_mutation_lease(
         )
 
 
-def _locked_lease(connection: psycopg.Connection) -> SourceMutationLease:
-    """현재 Lease Row를 Transaction Lock과 함께 읽는다."""
+def _locked_lease(connection: psycopg.Connection, *, mode: str = "UPDATE") -> SourceMutationLease:
+    """현재 Lease 행을 지정한 PostgreSQL 행 잠금과 함께 읽는다."""
     row = connection.execute(
-        """
+        f"""
         SELECT owner_type, owner_id, lease_expires_at, version
         FROM source_mutation_leases
         WHERE resource_name = %s
-        FOR UPDATE
+        FOR {mode}
         """,
         (RESOURCE_NAME,),
     ).fetchone()

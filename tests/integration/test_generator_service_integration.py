@@ -4,15 +4,18 @@ from __future__ import annotations
 
 import os
 import uuid
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 
 import pytest
 
 from src.common.database import PostgresSettings
+from src.generator import service
 from src.generator.config import GENERATOR_VERSION, GeneratorConfig
 from src.generator.customers import new_customer_record
 from src.generator.lease import (
     WAREHOUSE_OWNER_TYPE,
+    LeaseOwnershipLostError,
     LeaseUnavailableError,
     acquire_source_mutation_lease,
     release_source_mutation_lease,
@@ -58,6 +61,9 @@ def test_generator_creates_bundles_and_reuses_a_successful_deterministic_run() -
         assert status == "SUCCESS"
     finally:
         _delete_bundles(settings, bundles)
+        with settings.source_connection() as connection:
+            connection.execute("DELETE FROM generator_commits WHERE random_seed = %s", (config.random_seed,))
+            connection.commit()
         with settings.pipeline_connection() as connection:
             connection.execute(
                 """
@@ -109,6 +115,120 @@ def test_generator_stops_before_source_mutation_when_warehouse_lease_is_active()
         assert after_count == before_count
     finally:
         release_source_mutation_lease(settings, warehouse_lease)
+
+
+@pytest.mark.skipif(
+    os.environ.get("RUN_POSTGRES_INTEGRATION") != "1",
+    reason="Set RUN_POSTGRES_INTEGRATION=1 after starting the Phase 1 PostgreSQL container.",
+)
+def test_generator_recovers_source_commit_after_success_metadata_write_fails(monkeypatch) -> None:
+    """Source 커밋 뒤 성공 기록이 실패해도 동일 입력의 재실행이 원래 결과를 복구한다."""
+    settings = PostgresSettings.from_environment()
+    config = GeneratorConfig(
+        source_snapshot_id=resolve_source_snapshot_id(settings),
+        random_seed=uuid.uuid4().int % (2**63),
+        logical_date=_forward_logical_date(settings),
+        order_count=1,
+        anomaly_profile="default",
+        generator_version=GENERATOR_VERSION,
+    )
+    bundles = _expected_bundles(settings, config)
+    original = service.record_finished_run
+    failed = False
+
+    def fail_once(*args, **kwargs) -> None:
+        """첫 성공 메타데이터 쓰기만 일시 오류로 중단한다."""
+        nonlocal failed
+        if kwargs["status"] == "SUCCESS" and not failed:
+            failed = True
+            raise OSError("temporary metadata error")
+        original(*args, **kwargs)
+
+    monkeypatch.setattr(service, "record_finished_run", fail_once)
+    try:
+        with pytest.raises(OSError, match="temporary metadata error"):
+            run_generator(config, settings)
+        with settings.pipeline_connection() as connection:
+            run_id, status = connection.execute(
+                "SELECT generator_run_id, status FROM generator_runs WHERE random_seed = %s",
+                (config.random_seed,),
+            ).fetchone()
+        assert status == "FAILED"
+        recovered = run_generator(config, settings)
+        assert recovered.reused_successful_run is True
+        assert recovered.generator_run_id == run_id
+        assert recovered.result_counts["orders_inserted"] == 1
+        with settings.pipeline_connection() as connection:
+            assert connection.execute(
+                "SELECT status FROM generator_runs WHERE generator_run_id = %s", (run_id,)
+            ).fetchone()[0] == "SUCCESS"
+    finally:
+        _delete_bundles(settings, bundles)
+        with settings.source_connection() as connection:
+            connection.execute("DELETE FROM generator_commits WHERE random_seed = %s", (config.random_seed,))
+            connection.commit()
+        with settings.pipeline_connection() as connection:
+            connection.execute("DELETE FROM generator_runs WHERE random_seed = %s", (config.random_seed,))
+            connection.commit()
+
+
+@pytest.mark.skipif(
+    os.environ.get("RUN_POSTGRES_INTEGRATION") != "1",
+    reason="Set RUN_POSTGRES_INTEGRATION=1 after starting the Phase 1 PostgreSQL container.",
+)
+@pytest.mark.parametrize("order_count", [0, 1])
+def test_generator_rolls_back_scan_mutation_when_lease_is_lost(monkeypatch, order_count) -> None:
+    """스캔 뒤 Lease 소유권이 사라지면 주문 0건 경로까지 Source 변경을 롤백한다."""
+    settings = PostgresSettings.from_environment()
+    config = GeneratorConfig(
+        source_snapshot_id=resolve_source_snapshot_id(settings),
+        random_seed=uuid.uuid4().int % (2**63),
+        logical_date=_forward_logical_date(settings),
+        order_count=order_count,
+        anomaly_profile="default",
+        generator_version=GENERATOR_VERSION,
+    )
+    bundles = _expected_bundles(settings, config)
+    marker_id = f"lease-loss-{uuid.uuid4()}"
+    original_scan = service._run_subscription_expiry_scan
+    original_fence = service.fenced_source_commit
+    scan_finished = False
+
+    def scan_and_write(connection, *args) -> None:
+        """스캔 시점에 롤백 확인용 Source 행을 같은 거래에 기록한다."""
+        nonlocal scan_finished
+        original_scan(connection, *args)
+        connection.execute(
+            "INSERT INTO customers (customer_id, customer_unique_id, created_at) VALUES (%s, %s, %s)",
+            (marker_id, marker_id, config.logical_date),
+        )
+        scan_finished = True
+
+    @contextmanager
+    def lose_after_scan(*args):
+        """스캔 이후 커밋 경계에서 소유권 상실을 모의한다."""
+        if scan_finished:
+            raise LeaseOwnershipLostError("lease owner changed during scan")
+        with original_fence(*args):
+            yield
+
+    monkeypatch.setattr(service, "_run_subscription_expiry_scan", scan_and_write)
+    monkeypatch.setattr(service, "fenced_source_commit", lose_after_scan)
+    try:
+        with pytest.raises(LeaseOwnershipLostError, match="during scan"):
+            run_generator(config, settings)
+        with settings.source_connection() as connection:
+            assert connection.execute(
+                "SELECT count(*) FROM customers WHERE customer_id = %s", (marker_id,)
+            ).fetchone()[0] == 0
+            assert connection.execute(
+                "SELECT count(*) FROM generator_commits WHERE random_seed = %s", (config.random_seed,)
+            ).fetchone()[0] == 0
+    finally:
+        _delete_bundles(settings, bundles)
+        with settings.pipeline_connection() as connection:
+            connection.execute("DELETE FROM generator_runs WHERE random_seed = %s", (config.random_seed,))
+            connection.commit()
 
 
 def _forward_logical_date(settings: PostgresSettings) -> datetime:
