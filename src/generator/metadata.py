@@ -26,9 +26,9 @@ def record_started_run(
         """
         INSERT INTO generator_runs (
             generator_run_id, source_snapshot_id, random_seed, logical_date, order_count,
-            anomaly_profile, generator_version, started_at, status
+            anomaly_profile, generator_version, progress_time_scale, started_at, status
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'RUNNING')
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'RUNNING')
         """,
         (
             generator_run_id,
@@ -38,6 +38,7 @@ def record_started_run(
             config.order_count,
             config.anomaly_profile,
             config.generator_version,
+            config.progress_time_scale,
             datetime.now(UTC),
         ),
     )

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -16,6 +16,7 @@ from src.generator.orders import (
     OrderCatalog,
     ProductReference,
     SellerReference,
+    estimated_delivery_date,
     new_order_bundle,
 )
 
@@ -118,3 +119,21 @@ def test_order_catalog_requires_seeded_product_and_seller_candidates() -> None:
         OrderCatalog(products=(), sellers=(SellerReference("seller-1"),))
     with pytest.raises(ValueError, match="seller"):
         OrderCatalog(products=(ProductReference("product-1"),), sellers=())
+
+
+def test_scale_one_keeps_seven_day_estimate() -> None:
+    """배율 1의 추정 배송일은 구매 + 7일이다."""
+    purchase_at = datetime(2026, 9, 4, tzinfo=UTC)
+    assert estimated_delivery_date(purchase_at, 1) == purchase_at + timedelta(days=7)
+
+
+def test_scaled_bundle_shrinks_estimate_and_shipping_limit() -> None:
+    """배율 144는 추정 배송일 7일과 아이템 출고 기한 4~9일 지연을 144로 나눈다."""
+    scaled_config = replace(_config(), progress_time_scale=144)
+    customer = new_customer_record(scaled_config, 1)
+    scaled = new_order_bundle(scaled_config, customer, _catalog(), 1)
+    logical_date = scaled_config.logical_date
+    assert scaled.order.order_estimated_delivery_date == logical_date + timedelta(days=7) / 144
+    allowed_limits = {timedelta(days=days) / 144 for days in range(4, 10)}
+    for item in scaled.items:
+        assert item.shipping_limit_date - logical_date in allowed_limits

@@ -13,7 +13,12 @@ from src.generator.customers import (
     membership_tier_change_records,
     subscription_transition_records,
 )
-from src.generator.orders import OrderBundle, OrderCatalog, new_order_bundle
+from src.generator.orders import (
+    OrderBundle,
+    OrderCatalog,
+    estimated_delivery_date,
+    new_order_bundle,
+)
 from src.generator.transitions import (
     OrderState,
     OrderTransition,
@@ -39,7 +44,9 @@ def late_order_bundle(
         order=replace(
             bundle.order,
             order_purchase_timestamp=business_event_time,
-            order_estimated_delivery_date=business_event_time + timedelta(days=7),
+            order_estimated_delivery_date=estimated_delivery_date(
+                business_event_time, config.progress_time_scale
+            ),
         ),
     )
 

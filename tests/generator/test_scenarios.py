@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
@@ -56,6 +57,14 @@ def test_late_order_keeps_past_business_time_and_current_source_mutation_time() 
     assert bundle.order.created_at == bundle.order.updated_at == _config().logical_date
     assert {item.created_at for item in bundle.items} == {_config().logical_date}
     assert {payment.created_at for payment in bundle.payments} == {_config().logical_date}
+
+
+def test_late_order_estimate_uses_progress_time_scale() -> None:
+    """지연 도착 주문의 추정 배송일은 구매 시각 + 7일/배율이다."""
+    config = replace(_config(), progress_time_scale=144)
+    business_event_time = config.logical_date - timedelta(days=3)
+    bundle = late_order_bundle(config, new_customer_record(config, 1), _catalog(), 1, business_event_time)
+    assert bundle.order.order_estimated_delivery_date == business_event_time + timedelta(days=7) / 144
 
 
 def test_delayed_payment_and_late_update_plan_current_mutation_time() -> None:

@@ -25,6 +25,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--logical-date", required=True, help="UTC logical date in ISO-8601 format.")
     parser.add_argument("--orders", type=int, required=True, help="Number of orders to generate.")
     parser.add_argument(
+        "--progress-time-scale",
+        type=int,
+        default=1,
+        help="Divide order progress and estimated delivery delays by this integer (>= 1).",
+    )
+    parser.add_argument(
         "--anomaly-profile",
         default="default",
         choices=sorted(EXECUTABLE_ANOMALY_PROFILES),
@@ -58,6 +64,7 @@ def main(argv: list[str] | None = None) -> None:
         random_seed=args.seed,
         logical_date=args.logical_date,
         order_count=args.orders,
+        progress_time_scale=args.progress_time_scale,
         anomaly_profile=args.anomaly_profile,
         generator_version=args.generator_version,
     )

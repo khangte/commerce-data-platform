@@ -36,10 +36,12 @@ def committed_result(settings: PostgresSettings, config: GeneratorConfig) -> Com
             FROM generator_commits
             WHERE source_snapshot_id = %s AND random_seed = %s AND logical_date = %s
               AND order_count = %s AND anomaly_profile = %s AND generator_version = %s
+              AND progress_time_scale = %s
             """,
             (
                 config.source_snapshot_id, config.random_seed, config.logical_date,
                 config.order_count, config.anomaly_profile, config.generator_version,
+                config.progress_time_scale,
             ),
         ).fetchone()
     return None if row is None else CommittedResult(row[0], dict(row[1]), row[2])
@@ -57,12 +59,13 @@ def record_source_commit(
         """
         INSERT INTO generator_commits (
             generator_run_id, source_snapshot_id, random_seed, logical_date, order_count,
-            anomaly_profile, generator_version, result_counts, logical_hash
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            anomaly_profile, generator_version, progress_time_scale, result_counts, logical_hash
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """,
         (
             generator_run_id, config.source_snapshot_id, config.random_seed,
             config.logical_date, config.order_count, config.anomaly_profile,
-            config.generator_version, Jsonb(result_counts), logical_content_hash,
+            config.generator_version, config.progress_time_scale,
+            Jsonb(result_counts), logical_content_hash,
         ),
     )

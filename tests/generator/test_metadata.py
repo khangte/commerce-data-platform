@@ -31,7 +31,9 @@ def test_record_started_run_stores_all_deterministic_inputs() -> None:
 
     record_started_run(connection, generator_run_id, _config())
 
-    _, parameters = connection.execute.call_args.args
+    query, parameters = connection.execute.call_args.args
+    assert "progress_time_scale" in query
+    assert parameters[7] == 1
     assert parameters[:7] == (
         generator_run_id,
         "seed:abc123",

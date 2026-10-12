@@ -11,7 +11,12 @@ from airflow.sdk.definitions.param import Param
 from airflow.sdk.exceptions import AirflowFailException
 
 from src.common.database import PostgresSettings
-from src.generator.config import EXECUTABLE_ANOMALY_PROFILES, GENERATOR_VERSION, GeneratorConfig
+from src.generator.config import (
+    EXECUTABLE_ANOMALY_PROFILES,
+    GENERATOR_VERSION,
+    GeneratorConfig,
+    int_from_environment,
+)
 from src.generator.service import resolve_source_snapshot_id, run_generator
 from src.ingestion.errors import classify_error, is_retryable
 
@@ -37,7 +42,18 @@ with DAG(
             type=["null", "string"],
             description="UTC logical date in ISO-8601 format. Defaults to the DAG run's logical date.",
         ),
-        "orders": Param(1, type="integer", minimum=0, description="Number of orders to generate."),
+        "orders": Param(
+            int_from_environment("SOURCE_DAG_ORDERS", default=1, minimum=0),
+            type="integer",
+            minimum=0,
+            description="Number of orders to generate. Default comes from SOURCE_DAG_ORDERS.",
+        ),
+        "progress_time_scale": Param(
+            int_from_environment("SOURCE_PROGRESS_TIME_SCALE", default=1, minimum=1),
+            type="integer",
+            minimum=1,
+            description="Divides order progress and estimated delivery delays. Default comes from SOURCE_PROGRESS_TIME_SCALE.",
+        ),
         "anomaly_profile": Param(
             "default",
             type="string",
@@ -65,6 +81,7 @@ with DAG(
             random_seed=params["seed"],
             logical_date=logical_date,
             order_count=params["orders"],
+            progress_time_scale=params["progress_time_scale"],
             anomaly_profile=params["anomaly_profile"],
             generator_version=GENERATOR_VERSION,
         )
@@ -80,6 +97,7 @@ with DAG(
             "result_counts": result.result_counts,
             "logical_content_hash": result.logical_content_hash,
             "reused_successful_run": result.reused_successful_run,
+            "progress_time_scale": params["progress_time_scale"],
         }
 
     generator_result = run_source_simulation()

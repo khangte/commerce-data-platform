@@ -22,6 +22,7 @@ from src.generator.customers import (
 from src.generator.ids import deterministic_uuid, logical_hash
 
 PAYMENT_TYPES = ("credit_card", "boleto", "voucher")
+ESTIMATED_DELIVERY_DELAY = timedelta(days=7)
 
 
 @dataclass(frozen=True)
@@ -166,6 +167,11 @@ def fetch_order_catalog(connection: psycopg.Connection) -> OrderCatalog:
     return OrderCatalog(products=products, sellers=sellers)
 
 
+def estimated_delivery_date(purchase_at: datetime, progress_time_scale: int) -> datetime:
+    """구매 시각에 배율로 나눈 7일 추정 배송 지연을 더한다."""
+    return purchase_at + ESTIMATED_DELIVERY_DELAY / progress_time_scale
+
+
 def new_order_bundle(
     config: GeneratorConfig,
     customer: CustomerRecord,
@@ -183,7 +189,9 @@ def new_order_bundle(
         order_approved_at=None,
         order_delivered_carrier_date=None,
         order_delivered_customer_date=None,
-        order_estimated_delivery_date=config.logical_date + timedelta(days=7),
+        order_estimated_delivery_date=estimated_delivery_date(
+            config.logical_date, config.progress_time_scale
+        ),
         created_at=config.logical_date,
         updated_at=config.logical_date,
     )
@@ -268,7 +276,8 @@ def _new_item_record(
         shipping_limit_date=config.logical_date
         + timedelta(
             days=4 + _selector(config, "item-shipping-limit", order_ordinal, item_ordinal) % 6
-        ),
+        )
+        / config.progress_time_scale,
         price=_amount(
             config, "item-price", order_ordinal, item_ordinal, minimum_cents=1_000, span=99_001
         ),

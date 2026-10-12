@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-GENERATOR_VERSION = "1.14.0"
+GENERATOR_VERSION = "1.15.0"
 SUPPORTED_GENERATOR_VERSIONS = frozenset({GENERATOR_VERSION})
 SUPPORTED_ANOMALY_PROFILES = frozenset(
     {
@@ -32,6 +33,7 @@ class GeneratorConfig:
     order_count: int
     anomaly_profile: str
     generator_version: str
+    progress_time_scale: int = 1
 
     def __post_init__(self) -> None:
         """입력값이 결정성 계약과 Metadata 저장 범위를 만족하는지 확인한다."""
@@ -54,6 +56,10 @@ class GeneratorConfig:
             raise ValueError(
                 f"Unsupported anomaly_profile: {self.anomaly_profile}. Supported: {supported}"
             )
+        if isinstance(self.progress_time_scale, bool) or not isinstance(self.progress_time_scale, int):
+            raise TypeError("progress_time_scale must be an integer")
+        if not 1 <= self.progress_time_scale < 2**31:
+            raise ValueError("progress_time_scale must be between 1 and 2147483647")
         assert_generator_version_supported(self.generator_version)
 
     @classmethod
@@ -66,6 +72,7 @@ class GeneratorConfig:
         order_count: int,
         anomaly_profile: str,
         generator_version: str,
+        progress_time_scale: int = 1,
     ) -> GeneratorConfig:
         """CLI 문자열을 UTC 논리 시각을 포함한 실행 Config로 변환한다."""
         return cls(
@@ -75,6 +82,7 @@ class GeneratorConfig:
             order_count=order_count,
             anomaly_profile=anomaly_profile,
             generator_version=generator_version,
+            progress_time_scale=progress_time_scale,
         )
 
     def deterministic_inputs(self) -> dict[str, int | str]:
@@ -86,6 +94,7 @@ class GeneratorConfig:
             "order_count": self.order_count,
             "anomaly_profile": self.anomaly_profile,
             "generator_version": self.generator_version,
+            "progress_time_scale": self.progress_time_scale,
         }
 
 
@@ -109,3 +118,17 @@ def assert_generator_version_supported(generator_version: str) -> None:
         raise ValueError(
             f"Unsupported generator_version: {generator_version}. Supported: {supported}"
         )
+
+
+def int_from_environment(name: str, *, default: int, minimum: int) -> int:
+    """정수 환경 변수를 읽고 미설정·빈 값이면 기본값, 잘못된 값이면 변수명과 함께 실패한다."""
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError as error:
+        raise ValueError(f"{name} must be an integer, got {raw!r}") from error
+    if value < minimum:
+        raise ValueError(f"{name} must be {minimum} or greater, got {value}")
+    return value

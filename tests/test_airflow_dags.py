@@ -55,6 +55,73 @@ def test_source_dag_schedule_from_environment(
     assert actual_schedule == expected_schedule
 
 
+def _source_dag_param_default(name: str) -> ast.expr:
+    """원천 DAG params dict에서 지정 Param의 첫 번째 인자 식을 찾는다."""
+    dag_source = (PROJECT_ROOT / "airflow/dags/source_simulation_dag.py").read_text(encoding="utf-8")
+    module = ast.parse(dag_source)
+    dag_call = next(
+        node.items[0].context_expr
+        for node in module.body
+        if isinstance(node, ast.With)
+        and isinstance(node.items[0].context_expr, ast.Call)
+        and isinstance(node.items[0].context_expr.func, ast.Name)
+        and node.items[0].context_expr.func.id == "DAG"
+    )
+    params = next(keyword.value for keyword in dag_call.keywords if keyword.arg == "params")
+    param_call = next(
+        value for key, value in zip(params.keys, params.values, strict=True) if key.value == name
+    )
+    return param_call.args[0]
+
+
+@pytest.mark.parametrize(
+    ("param", "variable", "configured", "expected"),
+    [
+        ("orders", "SOURCE_DAG_ORDERS", None, 1),
+        ("orders", "SOURCE_DAG_ORDERS", "", 1),
+        ("orders", "SOURCE_DAG_ORDERS", "5", 5),
+        ("progress_time_scale", "SOURCE_PROGRESS_TIME_SCALE", None, 1),
+        ("progress_time_scale", "SOURCE_PROGRESS_TIME_SCALE", "144", 144),
+    ],
+)
+def test_source_dag_param_defaults_from_environment(
+    monkeypatch: pytest.MonkeyPatch, param: str, variable: str, configured: str | None, expected: int
+) -> None:
+    """원천 DAG 주문 수·배율 Param 기본값은 환경 변수 또는 1이다."""
+    from src.generator.config import int_from_environment
+
+    if configured is None:
+        monkeypatch.delenv(variable, raising=False)
+    else:
+        monkeypatch.setenv(variable, configured)
+    default = _source_dag_param_default(param)
+    actual = eval(
+        compile(ast.Expression(default), "source_simulation_dag.py", "eval"),
+        {"int_from_environment": int_from_environment},
+    )
+    assert actual == expected
+
+
+@pytest.mark.parametrize(
+    ("variable", "configured"),
+    [("SOURCE_DAG_ORDERS", "-1"), ("SOURCE_DAG_ORDERS", "abc"), ("SOURCE_PROGRESS_TIME_SCALE", "0")],
+)
+def test_source_dag_param_rejects_invalid_environment(
+    monkeypatch: pytest.MonkeyPatch, variable: str, configured: str
+) -> None:
+    """잘못된 env 값은 DAG 파싱 단계에서 실패한다."""
+    from src.generator.config import int_from_environment
+
+    monkeypatch.setenv(variable, configured)
+    param = "orders" if variable == "SOURCE_DAG_ORDERS" else "progress_time_scale"
+    default = _source_dag_param_default(param)
+    with pytest.raises(ValueError, match=variable):
+        eval(
+            compile(ast.Expression(default), "source_simulation_dag.py", "eval"),
+            {"int_from_environment": int_from_environment},
+        )
+
+
 def _run_compose(*args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["docker", "compose", "--profile", "airflow", *args],

@@ -284,6 +284,7 @@ def _successful_result(
               AND order_count = %s
               AND anomaly_profile = %s
               AND generator_version = %s
+              AND progress_time_scale = %s
               AND status = 'SUCCESS'
             """,
             (
@@ -293,6 +294,7 @@ def _successful_result(
                 config.order_count,
                 config.anomaly_profile,
                 config.generator_version,
+                config.progress_time_scale,
             ),
         ).fetchone()
     if row is None:
@@ -327,15 +329,23 @@ def _run_existing_order_transitions(
     seeded_at = seed_row[0]
     candidates = connection.execute(
         """
-        SELECT order_id, order_status, created_at FROM orders
+        SELECT order_id, order_status, created_at, order_approved_at, order_delivered_carrier_date
+        FROM orders
         WHERE created_at > %s AND order_status IN ('created', 'approved', 'shipped')
         ORDER BY order_id COLLATE "C"
         """,
         (seeded_at,),
     ).fetchall()
-    for order_id, current_status, created_at in candidates:
+    for order_id, current_status, created_at, approved_at, shipped_at in candidates:
         plan = plan_order_progress(
-            config.random_seed, order_id, current_status, created_at, config.logical_date
+            config.random_seed,
+            order_id,
+            current_status,
+            created_at,
+            config.logical_date,
+            progress_time_scale=config.progress_time_scale,
+            approved_at=approved_at,
+            shipped_at=shipped_at,
         )
         if plan is None:
             continue

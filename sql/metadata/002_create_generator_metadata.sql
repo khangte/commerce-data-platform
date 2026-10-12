@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS generator_runs (
     order_count INTEGER NOT NULL CHECK (order_count >= 0),
     anomaly_profile VARCHAR(64) NOT NULL,
     generator_version VARCHAR(32) NOT NULL,
+    progress_time_scale INTEGER NOT NULL DEFAULT 1 CHECK (progress_time_scale >= 1),
     result_counts JSONB,
     logical_hash CHAR(64),
     started_at TIMESTAMPTZ NOT NULL,
@@ -24,9 +25,16 @@ CREATE TABLE IF NOT EXISTS generator_runs (
 
 ALTER TABLE generator_runs DROP CONSTRAINT IF EXISTS generator_runs_deterministic_input_unique;
 
-CREATE UNIQUE INDEX IF NOT EXISTS generator_runs_success_input_unique
+ALTER TABLE generator_runs
+    ADD COLUMN IF NOT EXISTS progress_time_scale INTEGER NOT NULL DEFAULT 1
+        CHECK (progress_time_scale >= 1);
+
+DROP INDEX IF EXISTS generator_runs_success_input_unique;
+
+CREATE UNIQUE INDEX IF NOT EXISTS generator_runs_success_input_unique_v2
     ON generator_runs (
-        source_snapshot_id, random_seed, logical_date, order_count, anomaly_profile, generator_version
+        source_snapshot_id, random_seed, logical_date, order_count, anomaly_profile,
+        generator_version, progress_time_scale
     )
     WHERE status = 'SUCCESS';
 
