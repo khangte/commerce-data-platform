@@ -148,6 +148,16 @@ card 58은 `rpt_membership_tier_performance`와 같은 주문 Fact·주문 시�
 - [x] 2026-09-29 최신 Warehouse 실행 종료 확인·Metabase 재시작 후 기존 화면을 보존하며 날짜 접미사 Dashboard PNG 3개 생성, 현재 Serving 수치 대조
 - [x] 2026-09-29 Metabase 필드 필터 매핑을 바로잡아 Dashboard API에서 최근 주문일·주문 상태 조건을 검증하고 기존 화면을 보존하며 최근 기간 PNG 3개 추가
 - [x] 2026-09-29 Dashboard 2·3·4 전체 너비 설정과 Customer 카드의 24칸 행 배치를 적용하고, 기존 PNG를 보존하며 전체기간·최근 기간 PNG 6개 추가
+- [x] 052 후속: card 46·48 Export 설명에 실행당 최대 한 단계의 기존 주문 전이로 최근 일자 매출이 이후 실행에서 증가할 수 있음을 추가했다. 기존 운영 반영 절차가 없어 운영 적용은 수행하지 않았다.
+
+2026-10-12 [052 판정의 동작 변화](../architect-review/052_generator-orders-stuck-in-created.md)에
+따라 `metabase/export/card-46.json`과 `card-48.json`의 `description`(카드 설명)에
+"최근 일자 매출은 이후 실행에서 기존 주문 상태가 실행당 최대 한 단계씩 전이되어 배송 완료에
+도달하면 증가할 수 있음."을 추가했다. 기존 GMV·AOV 설명을 유지했으며 JSON 파싱과 수정 전후
+비교로 두 파일 모두 `description`만 변경됐음을 확인했다. `scripts/metabase_snapshot.sh`는
+운영 설정을 조회해 저장하는 스크립트이고, `docs/bi/dashboards.md`는 빈 앱 DB에서 Snapshot을
+기준으로 재생성하는 안내다. 저장소에 Export를 기존 운영 카드에 반영하는 절차나 스크립트가
+없으므로 사용자 지정 조건에 따라 운영 반영과 반영 후 API 확인은 수행하지 않았다.
 
 `P10-23`은 [Dashboard 증적](../bi/evidence.md)의 Dataset/Run/Export/Commit 식별자와 연결된 실제
 화면 PNG를 남겼다. `scripts/capture_metabase_dashboards.py`는 `METABASE_API_KEY`를 URL이 아닌
@@ -236,6 +246,7 @@ Phase 10에는 별도 AC 번호가 없으므로 ROADMAP의 Connection/Dashboard 
 | `docs/reference/metric-dictionary.md`, `metabase/queries/semantic_*.sql` | GMV·Orders·AOV와 카테고리·상품·고객 지표의 원본 Grain·가산성·계약 근거를 고정하고, Metabase 등록 지표와 Warehouse 대조 SQL을 추가했다. |
 | `dbt/models/marts/metrics/rpt_customer_order_activity_daily.sql`, `dbt/tests/rpt_customer_order_activity_daily_unique.sql`, `dbt/models/marts/metrics/schema.yml` | 신규·재구매 고객을 BI Native SQL로 재정의하지 않도록 주문일×고객 구분 Report Model과 계약 Test를 추가했다. Run `7472eb21-ef48-4c8d-bd5f-f5c3e6f4c1cf`의 Serving Export `191cafe0-8ce4-4570-a43d-418209dfd948`에 1,141행으로 반영했다. |
 | `metabase/queries/dashboard_*.sql`, `scripts/metabase_snapshot.sh`, `metabase/export/`, `docs/bi/` | Metabase Sales(2)·Product(3)·Customer(4) Dashboard와 카드 14개의 Query·UTC Filter·재생성 Snapshot, Warehouse 대조표와 식별 증적을 보존했다. card 56은 기본 Brazil Region Map 부재로 경고가 나는 `map` 대신 주별 주문 수 내림차순 `bar`로 고쳤고, card 58은 주문 시점 거래 실적 등급별 고객 수 추이를 line으로, card 59는 최신 계약 상태 분포를 bar로 추가해 Customer Snapshot·Screenshot을 재생성했다. |
+| `metabase/export/card-46.json`, `metabase/export/card-48.json`, `docs/phases/phase-10-bi.md` | 052 후속으로 기존 주문이 실행당 최대 한 단계씩 전이되어 배송 완료에 도달하면 최근 일자 매출이 증가할 수 있다는 카드 설명을 추가했다. 두 JSON은 기존 설명을 보존하고 `description`만 변경됐음을 검증했다. 체크리스트와 변경 요약에 기록했으며, 기존 운영 반영 절차 부재로 운영 적용·API 확인을 수행하지 않은 사실을 남겼다. |
 | `scripts/capture_metabase_dashboards.py`, `tests/test_capture_metabase_dashboards.py`, `docs/bi/screenshots/`, `docs/bi/dashboards.md`, `docs/bi/evidence.md`, `pyproject.toml`, `uv.lock` | Playwright headless Chromium으로 API Key 요청 헤더를 사용하는 Dashboard 2·3·4 재캡처 스크립트와 단위 Test를 추가하고, 하단 카드도 실제 차트로 저장하도록 기본 화면 뒤 8초 렌더링 대기를 적용했다. 실제 PNG 증적 경로·재실행 방법을 기록했다. |
 | `data/serving/mart.duckdb`, `metabase/export/card-54.json`, `metabase/export/dashboard-4.json`, `docs/bi/totals-reconciliation.md`, `docs/bi/evidence.md` | 구독 계약 4건·자동 청구 결제 1건을 수집·Publish한 Run `8890b135-5391-4290-8b05-bf99f24668a6`과 Serving Export `0616bd30-7c38-4a3c-b03b-aaecb0cc6cec` 기준으로 card 54의 실제 상태 전이 시계열, Export Snapshot, Customer Screenshot, Dashboard 대조표를 재생성했다. |
 | `data/serving/mart.duckdb`, `docs/bi/screenshots/`, `docs/bi/evidence.md`, `docs/bi/dashboards.md`, `docs/bi/totals-reconciliation.md` | 2026-09-29 논리 시각 09-10까지 복구한 Publish Run `cef6b673-dc20-49bd-8f40-d615b2146796`과 Serving Export `a9ffd423-4e3d-4e20-9362-c2f4d6fb2679` 기준으로 3개 Dashboard를 재캡처했다. Metabase 재기동 뒤 교체된 Serving 파일 연결과 카드 54·59의 비어 있지 않은 결과를 확인하고, 주문 99,511건·구독 결제 2건 및 정규 자동 청구 부재 사유를 기록했다. |
