@@ -98,6 +98,7 @@ customers   products   sellers
 - [x] `P1-24` 단일 실행 단위의 Transactional UPSERT
 - [x] `P1-25` `seed_runs`에 입력, Version, Count, Hash, 상태 기록
 - [x] `P1-26` 입력/Version이 다른 비정상 재실행을 차단하는 Seed Guard
+- [x] #26 후속: Seed 실행 테스트 2건을 각 테스트 전용 Source·Metadata DB로 격리하고, Generator 성공 이력 삭제를 제거했다. 입력 충돌 테스트는 자기 성공 기준선을 직접 만들어 실행 순서 의존을 없앴다.
 
 ## 범위 밖
 
@@ -177,7 +178,7 @@ Source Schema Allowlist
 | `src/seed/__main__.py`                           | 생성      | `python -m src.seed` CLI와 `seeded_at` 입력 처리를 추가했다.               |
 | `src/__init__.py`, `src/seed/__init__.py`        | 생성·수정 | Seed 모듈을 Python Package로 구성했다.                                     |
 | `tests/seed/test_contracts.py`                   | 수정      | CSV 계약과 Timestamp/Checksum, 거래 실적 등급 경계·구독 기준선 Column 단위 테스트를 추가했다. |
-| `tests/integration/test_seed_integration.py`     | 생성      | 멱등 적재, Source Allowlist, Seed Guard 통합 테스트를 추가했다.            |
+| `tests/integration/test_seed_integration.py`     | 생성·수정 | 멱등 적재, Source Allowlist, Seed Guard 통합 테스트를 추가했다. #26 후속으로 Seed 실행 2건에 함수 범위의 임시 Source·Metadata DB Fixture를 적용하고, `generator_runs` 성공 이력 삭제를 제거했다. 입력 충돌 테스트는 성공 Seed 기준선을 직접 만들며, Fixture는 생성에 성공한 DB만 종료 시 제거한다. |
 | `pyproject.toml`                                 | 수정      | pytest 경로와 PostgreSQL 통합 테스트 Marker를 추가했다.                    |
 | `README.md`                                      | 수정      | PostgreSQL 기동, Seed 실행, 통합 테스트 명령을 추가했다.                   |
 | `docs/phases/phase-01-source-environment.md`     | 수정      | 완료 상태, 체크리스트, 검증 증적, 내부 용어의 한국어 표기를 반영했다.      |
@@ -235,6 +236,36 @@ RUN_POSTGRES_INTEGRATION=1 uv run pytest -q \
 - AC-14: 동일 Raw와 `seeded_at` 재실행 결과 `1 passed`
 - AC-18 및 Seed Guard: `2 passed`
 - PostgreSQL Health Check: `healthy`
+
+### #26 후속: Seed 테스트의 DB 격리
+
+`RUN_POSTGRES_INTEGRATION=1`일 때 Seed 실행 테스트 2건은 `.env` 또는 환경 변수의
+호스트·포트와 관리자 계정으로 관리용 `postgres` DB에 연결해 `test_seed_source_<UUID>`와
+`test_seed_metadata_<UUID>`를 만든다. Seed는 이 임시 DB에만 연결한다. 기존
+`COMMERCE_SOURCE_DB`(운영 원천 DB)와 `PIPELINE_METADATA_DB`(운영 실행 이력 DB)의
+Generator 성공 이력이나 Source 행을 변경하지 않는다. 관리자 계정에는 DB 생성·제거 권한이
+필요하며 생성 실패 시 운영 DB로 대체 실행하지 않는다. 테스트 종료 또는 두 번째 DB 생성
+실패 시에도 생성에 성공한 임시 DB만 제거한다.
+
+입력 충돌 테스트는 같은 Fixture에서 `2026-09-03` 성공 기준선을 만든 다음 `2026-09-04`
+입력을 거부하는지 확인한다. 따라서 멱등성 테스트보다 먼저 실행해도 기존 테스트나
+Generator 실행 이력에 의존하지 않는다. Source 열 구성 테스트는 기존과 같이 읽기 전용이다.
+
+검증은 운영 컨테이너와 분리한 PostgreSQL `18.6` 임시 컨테이너와 원본 Olist CSV로 수행한다.
+과거 테스트를 이 환경에서 실행해 Generator `SUCCESS`(성공) 행 삭제와 거래 실적 등급의
+`updated_at`(증분 수집 기준 시각) 역행을 재현한 다음, 수정한 입력 충돌·멱등성 테스트를
+역순으로 실행한다. 기존 DB의 Generator·Seed 실행 이력, 거래 실적 등급과 구독 행이 전후
+동일하고, `test_seed_*` 임시 DB가 남지 않는지도 확인한다.
+
+2026-10-12 검증 결과:
+
+- 과거 구현: 격리 DB에서 Generator 성공 이력 삭제와 등급 `updated_at` 역행 재현.
+- 수정한 입력 충돌 → 멱등성 테스트의 역순 실행: `2 passed in 77.10s`.
+- 기존 DB의 Generator·Seed 이력, 등급·구독 행: 실행 전후 동일. 임시 DB 잔류: `0`.
+- 같은 격리 환경의 Source 열 구성 테스트: `1 passed`.
+- `uv run pytest -q tests/seed`: `12 passed`.
+- 변경 테스트 파일의 Ruff 검사·포맷 검사와 `git diff --check`: 통과.
+- 운영 공유 DB를 대상으로 한 검증 실행은 하지 않았다.
 
 ## Portfolio Evidence
 
