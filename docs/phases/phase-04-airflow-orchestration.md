@@ -110,6 +110,7 @@ Context Manager를 Task 경계 전체에 걸쳐 사용할 수 없다. 아래 계
 - [x] 2026-09-28 운영 검증: Airflow 실행 API 연결·JWT 인증 설정 후 Source→Warehouse DAG 실제 실행 완료
 - [x] 2026-09-28 `source_simulation_dag`를 매시간 예약하고 과거 구간 자동 재실행 없이 다음 예약 시각 확인
 - [x] 2026-09-29 원천 DAG 주기를 `SOURCE_DAG_SCHEDULE` 환경 변수로 설정하고 미설정·빈 값의 매시간 기본값과 로컬 10분 cron 주기 확인
+- [x] 2026-10-12 057 `SOURCE_DAG_ORDERS`·`SOURCE_PROGRESS_TIME_SCALE`을 예약 Run Param 기본값에 연결하고 CLI·Compose 예시와 AST 단위 테스트를 갱신했다. 대상 테스트 110건 통과, Airflow smoke 5건은 미실행(skip).
 - [x] 2026-09-28 실제로 읽히지 않는 `WAREHOUSE_DAG_SCHEDULE` Compose·환경 변수 예시 항목 제거
 
 Runtime 계약:
@@ -259,6 +260,8 @@ cron 값을 `*/10 * * * *`로 받았다. 서비스 재기동 후 `airflow dags d
 미설정·빈 값·설정 값의 세 경우가 모두 통과했다. 같은 시각의 Source 예약 실행
 `scheduled__2026-09-29T00:10:00+00:00`과 이 실행이 트리거한 Warehouse 실행
 `manual__2026-09-29T00:10:00+00:00`이 모두 `success`로 종료됐다.
+
+2026-10-12 057은 예약 Run의 신규 주문 수를 `SOURCE_DAG_ORDERS`, 주문 진행·추정 배송일·출고 기한 지연 배율을 `SOURCE_PROGRESS_TIME_SCALE`로 설정한다. 미설정·빈 값은 각각 1이며 잘못된 값은 DAG 파싱 오류로 드러난다. `.env.example`과 Compose 공통 환경에 두 변수를 추가했다. 운영 `.env` 값 변경과 Airflow 컨테이너 재생성은 별도 운영 단계다.
 
 ### 2. Generator DAG
 
@@ -563,6 +566,16 @@ Phase 5는 `sync_bronze_catalog`가 만든 메타데이터 기반 Bronze 파일 
 Project/CLI와 Test를 완성한 뒤, Warehouse DAG의 `dbt_build` 호출 경계를 활성화한다.
 
 ## 파일·폴더별 변경 요약
+
+057 구현(2026-10-12):
+
+| 경로 | 변경 | 요약 |
+| --- | --- | --- |
+| `airflow/dags/source_simulation_dag.py` | 수정 | 주문 수·배율 환경 변수를 DAG Param 기본값으로 읽고 배율을 Generator에 전달한다. |
+| `src/generator/__main__.py` | 수정 | `--progress-time-scale` CLI 인자를 추가해 실행을 재현할 수 있게 한다. |
+| `compose.yaml`, `.env.example` | 수정 | Airflow 공통 환경 변수와 기본값·입력 범위 예시를 추가했다. |
+| `tests/test_airflow_dags.py`, `tests/generator/test_cli.py` | 수정·생성 | DAG Param의 환경 변수 파싱과 CLI 기본값·명시 배율을 검증한다. |
+| `docs/phases/phase-04-airflow-orchestration.md` | 수정 | 057 진행 체크리스트와 파일별 변경·검증 요약을 기록했다. |
 
 | 경로                                            | 변경 내용                                                                                                                                     |
 | ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |

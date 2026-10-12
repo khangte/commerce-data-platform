@@ -109,6 +109,7 @@ Payment: pending → completed → refunded
 - [x] 2026-09-29 `subscription-payment-failed` 전이에서 실패 결제 행을 함께 기록하고 이후 동일 회차 시도 2로 재시도하는 검증
 - [x] 2026-09-29 정기 실행이 Seed 이후 Generator 주문을 결정적 예정 시각에 따라 실행당 한 단계씩 전이하고 결제 상태를 함께 바꾸는 검증. 10:10 UTC 실행 뒤 Source와 Mart `fct_order`가 `DELIVERED` 70, `APPROVED` 41, `CREATED` 3으로 일치했다(architect 판정 052).
 - [x] 054 구독 결제 기간 불변식: 성공 결제와 구독 기간 일치, 실패 재시도 2일 갱신, 이미 결제한 미래 기간 재정렬, 예정일 도래 실패 Profile, 버전 1.14.0을 구현하고 T1~T7을 검증했다.
+- [x] 057 주문 진행 시간 배율: 지연·추정 배송일·출고 기한 배율, 기록 시각 기준점, 실행 식별자 포함, 버전 1.15.0. Generator 단위 테스트 95건과 지정 PostgreSQL 통합 테스트 6건 통과.
 - [x] Source 커밋과 같은 트랜잭션에 실행 결과 마커를 저장하고, 성공 메타데이터 기록 실패 시 동일 입력 재시도에서 기존 실행을 성공으로 복구한다.
 - [x] 구독 만료 스캔과 결제·프로필 전이 후 원천 데이터 동시성 잠금 행을 `FOR SHARE`로 잡고 Source 커밋까지 유지한다. 대상 PostgreSQL 통합 테스트 8건과 전체 테스트(329 passed, 54 skipped)를 확인했다.
 - [x] Generator 실패 뒤 원천 데이터 동시성 잠금 해제도 실패하면 최초 오류 분류를 유지한다. 성공 뒤 해제 실패는 호출자에게 전달한다.
@@ -181,6 +182,22 @@ AC-20과 AC-21의 전체 E2E 판정은 Phase 3의 Ingestion과 결합해 완료�
 - 결정성, Transaction, 원천 변경 시각 자동 테스트
 
 ## 파일·폴더별 변경 요약
+
+057 구현(2026-10-12):
+
+| 경로 | 변경 | 요약 |
+| --- | --- | --- |
+| `src/generator/config.py` | 수정 | 정수 환경 변수 파서, `progress_time_scale` 결정성 입력, Generator 버전 1.15.0을 추가했다. |
+| `src/generator/order_progress.py` | 수정 | 승인·출고·배송 지연을 배율로 나누고 직전 단계의 기록 시각을 기준으로 다음 단계를 계산한다. |
+| `src/generator/orders.py`, `src/generator/scenarios.py` | 수정 | 추정 배송일과 아이템 출고 기한에 배율을 적용한다. 배율은 신규 주문의 결정성 Hash에도 반영된다. |
+| `src/generator/service.py` | 수정 | 후보 주문의 기록된 승인·출고 시각을 진행 계획에 전달하고 성공 이력 재사용 조건에 배율을 추가한다. |
+| `src/generator/metadata.py`, `src/generator/commits.py` | 수정 | 실행 이력·Source 커밋 마커에 배율을 기록하고 동일 배율의 성공 결과만 재사용한다. |
+| `sql/metadata/002_create_generator_metadata.sql`, `sql/source/004_create_generator_commits.sql` | 수정 | 배율 컬럼과 배율 포함 고유 인덱스를 추가하고 기존 고유 제약을 전환한다. |
+| `tests/generator/test_config.py`, `tests/generator/test_order_progress.py`, `tests/generator/test_orders.py`, `tests/generator/test_scenarios.py`, `tests/generator/test_metadata.py` | 수정 | 배율 입력, 기록 시각 기준점, 배송 지연, 실행 이력 저장을 검증한다. |
+| `tests/generator/test_commits.py`, `tests/generator/test_service_identity.py` | 생성 | 배율별 커밋·성공 이력 식별을 검증한다. |
+| `tests/integration/test_generator_service_integration.py`, `tests/integration/test_generator_metadata_integration.py` | 검증 | `RUN_POSTGRES_INTEGRATION=1`로 6건 통과했고 기존 행의 배율 기본값 1과 새 인덱스를 확인했다. |
+| `PRD_v1.22.md`, `PRD.bak/PRD_v1.21.md` | 생성·이동 | 057 계약을 v1.22에 반영하고 v1.21을 보관했다. |
+| `docs/phases/phase-02-deterministic-generator.md` | 수정 | 057 진행 체크리스트와 파일별 변경·검증 요약을 기록했다. |
 
 | 경로                                                          | 변경      | 요약                                                                                                                  |
 | ------------------------------------------------------------- | --------- | --------------------------------------------------------------------------------------------------------------------- |
