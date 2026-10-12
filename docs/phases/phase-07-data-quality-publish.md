@@ -108,6 +108,7 @@ Mart Model 이름과 Grain이 확정돼야 작성할 수 있는 Test와 검증�
   - 근거: 정상 E2E 2건에서 `run_results.json`의 `relationships_` Test 노드 실행 수·`status=pass`·`failures=0`을 직접 단언했고 `RUN_POSTGRES_INTEGRATION=1 RUN_SEAWEEDFS_INTEGRATION=1 uv run pytest tests/integration/test_order_e2e_and_late_order_mart_integration.py -v` → `2 passed`.
 - [x] `P7-12` Fact Measure/Fan-out 회귀 Test
 - [x] 056 승인: 주문 결제 구매일의 NULL 금지·날짜 FK·주문 Fact와의 구매일 일치 Test를 추가하고, 선언 및 날짜 불일치 탐지를 격리 DuckDB에서 검증했다.
+- [x] 056 운영 반영: 전체 새로고침 Run `3520e201-f49a-4aa6-9d67-377fbcd44e73`와 다음 정기 Run `467bb050-ec75-4f69-a1bb-4ec1f56e962c`의 품질 Test 144건이 각각 통과했다. 전체 새로고침에서 결제 구매일 NULL·주문 날짜 불일치·날짜 FK 누락은 0건이며, 상세 증적은 Phase 6 운영 체크리스트에 기록했다.
 
 필수 Custom Contract:
 

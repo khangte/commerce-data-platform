@@ -201,6 +201,7 @@ Report Model은 Mart 위에서 파생된다. BI가 Source·Bronze·Staging을 �
 | `docs/reference/mart-grain.md`                                                                          | P6-26으로 Dimension·Fact 컬럼표를 현행 dbt 출력과 정합시키고, P6-27으로 기존 Report 3개의 Grain·키·컬럼·제약을 기록했다. 056 승인으로 §3.3의 출처와 날짜 Dimension 참조·구매일 키 계약을 개정했다. |
 | `README.md` | 056의 결제 구매일 FK를 ER 그림과 Fact 표에 반영했다. 작업 전부터 있던 트러블슈팅 표 변경은 보존했다. |
 | `docs/phases/phase-06-dimensional-modeling.md`, `docs/phases/phase-07-data-quality-publish.md` | 056 구현 체크리스트, 변경 파일·동작과 로컬 검증 결과를 기록했다. |
+| `data/warehouse/warehouse.duckdb`, `data/serving/mart.duckdb`, `data/serving/exports/` | 056 운영 승인 후 전체 새로고침으로 결제 Fact의 구매일 키를 반영했다. 이후 정기 DAG가 새 Serving 버전 파일을 만들고 Metabase 연결을 재지정했으며, 아래 운영 체크리스트에 Run·Export 식별자와 검증 결과를 기록했다. |
 | `dbt/tests/rpt_membership_tier_performance_unique.sql`, `dbt/models/marts/metrics/rpt_subscription_payment_outcomes_daily.sql` | 기존 SQL Test·Model의 Grain 설명만 실제 그룹화 기준으로 바로잡았다. |
 | `docs/adr/009-use-observed-history-for-customer-scd2.md`, `docs/adr/011-late-arrival-reprocessing-strategy.md` | 관측 기반 고객 이력과 Late Arrival 재처리 결정을 ADR로 기록했다. |
 
@@ -232,9 +233,27 @@ Test 등록을 확인했다. README는 작업 전 파일과 대조해 ER 관계�
 
 `mart_hash`의 정렬 키 `(order_id, payment_sequence)`는 유지한다. 컬럼 추가로 Logical Hash
 값이 달라지는 것은 계약 개정이며, 045 규칙에 따라 Phase 8·9의 과거 해시 증거는 재계산하지
-않는다. `customer_key`와 Metabase 카드는 추가하지 않았다. 기존 운영 테이블의 첫 반영에는
-056 §7의 전체 새로고침이 필요하다. DAG 정지와 운영 Publish는 수행하지 않았으며, 리뷰 승인
-후 lead의 별도 지시로 진행한다.
+않는다. `customer_key`와 Metabase 카드는 추가하지 않았다. 최초 구현 시에는 운영 반영을
+수행하지 않았고, 사용자 승인 이후 진행한 운영 반영 결과는 아래에 기록한다.
+
+### 056 운영 반영 (2026-10-12, `a20af83`)
+
+- [x] `source_simulation_dag`를 정지하고 Source·Warehouse의 실행 중·대기 중 Run이 모두 0건임을 확인했다.
+- [x] Airflow scheduler·API server·DAG processor의 런타임 파일 163개가 각각 커밋 `a20af83`와 일치함을 확인했다.
+- [x] 직전 Published Run `0e47d012-7e8b-40b8-9744-fe2f9c33d9ff`의 기록 해시·행 수가 Published 파일과 일치함을 확인했다.
+- [x] Publish CLI의 전체 새로고침으로 Run `3520e201-f49a-4aa6-9d67-377fbcd44e73`이 `PUBLISHED`로 완료됐다. 직전 Run 연결이 일치하고 변경 Relation은 `facts.fct_order_payment` 하나다.
+- [x] 결제 Fact는 반영 전후 104,008행·금액 합계 16,140,072.44로 동일하다. 구매일 NULL·주문 Fact 날짜 불일치·날짜 FK 누락은 모두 0건이고, 구매일 일치는 104,008건이다. dbt 품질 Test 144건과 Published 외부 의존 없는 조회 Test 1건이 통과했다.
+- [x] Source DAG를 재개했다. 재개 확인 시각은 08:34:30 UTC이며 다음 정기 실행은 09:00 UTC다.
+- [x] 재개 후 Source `scheduled__2026-10-12T09:00:00+00:00`와 Warehouse `manual__2026-10-12T09:00:00+00:00`가 모두 성공했다. Publish Run `467bb050-ec75-4f69-a1bb-4ec1f56e962c`의 직전 Run은 전체 새로고침 Run이며, 품질 Test 144건이 통과했다.
+- [x] 다음 정기 Run의 Serving Export와 Metabase 재지정은 모두 `SUCCESS`다. Export 식별자는 `0717263e-89c1-48be-b8f4-83554cc9298c`이며, Metabase API에서 새 버전 파일 경로와 Manifest의 Export·Publish 식별자 일치를 확인했다. Serving 결제 Fact 104,009행의 구매일 NULL·주문 날짜 불일치는 모두 0건이다.
+
+재개 후 정기 Source 입력이 반영되어 주문·상품 항목·결제 Fact와 고객 Dimension이 갱신됐다.
+이 정기 Run의 결제 Fact는 104,009행이다. 수동 전체 새로고침 Run에서 검증한 변경 Relation은
+`facts.fct_order_payment` 하나이며, 당시 결제 행 수·금액 합계는 반영 전과 동일하다. 최종
+`source_simulation_dag`는 재개 상태(`is_paused = false`)로 확인했다.
+
+Source·Bronze 데이터 삭제와 Phase 8·9 과거 해시 증거 재계산은 수행하지 않았다. 운영 단계별
+확인 자료는 `/tmp/contract-056-operation/`에 보존한다.
 
 ## Definition of Done
 
