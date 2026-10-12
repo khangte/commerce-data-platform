@@ -107,6 +107,7 @@ Mart Model 이름과 Grain이 확정돼야 작성할 수 있는 Test와 검증�
 - [x] `P7-11` 정상 E2E Unknown Key 0 Test
   - 근거: 정상 E2E 2건에서 `run_results.json`의 `relationships_` Test 노드 실행 수·`status=pass`·`failures=0`을 직접 단언했고 `RUN_POSTGRES_INTEGRATION=1 RUN_SEAWEEDFS_INTEGRATION=1 uv run pytest tests/integration/test_order_e2e_and_late_order_mart_integration.py -v` → `2 passed`.
 - [x] `P7-12` Fact Measure/Fan-out 회귀 Test
+- [x] 056 승인: 주문 결제 구매일의 NULL 금지·날짜 FK·주문 Fact와의 구매일 일치 Test를 추가하고, 선언 및 날짜 불일치 탐지를 격리 DuckDB에서 검증했다.
 
 필수 Custom Contract:
 
@@ -268,6 +269,8 @@ Normal E2E Unknown Key = 0
 | `airflow/dags/warehouse_pipeline_dag.py`, `src/rebaseline.py` | 수정 | DAG Publish Task 체인과 Rebaseline 활성 Publish 방어를 추가했다. |
 | `src/ingestion/rules.py`, `src/ingestion/validation.py`, `src/ingestion/corruption.py`, `src/ingestion/service.py` | 생성·수정 | 검증 규칙 등록부와 Page 단위 PK 중복 오염을 추가했다. |
 | `dbt/tests/`, `dbt/models/marts/facts/schema.yml` | 생성·수정 | 상태·FK·금액·시간·합계·Canary 품질 Gate를 추가했다. |
+| `dbt/models/marts/facts/schema.yml`, `dbt/tests/fct_order_payment_date_matches_order.sql` | 생성·수정 | 056 승인으로 주문 결제의 `purchase_date_key`(주문 구매일 키)에 NULL 금지·`dim_date.date_key` 참조를 추가하고 주문 Fact와 다른 구매일을 찾는 Singular Test를 추가했다. |
+| `tests/test_warehouse_quality_contract.py`, `tests/test_order_payment_date_key.py` | 생성·수정 | 구매일 FK와 Singular Test 선언, UTC 날짜 경계·결제 행 보존·증분 필터·불일치 탐지를 검증했다. 관련 로컬 테스트 28건이 통과했으며 운영 Publish와 과거 Phase 8·9 해시 증거 재계산은 수행하지 않았다. |
 | `sql/validation/observability_run_status.sql` | 생성 | Batch별 Ingestion·Publish 상태 단일 조회를 추가했다. |
 | `scripts/verify_clean_clone.sh`, `README.md` | 생성·수정 | 새 Clone 재현 및 수동 Publish 절차를 추가했다. |
 | `tests/` | 생성·수정 | 오류, 메타데이터, Publish, 규칙, 품질 계약 테스트를 추가했다. |

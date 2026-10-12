@@ -34,6 +34,10 @@ def test_status_domains_and_foreign_keys_are_declared() -> None:
     assert _named(_tests("fct_order_item", "purchase_date_key"), "relationships")[
         "arguments"
     ] == {"to": "ref('dim_date')", "field": "date_key"}
+    assert "not_null" in _tests("fct_order_payment", "purchase_date_key")
+    assert _named(_tests("fct_order_payment", "purchase_date_key"), "relationships")[
+        "arguments"
+    ] == {"to": "ref('dim_date')", "field": "date_key"}
     assert _named(_tests("fct_subscription_payment", "payment_status"), "accepted_values")[
         "arguments"
     ]["values"] == ["completed", "failed"]
@@ -48,6 +52,7 @@ def test_non_negative_and_singular_gate_tests_exist() -> None:
         "stg_orders_timestamp_order.sql",
         "fct_order_item_total_matches_order.sql",
         "fct_order_item_date_matches_order.sql",
+        "fct_order_payment_date_matches_order.sql",
         "publish_gate_canary.sql",
     ):
         assert (DBT_DIR / "tests" / path).is_file()

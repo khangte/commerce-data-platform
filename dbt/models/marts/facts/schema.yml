@@ -75,6 +75,14 @@ models:
                 field: order_id
       - name: payment_sequence
         data_tests: [not_null]
+      - name: purchase_date_key
+        description: 결제가 속한 주문의 UTC 구매일이며 결제 사건일이 아니다.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_date')
+                field: date_key
       - name: payment_status
         data_tests:
           - not_null

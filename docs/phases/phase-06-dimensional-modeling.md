@@ -92,6 +92,7 @@ Model을 만들기 전에 Grain 문장을 먼저 쓴다. 컬럼 목록만으로�
 - [x] `P6-16` 사건 시점 기준 Dimension Version 결합
 - [x] `P6-17` Fact Grain/Measure/Fan-out 방지 Test
 - [x] `P6-18` 정상 E2E Unknown Key 0 검증
+- [x] 056 승인에 따라 주문 결제 Fact에 UTC 주문 구매일 키를 추가하고, 날짜 FK·주문 Fact와의 일치·결제 행 보존·증분 영향 주문 필터를 로컬에서 검증했다.
 
 Fact는 Intermediate가 준비한 행을 투영한다. Fact 안에서 집계하거나 시점 결합을 수행하면 Grain·Key·Measure 제공 책임과 계산 책임이 섞인다.
 
@@ -190,10 +191,16 @@ Report Model은 Mart 위에서 파생된다. BI가 Source·Bronze·Staging을 �
 | `dbt/models/marts/dimensions/dim_customer.sql`                                                          | 구독 상태·재가입 파생 컬럼을 제거하고 등급 Version만 투영하도록 축소했다.                                                                  |
 | `dbt/models/marts/dimensions/dim_subscription.sql`, `dim_date.sql`                                      | `subscription_id` Business Key와 결정적 Version Key를 가진 계약 SCD2 Dimension을 추가하고, 계약 결제일까지 날짜 Dimension 범위를 확장했다. |
 | `dbt/models/intermediate/int_subscription_payments_enriched.sql`                                        | 결제 시점의 계약·고객 Version과 날짜 Key를 결합해 Fact 입력을 준비하도록 수정했다.                                                         |
+| `dbt/models/intermediate/int_order_payments_enriched.sql` | 056 승인에 따라 결제를 주문 Staging과 왼쪽 결합해 UTC 주문 구매일 `purchase_date_key`를 계산한다. 주문이 없는 결제도 보존해 NULL 키 검증에 잡히도록 하며, 고객 이력 모델은 참조하지 않는다. |
+| `dbt/models/marts/facts/fct_order_payment.sql` | 새 Intermediate를 투영하고 `payment_sequence` 다음에 주문 구매일 키를 추가했다. 기존 결제 컬럼 순서, 주문 단위 증분 교체와 영향 주문 필터를 유지했다. |
+| `dbt/models/marts/facts/schema.yml`, `dbt/tests/fct_order_payment_date_matches_order.sql` | 결제 구매일의 NULL 금지·날짜 Dimension 참조와 같은 주문 Fact의 구매일 일치를 품질 Gate로 강제했다. |
+| `tests/test_order_payment_date_key.py`, `tests/test_warehouse_quality_contract.py` | 격리된 메모리 DuckDB로 UTC 경계·결제 사건 시각 부재·다중 결제·주문 참조 누락·증분 필터·날짜 불일치 탐지를 검증하고, 날짜 FK·Singular Test 선언을 계약 테스트에 추가했다. |
 | `dbt/models/marts/facts/fct_subscription_payment.sql`                                                 | `payment_id` Grain의 계약별 구독 결제 시도 Fact를 구현했다.                                                                                |
 | `dbt/models/marts/*/schema.yml`, `dbt/tests/dim_subscription_*`, `dbt/tests/fct_subscription_payment_*` | 계약 SCD2, 열린 계약, 청구 회차·시도, 성공 금액, 실패 코드 계약을 Schema 및 Singular Test로 강제했다.                                      |
 | `tests/integration/test_subscription_payment_temporal_join_integration.py`                              | 계약 키·청구 회차·시도 순번 기준으로 Source→Bronze→dbt Fact의 계약·고객 Temporal Join을 E2E 검증하도록 갱신했다.                           |
-| `docs/reference/mart-grain.md`                                                                          | P6-26으로 Dimension·Fact 컬럼표를 현행 dbt 출력과 정합시키고, P6-27으로 기존 Report 3개의 Grain·키·컬럼·제약을 기록했다.                    |
+| `docs/reference/mart-grain.md`                                                                          | P6-26으로 Dimension·Fact 컬럼표를 현행 dbt 출력과 정합시키고, P6-27으로 기존 Report 3개의 Grain·키·컬럼·제약을 기록했다. 056 승인으로 §3.3의 출처와 날짜 Dimension 참조·구매일 키 계약을 개정했다. |
+| `README.md` | 056의 결제 구매일 FK를 ER 그림과 Fact 표에 반영했다. 작업 전부터 있던 트러블슈팅 표 변경은 보존했다. |
+| `docs/phases/phase-06-dimensional-modeling.md`, `docs/phases/phase-07-data-quality-publish.md` | 056 구현 체크리스트, 변경 파일·동작과 로컬 검증 결과를 기록했다. |
 | `dbt/tests/rpt_membership_tier_performance_unique.sql`, `dbt/models/marts/metrics/rpt_subscription_payment_outcomes_daily.sql` | 기존 SQL Test·Model의 Grain 설명만 실제 그룹화 기준으로 바로잡았다. |
 | `docs/adr/009-use-observed-history-for-customer-scd2.md`, `docs/adr/011-late-arrival-reprocessing-strategy.md` | 관측 기반 고객 이력과 Late Arrival 재처리 결정을 ADR로 기록했다. |
 
@@ -207,6 +214,27 @@ Report Model은 Mart 위에서 파생된다. BI가 Source·Bronze·Staging을 �
 - [x] 고객 SCD2에서 구독 축과 재가입 파생 값을 제거하고 거래 실적 등급만 유지했다.
 - [x] v1.12 Bronze 재기록 뒤 `dbt build --full-refresh`를 실행해 Model·Test 131개가 통과했다.
 - [x] PostgreSQL·SeaweedFS 통합 테스트로 `ACTIVE` 계약과 첫 결제 시도의 계약·고객 FK가 모두 해소되는지 검증했다.
+
+### 056 주문 결제 구매일 키 (2026-10-12)
+
+[056 판정](../architect-review/056_fct-order-payment-dimension-keys.md)에 따라
+`fct_order_payment.purchase_date_key`(결제가 속한 주문의 구매일 키)를 추가했다. 날짜 계산은
+`stg_orders.purchase_at`의 UTC 일자를 사용하며 결제 사건일과 구분한다. 결제의 Grain과 금액,
+`unique_key='order_id'`(주문 단위 교체), 영향 주문 필터와 기존 컬럼의 상대 순서를 유지한다.
+
+검증은 운영 파일을 열지 않는 메모리 DuckDB에서 진행했다. 구현 전 신규 검증은 모델·FK·SQL
+Test 부재로 `6 failed, 2 passed`였고, 구현 후 구매일 동작·품질 계약·Fact 계층·증분 계약·Mart
+해시 테스트는 `28 passed`였다. 두 변경 Python 테스트 파일의 Ruff 검사도 통과했다. 임시
+Warehouse·로그·출력 경로를 지정한 `dbt parse --no-partial-parse`가 통과했고, 생성된 Manifest에서
+새 Intermediate의 Staging 2개 의존, 기존 증분 교체 설정과 구매일 NULL 금지·날짜 FK·Singular
+Test 등록을 확인했다. README는 작업 전 파일과 대조해 ER 관계와 Fact 표의 두 변경만
+적용했음을 확인했다. `git diff --check`도 통과했다.
+
+`mart_hash`의 정렬 키 `(order_id, payment_sequence)`는 유지한다. 컬럼 추가로 Logical Hash
+값이 달라지는 것은 계약 개정이며, 045 규칙에 따라 Phase 8·9의 과거 해시 증거는 재계산하지
+않는다. `customer_key`와 Metabase 카드는 추가하지 않았다. 기존 운영 테이블의 첫 반영에는
+056 §7의 전체 새로고침이 필요하다. DAG 정지와 운영 Publish는 수행하지 않았으며, 리뷰 승인
+후 lead의 별도 지시로 진행한다.
 
 ## Definition of Done
 

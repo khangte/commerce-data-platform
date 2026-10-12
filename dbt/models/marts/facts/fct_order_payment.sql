@@ -10,9 +10,10 @@
 select
     order_id,
     payment_sequence,
+    purchase_date_key,
     payment_status,
     payment_value
-from {{ ref('stg_payments') }}
+from {{ ref('int_order_payments_enriched') }}
 {% if is_incremental() %}
 where order_id in (select order_id from {{ ref('int_affected_order_keys') }})
 {% endif %}

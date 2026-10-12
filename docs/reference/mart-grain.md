@@ -359,12 +359,14 @@ Business Key가 계약이므로 해지 뒤 재가입한 사람은 `subscription_
 - Unique Key: `(order_id, payment_sequence)`
 - Fact Type: Accumulating Snapshot
 - Materialization: incremental
-- 출처: `stg_payments`
+- 출처: `int_order_payments_enriched`
+- Dimension 참조: `dim_date`
 
 | 컬럼                   | 타입          | 종류                             | Null | 정의 / Test                                                                                                      |
 | ---------------------- | ------------- | -------------------------------- | ---- | ---------------------------------------------------------------------------------------------------------------- |
 | `order_id`             | VARCHAR       | Degenerate Dimension / Grain Key | N    | 결제가 속한 주문 식별자 / `not_null`                                                                             |
 | `payment_sequence`     | INTEGER       | Grain Key                        | N    | 동일 주문 내 결제 레코드 순번 / `not_null`                                                                        |
+| `purchase_date_key`    | INTEGER       | Dimension FK                     | N    | 결제가 속한 주문의 UTC 구매일이며 결제일이 아니다. `stg_orders.purchase_at`에서 `fct_order.purchase_date_key`와 같은 식으로 파생 / `not_null`, `relationships → dim_date.date_key`, 같은 `order_id`의 `fct_order.purchase_date_key`와 일치 |
 | `payment_value`        | DECIMAL(14,2) | Additive Measure                 | N    | 해당 결제 레코드의 결제 금액 / `not_null`, `>= 0`                                                                |
 | `payment_status`       | VARCHAR       | Fact Attribute                   | N    | 프로젝트 정의 결제 상태 / `not_null`, `accepted_values: pending, completed, failed, refunded`                    |
 
