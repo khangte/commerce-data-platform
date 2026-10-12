@@ -3,6 +3,7 @@
 - 기록일: 2026-09-18
 - 판정: **Phase 6 범위 밖. lead 지시로 보류한다.** 기록만 남기고 이번 Phase에서는 고치지 않는다.
 - 관련: [003 Phase 6 마감 판정](003_phase6-closure-gate.md) 3절
+- 현재 상태(2026-10-12): **원 증상 해소. 해소 방식에서 신규 위험 발견, developer 수정 진행 중.** 아래 "해소 상태" 절 참조.
 
 ## 증상
 
@@ -45,3 +46,27 @@ ValueError: Seed is blocked because a successful generator run already exists
 ## 처리
 
 lead가 보류를 결정했다. 별도 Task로 끊을 시점은 Phase 7 착수 전이 적절하다. Phase 7도 같은 공유 Database 위에서 통합 Test를 돌리므로 Noise가 그대로 이어진다.
+
+## 해소 상태 (2026-10-12)
+
+### 원 증상: 해소
+
+- 해소 커밋: `d441323` (2026-09-18, `fix: stabilize phase6 closure tests`). 위 선택지 1을 적용했다.
+- 근거: `tests/integration/test_seed_integration.py:19`, `:67`에서 두 Test가 시작 시 `_remove_successful_generator_runs()`를 호출한다. 이 함수(`:77-81`)가 `generator_runs`의 `SUCCESS` 행을 지운다. 따라서 1단계 Guard(`src/seed/loader.py:418-430`)를 건너 2단계 Baseline 비교 Guard까지 도달한다.
+
+### 신규 위험: 공유 Database 오염
+
+해소 방식이 Test 전제를 격리하지 않고 공유 Database의 상태를 지워서 만든다. 통합 Test는 운영과 같은 Database(`PostgresSettings.from_environment()`)에서 돈다. 이 판정을 위해 해당 Test는 실행하지 않았다. 아래는 코드 기준 판단이다.
+
+1. **Generator 성공 이력 전량 삭제.** `DELETE FROM generator_runs WHERE status = 'SUCCESS'`(`test_seed_integration.py:80`)가 운영 Generator 이력도 지운다.
+   - Seed Guard 1단계(`src/seed/loader.py:418-430`)가 무력화된다. Generator가 쓴 Source 위에 Seed를 다시 적재할 수 있게 된다.
+   - Generator 재실행 재사용 근거(`src/generator/service.py:272` `_successful_result`)가 사라진다. 이미 성공한 `logical_date`를 재시도하면 결과를 재사용하지 못한다. 대신 Cursor 단조성 Guard(`src/generator/service.py:258` `_assert_source_cursor_forward`, 048)에 막혀 실패한다.
+2. **Seed 덮어쓰기.** `test_same_raw_input_and_seeded_at_are_idempotent`는 `run_seed()`를 실제로 두 번 실행한다. 적재는 `ON CONFLICT ... DO UPDATE`(`src/seed/loader.py:388-389`)이고 갱신 대상에 `updated_at`이 포함된다(`src/seed/loader.py:70`, `:76`).
+   - Generator가 갱신한 Seed 고객의 구독·등급 행(`src/generator/customers.py:465`, `:510`)이 Seed 값과 과거 `updated_at`으로 되돌아갈 수 있다.
+   - 되돌아간 행은 Cursor가 Watermark 아래로 역행하므로 수집되지 않는다. Source와 Warehouse가 에러 없이 어긋난다(미실측, 가능성 높음).
+
+### 처리
+
+- 원 항목(순서 의존 실패)은 종결한다.
+- 신규 위험은 developer가 수정 중이다. 방향: 두 Test를 격리된 Database·Schema Fixture에서 실행하거나, 공유 Database에 Generator 성공 행이 있으면 skip한다. 공유 Database의 행을 지우는 방식은 쓰지 않는다.
+- 수정이 끝날 때까지 공유 Database에서 `RUN_POSTGRES_INTEGRATION=1`로 이 파일을 포함한 전체 통합 Test를 실행하지 않는다.

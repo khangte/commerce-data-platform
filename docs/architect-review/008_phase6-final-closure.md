@@ -41,3 +41,4 @@ AC-12가 닫힌 근거는 두 가지다. 첫째, 003이 지적한 `fact_orders`�
 ## 4. 이월
 
 - Seed Guard 순서 의존 Test 2건([004](004_seed-guard-order-dependent-tests.md)). Phase 7 착수 전에 별도 Task로 처리하기를 권한다. Phase 7도 같은 공유 Database 위에서 통합 Test를 돌리므로 Noise가 이어진다.
+  - 후속(2026-10-12): `d441323`으로 해소됐다. 해소 방식의 신규 위험과 처리는 [004](004_seed-guard-order-dependent-tests.md) "해소 상태" 절에 있다.

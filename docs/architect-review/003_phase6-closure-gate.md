@@ -37,6 +37,8 @@ AC-12의 합격 증거는 "Fact FK/Unique 통과, 정상 Unknown 0"이다. Uniqu
 
 `tests/integration/test_seed_integration.py`의 2건은 `run_seed()`를 직접 호출한다. Generator가 한 번이라도 성공한 Database에서는 Seed Guard가 `Seed is blocked because a successful generator run already exists`로 막는다. 즉 이 Test들은 Generator Test보다 먼저 실행되는 순서에서만 통과하는 순서 의존 Test다. Phase 1 Test 설계 문제이며 Phase 6 Model·Mart 로직과 무관하다.
 
+- 후속(2026-10-12): `d441323`으로 해소됐다. 해소 방식의 신규 위험과 처리는 [004](004_seed-guard-order-dependent-tests.md) "해소 상태" 절에 있다.
+
 ## 4. 마감 조건
 
 Phase 6을 닫으려면 다음 한 가지가 필요하다.

@@ -4,6 +4,7 @@
 - 대상: `src/generator/service.py` `run_generator`, `src/generator/transitions.py`, `airflow/dags/source_simulation_dag.py`
 - 요청: lead 분석 요청(구현 지시 없음, 판정만)
 - 판정: **설계·구현 누락(Design Gap).** 의도된 동작이 아니다. 권고안은 B(정기 실행에 기존 주문 전이 단계 추가)다. 구현 여부는 사용자가 정한다.
+- 현재 상태(2026-10-12): **권고안 B 채택·구현으로 해소.** Dashboard Card 설명 반영만 남았다. 아래 "해소 상태" 절 참조.
 
 ## 측정(읽기 전용, 2026-09-29 09:30 UTC 기준)
 
@@ -72,3 +73,25 @@ Seed(Olist) 주문 99,441건은 `delivered` 96,478, `shipped` 1,107, `canceled` 
 - PRD §7.1 또는 §13.3에 정기 실행의 주문 전이 규칙(대상, 실행당 한 단계, 결정적 예정 시각)을 적는다. PRD 수정 절차(이전 버전을 `PRD.bak/`로 이동하고 버전 증가)를 따른다.
 - Phase 2 "실행 통합"에 정기 실행 전이 항목과 검증 결과를 추가한다.
 - 새 ADR은 필요 없다. 기존 결정의 누락된 연결을 채우는 변경이다.
+
+## 해소 상태 (2026-10-12)
+
+사용자가 권고안 B를 채택했고 구현이 끝났다. 사용자 결정 대기 상태는 해제한다.
+
+- 해소 커밋: `9afeddc` (2026-09-29, `feat(generator): advance generator orders one stage per run`).
+- 구현 근거
+  - `src/generator/order_progress.py`: `random_seed`·`order_id`·단계 이름 Hash로 단계별 예정 시각과 취소 여부를 결정한다(설계 제약 2). 다음 단계 하나만 반환한다(제약 3).
+  - `src/generator/service.py:308` `_run_existing_order_transitions`: Seed 이후(`created_at > seeded_at`) `created`·`approved`·`shipped` 주문만 `order_id` 순으로 처리한다(제약 1). 같은 Transaction에서 결제를 함께 전이한다(제약 6). 쓰기 전 `assert_source_mutation_lease`를 확인한다. 호출 위치는 `src/generator/service.py:163`이다.
+  - `src/generator/config.py:8` `GENERATOR_VERSION = "1.14.0"`.
+  - `tests/generator/test_order_progress.py`: 결정성·실행당 한 단계·결제 매핑·취소 분기·Seed 제외·미도래 주문·Seed 부재 오류 7건.
+- 문서 근거
+  - `PRD_v1.21.md:26`(v1.20 변경 요약), `:811`(실행당 한 단계 규칙). PRD 개정 절차를 따랐다.
+  - `docs/phases/phase-02-deterministic-generator.md:110`: 2026-09-29 10:10 UTC 실행 뒤 Source와 Mart `fct_order`가 `DELIVERED` 70, `APPROVED` 41, `CREATED` 3으로 일치했다.
+
+### 남은 항목: Dashboard Card 설명
+
+"결과로 생기는 동작 변화" 절의 Card 설명("최근 일자는 배송 완료에 따라 증가할 수 있음")은 반영되지 않았다.
+
+- 근거: 저장소 Export `metabase/export/card-46.json`(Daily GMV (배송 완료))과 `metabase/export/card-48.json`(Daily AOV (배송 완료))의 `description`에 해당 문구가 없다. 두 Export의 `updated_at`은 2026-09-23으로 이 판정보다 앞선다.
+- 운영 Metabase의 현재 Card 설명은 확인하지 않았다.
+- 이 항목이 반영되면 이 문서를 종결한다.

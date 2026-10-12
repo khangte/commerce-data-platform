@@ -4,6 +4,7 @@
 - 관련: Phase 7 구현 계획 Task 8(P7-10)·Task 10(P7-18), `docs/reference/mart-grain.md`, ADR 016
 - 기록일: 2026-09-20
 - 선행: `011_subscription-payment-status-case.md`
+- 현재 상태(2026-10-12): **지적 1·2 모두 해소.** 아래 "해소 상태" 절 참조.
 
 ## 1. 지적 1 — E2E Fixture Warehouse에 `dim_product`·`dim_seller`가 비어 있다
 
@@ -93,3 +94,14 @@ RUN_POSTGRES_INTEGRATION=1 RUN_SEAWEEDFS_INTEGRATION=1 \
 ```
 
 세 명령이 모두 통과해야 Phase 7 종료 판정을 진행한다.
+
+## 5. 해소 상태 (2026-10-12)
+
+- 해소 커밋: `3b1ae58` (2026-09-20, `feat(warehouse): add build-then-swap mart publish pipeline`).
+- 지적 1 근거: `tests/integration/test_order_e2e_and_late_order_mart_integration.py`
+  - `:75-76`, `:141-142` 두 Test의 수집 Table에 `products`·`sellers`를 추가했다.
+  - `:91-92`, `:157-158` Row 수 단언을 Table 이름 기준으로 바꾸고 두 Table은 `> 0`만 단언한다.
+  - `:205` `_seed_watermarks` Docstring이 "8개 Table 중 6개"와 Product·Seller 전체 수집을 기록한다.
+  - `docs/phases/phase-07-data-quality-publish.md:108`, `:207`에 정상 E2E `2 passed`와 `relationships_` Test `failures=0` 직접 단언이 기록돼 있다.
+- 지적 2 근거: `tests/integration/test_publish_metadata_integration.py:61` `_after_latest_publish()`를 추가했고 `:72`에서 기준 시각으로 쓴다. `:71` Docstring이 전역 최신 PUBLISHED 계약을 명시한다.
+- 처리: 종결한다. 설계·Production Code는 판정대로 유지됐다.
