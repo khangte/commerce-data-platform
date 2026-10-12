@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Any, cast
 
 from psycopg.types.json import Jsonb
 
@@ -86,8 +87,8 @@ def reconcile_orphan(
         )
     if verified.row_count != manifest["row_count"]:
         raise OrphanReconciliationError("Object row count differs from the VERIFIED manifest")
-    config = table_config(manifest["source_table"])
-    assert_supported_schema_version(manifest["schema_version"])
+    config = table_config(cast(str, manifest["source_table"]))
+    assert_supported_schema_version(cast(int, manifest["schema_version"]))
     if config.schema_version != manifest["schema_version"]:
         raise OrphanReconciliationError("Manifest schema version differs from the table contract")
     data_bytes = read_object_bytes(storage, candidate.object_key)
@@ -174,14 +175,15 @@ def reconcile_orphan(
                 manifest["source_table"],
             ),
         )
+        upper_bound = cast(dict[str, Any], manifest["extract_upper_bound"])
         updated = connection.execute(
             """
             UPDATE watermarks SET watermark_timestamp = %s, watermark_keys = %s, version = version + 1, updated_at = %s
             WHERE pipeline_name = %s AND source_table = %s AND version = %s
             """,
             (
-                manifest["extract_upper_bound"]["timestamp"],
-                Jsonb(manifest["extract_upper_bound"]["keys"]),
+                upper_bound["timestamp"],
+                Jsonb(upper_bound["keys"]),
                 current_time,
                 run[1],
                 manifest["source_table"],
@@ -208,7 +210,7 @@ def _load_manifest(storage: SeaweedFSSettings, candidate: OrphanCandidate) -> di
 
 def _quarantine_object_exists(storage: SeaweedFSSettings, manifest: dict[str, object]) -> bool:
     """Bronze보다 먼저 게시되는 같은 Batch의 Quarantine Parquet 존재 여부를 확인한다."""
-    logical_date = _utc_datetime_from_manifest(manifest["logical_date"])
+    logical_date = _utc_datetime_from_manifest(cast(str, manifest["logical_date"]))
     object_key = (
         f"{QUARANTINE_PREFIX}/{manifest['source_table']}/"
         f"ingestion_date={logical_date.date().isoformat()}/batch_id={manifest['batch_id']}/records.parquet"
@@ -224,6 +226,7 @@ def _cursor_json(timestamp: datetime | None, keys: list[object]) -> dict[str, ob
 def _utc_now(value: datetime | None) -> datetime:
     """주입된 UTC 시각 또는 현재 UTC 시각을 반환한다."""
     result = value or datetime.now(UTC)
-    if result.tzinfo is None or result.utcoffset().total_seconds() != 0:
+    offset = result.utcoffset()
+    if offset is None or offset.total_seconds() != 0:
         raise ValueError("Reconciliation time must be normalized to UTC")
     return result

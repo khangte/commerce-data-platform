@@ -92,9 +92,9 @@ class SubscriptionRecord:
             ("updated_at", self.updated_at),
         ):
             _assert_utc_timestamp(value, name)
-        for name, value in _subscription_timestamps(self):
-            if value is not None:
-                _assert_utc_timestamp(value, name)
+        for name, optional_value in _subscription_timestamps(self):
+            if optional_value is not None:
+                _assert_utc_timestamp(optional_value, name)
         if self.updated_at < self.created_at:
             raise ValueError("updated_at must be greater than or equal to created_at")
         if self.current_period_started_at and self.current_period_ends_at and (

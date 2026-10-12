@@ -347,7 +347,7 @@ def build_seed_dataset(input_dir: Path, seeded_at: datetime) -> SeedDataset:
         payment["created_at"] = order["order_purchase_timestamp"]
         payment["updated_at"] = seeded_at
 
-    rows = {
+    dataset_rows = {
         "customers": _table_rows(customers, TARGET_COLUMNS["customers"]),
         "customer_subscriptions": [],
         "customer_membership_tiers": _table_rows(
@@ -359,7 +359,7 @@ def build_seed_dataset(input_dir: Path, seeded_at: datetime) -> SeedDataset:
         "order_items": _table_rows(order_items, TARGET_COLUMNS["order_items"]),
         "order_payments": _table_rows(order_payments, TARGET_COLUMNS["order_payments"]),
     }
-    return SeedDataset(rows=rows, maximum_event_time=maximum_event_time, raw_checksum=raw_checksum)
+    return SeedDataset(rows=dataset_rows, maximum_event_time=maximum_event_time, raw_checksum=raw_checksum)
 
 
 def _upsert_stage(

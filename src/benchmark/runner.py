@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import dataclasses
 from dataclasses import dataclass
+from collections.abc import Sequence
 from datetime import UTC, datetime
+from pathlib import Path
+from typing import Literal, cast
 
 from src.benchmark.cache import reset_caches
 from src.benchmark.config import BenchmarkScenario, RunConfig, scenario_config_hash
@@ -41,13 +44,13 @@ def run_experiment(scenario: BenchmarkScenario, config: RunConfig) -> tuple[Benc
         run_config = dataclasses.replace(config, run_number=run_number)
         cache_reset_paths = run_config.parameters.get("cache_reset_paths", ())
         cache_reset_method = (
-            reset_caches(paths=cache_reset_paths).method if run_config.is_cold_run else None
+            reset_caches(paths=cast(Sequence[Path], cache_reset_paths)).method if run_config.is_cold_run else None
         )
         arm_results = experiment_fn(run_config)
         hashes = {arm: result.result_hash for arm, result in arm_results.items()}
         try:
             assert_arms_match(hashes)
-            status = "VALID"
+            status: Literal["VALID", "INVALID"] = "VALID"
         except ResultHashMismatch:
             status = "INVALID"
         environment = collect_environment()
@@ -73,11 +76,11 @@ def run_experiment(scenario: BenchmarkScenario, config: RunConfig) -> tuple[Benc
                 output_bytes=result.counts.output_bytes,
                 result_hash=result.result_hash,
                 cache_reset_method=cache_reset_method,
-                change_rate=config.parameters.get("change_rate"),
+                change_rate=cast("float | None", config.parameters.get("change_rate")),
                 cursor_range=(
                     result.cursor_range
                     if result.cursor_range is not None
-                    else config.parameters.get("cursor_range")
+                    else cast("str | None", config.parameters.get("cursor_range"))
                 ),
                 scenario_config_hash=config_hash,
                 status=status,

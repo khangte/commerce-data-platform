@@ -6,6 +6,7 @@ import json
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import cast
 
 from src.ingestion.metadata import CursorPosition
 from src.ingestion.tables import table_config
@@ -119,27 +120,29 @@ def parse_bronze_manifest_payload(manifest_bytes: bytes, *, expected_object_key:
 def _assert_bronze_manifest_types(payload: dict[str, object]) -> None:
     """재검증에 쓰는 Manifest 식별자·Count·Hash·Cursor의 Type과 범위를 확인한다."""
     text_fields = ("batch_id", "source_table", "logical_date", "object_key", "content_sha256", "logical_hash")
-    if any(not isinstance(payload[name], str) or not payload[name].strip() for name in text_fields):
-        raise ValueError("manifest identifiers must be non-empty strings")
-    if any(
-        not isinstance(payload[name], int) or isinstance(payload[name], bool) or payload[name] < 0
-        for name in ("object_size", "row_count")
-    ):
-        raise ValueError("manifest size and row_count must be non-negative integers")
-    if (
-        not isinstance(payload["schema_version"], int)
-        or isinstance(payload["schema_version"], bool)
-        or payload["schema_version"] <= 0
-    ):
+    for name in text_fields:
+        text = payload[name]
+        if not isinstance(text, str) or not text.strip():
+            raise ValueError("manifest identifiers must be non-empty strings")
+    for name in ("object_size", "row_count"):
+        number = payload[name]
+        if not isinstance(number, int) or isinstance(number, bool) or number < 0:
+            raise ValueError("manifest size and row_count must be non-negative integers")
+    schema_version = payload["schema_version"]
+    if not isinstance(schema_version, int) or isinstance(schema_version, bool) or schema_version <= 0:
         raise ValueError("manifest schema_version must be a positive integer")
     for name in ("content_sha256", "logical_hash"):
         value = payload[name]
-        if len(value) != 64 or any(character not in "0123456789abcdef" for character in value):
+        if (
+            not isinstance(value, str)
+            or len(value) != 64
+            or any(character not in "0123456789abcdef" for character in value)
+        ):
             raise ValueError(f"manifest {name} must be a lowercase SHA-256 hex")
-    table_config(payload["source_table"])
+    table_config(cast(str, payload["source_table"]))
     _cursor_from_manifest_payload(payload["watermark_before"])
     _cursor_from_manifest_payload(payload["extract_upper_bound"])
-    _utc_datetime_from_manifest(payload["logical_date"])
+    _utc_datetime_from_manifest(cast(str, payload["logical_date"]))
 
 
 def _cursor_from_manifest_payload(value: object) -> CursorPosition:

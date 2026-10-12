@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import dataclasses
 from collections.abc import Mapping
+from typing import cast
 
 from src.benchmark.cache import warm_up
 from src.benchmark.config import BenchmarkScenario, RunConfig
@@ -41,8 +42,8 @@ def run_cache_experiment(config: RunConfig) -> Mapping[str, ArmResult]:
     `measure()` 안에는 Query 실행만 남겨, Fixture 준비 비용이나 방금 쓴
     파일이 Page Cache에 올라가는 부작용이 측정 구간에 섞이지 않게 한다.
     """
-    old_rows = int(config.parameters["fixture_old_rows"])
-    current_rows = int(config.parameters["fixture_current_rows"])
+    old_rows = int(cast(int, config.parameters["fixture_old_rows"]))
+    current_rows = int(cast(int, config.parameters["fixture_current_rows"]))
     old_path, current_path = ensure_scan_fixture(config.scale.name, old_rows, current_rows)
     sql = _aggregate_sql(old_path, current_path)
 
@@ -78,8 +79,8 @@ def prepare_cache_effect_fixture(config: RunConfig) -> RunConfig:
     Config는 측정에 넣지 않는 예열 1회를 먼저 버려, 직전 Cold 실행이 fadvise로
     비워 둔 Page Cache를 Warm 회차 시작 전에 다시 채운다.
     """
-    old_rows = int(config.parameters["fixture_old_rows"])
-    current_rows = int(config.parameters["fixture_current_rows"])
+    old_rows = int(cast(int, config.parameters["fixture_old_rows"]))
+    current_rows = int(cast(int, config.parameters["fixture_current_rows"]))
     old_path, current_path = ensure_scan_fixture(config.scale.name, old_rows, current_rows)
     if config.is_cold_run:
         return dataclasses.replace(

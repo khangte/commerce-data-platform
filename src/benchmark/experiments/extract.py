@@ -16,6 +16,7 @@ import dataclasses
 import hashlib
 import tempfile
 from collections.abc import Mapping
+from typing import cast
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -64,7 +65,7 @@ def prepare_extract_fixture(config: RunConfig) -> RunConfig:
     settings = benchmark_settings()
     postgres = settings.postgres
     storage = settings.storage
-    change_rate_target = config.parameters.get("change_rate", 0.1)
+    change_rate_target = cast(float, config.parameters.get("change_rate", 0.1))
     order_count_t0 = config.scale.order_count
     # T1 Generator 호출의 order_count는 총량이 아니라 이번 호출이 새로 넣을 건수다.
     # 결정적 ID가 (order_count, logical_date)를 Hash 입력에 포함하므로, 총량을 넘기면
@@ -132,8 +133,8 @@ def run_extract_experiment(config: RunConfig) -> Mapping[str, ArmResult]:
     settings = benchmark_settings()
     postgres = settings.postgres
     storage = settings.storage
-    t_boundary: datetime = config.parameters["t_boundary"]
-    t0_incremental: tuple[TableIngestionResult, ...] = config.parameters["t0_incremental_results"]
+    t_boundary = cast(datetime, config.parameters["t_boundary"])
+    t0_incremental = cast(tuple[TableIngestionResult, ...], config.parameters["t0_incremental_results"])
 
     pipeline_incremental = f"bench-extract-{config.benchmark_id}-incremental"
     pipeline_full = f"bench-extract-{config.benchmark_id}-full"

@@ -13,6 +13,7 @@ import hashlib
 import json
 import tempfile
 from collections.abc import Mapping, Sequence
+from typing import cast
 from pathlib import Path
 
 import duckdb
@@ -46,8 +47,8 @@ def run_scan_experiment(config: RunConfig) -> Mapping[str, ArmResult]:
     Optimizer를 꺼서 Predicate/Projection Pushdown이 없던 경우를 재현한다.
     Fixture는 Scale별로 한 번만 만들고 재사용한다.
     """
-    old_rows = int(config.parameters["fixture_old_rows"])
-    current_rows = int(config.parameters["fixture_current_rows"])
+    old_rows = int(cast(int, config.parameters["fixture_old_rows"]))
+    current_rows = int(cast(int, config.parameters["fixture_current_rows"]))
     old_path, current_path = ensure_scan_fixture(config.scale.name, old_rows, current_rows)
     sql = _aggregate_sql(old_path, current_path)
 

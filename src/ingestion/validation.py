@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from typing import Any, cast
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
@@ -113,7 +114,7 @@ def _domain_and_numeric_errors(config: TableConfig, values: Mapping[str, object]
     for column, minimum in config.numeric_minimums.items():
         value = values.get(column)
         field_type = config.source_schema.field(column).type
-        if value is not None and _matches_arrow_type(value, field_type) and value < minimum:
+        if value is not None and _matches_arrow_type(value, field_type) and cast(Any, value) < minimum:
             errors.append(rules.NUMERIC_RANGE_INVALID.code)
     return errors
 

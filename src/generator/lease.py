@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Iterator
+from typing import cast
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -210,13 +211,13 @@ def _lease_from_row(row: tuple[object, ...]) -> SourceMutationLease:
             owner_type="",
             owner_id=uuid.UUID(int=0),
             lease_expires_at=datetime.min.replace(tzinfo=UTC),
-            version=row[3],
+            version=cast(int, row[3]),
         )
     return SourceMutationLease(
-        owner_type=row[0],
-        owner_id=row[1],
-        lease_expires_at=row[2],
-        version=row[3],
+        owner_type=cast(str, row[0]),
+        owner_id=cast(uuid.UUID, row[1]),
+        lease_expires_at=cast(datetime, row[2]),
+        version=cast(int, row[3]),
     )
 
 

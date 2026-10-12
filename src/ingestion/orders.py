@@ -165,7 +165,7 @@ def _lower_bound_clause(cursor: CursorPosition) -> tuple[str, tuple[datetime | s
         return "WHERE TRUE", ()
     return (
         'WHERE (updated_at, order_id COLLATE "C") > (%s, %s)',
-        (cursor.timestamp, cursor.keys[0]),
+        (cursor.timestamp, str(cursor.keys[0])),
     )
 
 

@@ -159,7 +159,7 @@ def run_generator(config: GeneratorConfig, settings: PostgresSettings) -> Genera
             _assert_source_cursor_forward(connection, config.logical_date)
             catalog = fetch_order_catalog(connection)
             result_counts = _empty_result_counts()
-            logical_rows = []
+            logical_rows: list[dict] = []
             _run_existing_order_transitions(
                 connection, settings, config, lease, result_counts, logical_rows
             )
