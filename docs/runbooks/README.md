@@ -8,6 +8,7 @@ dbt를 실행하는 시나리오는 `RUN_DBT_PUBLISH_INTEGRATION=1`도 필요하
 ```bash
 docker compose up -d
 RUN_POSTGRES_INTEGRATION=1 RUN_SEAWEEDFS_INTEGRATION=1 uv run pytest tests/reliability -v
+# 특정 시나리오: -k "r02 or r03 or r15"
 ```
 
 증적 JSON은 `data/reliability/`에 생성되며 버전 관리하지 않는다. Runbook에는 `batch_id`, `run_id`,
