@@ -434,4 +434,4 @@ Staging까지의 이름·타입·값 변환을 다루고, Mart 설계는 다루�
 - [Phase 5. Bronze Catalog + Staging](../phases/phase-05-bronze-catalog-and-staging.md) — Source에서 Staging까지의 Model 구현
 - [Phase 6. Dimensional Modeling](../phases/phase-06-dimensional-modeling.md) — Staging 이후의 Intermediate와 Mart
 - [Mart Grain 계약](mart-grain.md) — Mart의 Grain, Unique Key, Measure 계약, 이력 추적 구현
-- [PRD v1.20](../../PRD_v1.21.md) — Section 7.1 상태 Mapping, Section 14 dbt Model, Section 15 이력 추적 요구사항
+- [PRD v1.21](../../PRD_v1.21.md) — Section 7.1 상태 Mapping, Section 14 dbt Model, Section 15 이력 추적 요구사항

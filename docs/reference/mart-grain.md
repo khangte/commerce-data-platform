@@ -1,7 +1,7 @@
 # Mart Grain 계약
 
 > 상태: Reference
-> 기준 문서: [PRD v1.20](../../PRD_v1.21.md), [데이터 변환 흐름](data-transformation-flow.md), [Phase 6](../phases/phase-06-dimensional-modeling.md)
+> 기준 문서: [PRD v1.21](../../PRD_v1.21.md), [데이터 변환 흐름](data-transformation-flow.md), [Phase 6](../phases/phase-06-dimensional-modeling.md)
 
 이 문서는 Warehouse Mart의 Grain, Unique Key, 컬럼, Measure 계약을 정의하는 단일 정본이다. `dbt/models/marts/*/schema.yml`은 이 문서에서 생성한다. 컬럼을 추가하거나 바꿀 때는 이 문서를 먼저 고치고 `schema.yml`을 다시 만든다.
 
@@ -562,6 +562,7 @@ Grain 계약은 문서가 아니라 Test로 강제한다. 아래 표는 컬럼 �
 | 청구 회차·시도 조합 Unique | `(subscription_id, billing_cycle_sequence, attempt_sequence)`를 검증하는 `dbt/tests/fct_subscription_payment_cycle_attempt_unique.sql` Singular Test |
 | 성공분리 Measure 정합성   | 성공 행은 `completed_payment_value = payment_value`, 실패 행은 `NULL`인지 검증하는 `dbt/tests/fct_subscription_payment_completed_value_consistent.sql` Singular Test |
 | 실패 코드 정합성          | `payment_status = 'completed'`이면 `failure_code`가 `NULL`인지 검증하는 `dbt/tests/fct_subscription_payment_failure_code_consistent.sql` Singular Test |
+| 주문 구매일 Key 일치      | `fct_order_item`·`fct_order_payment`의 `purchase_date_key`가 같은 `order_id`의 `fct_order.purchase_date_key`와 같은지 검증하는 `dbt/tests/fct_order_item_date_matches_order.sql`, `dbt/tests/fct_order_payment_date_matches_order.sql` Singular Test |
 | 계층 책임 분리            | `tests/test_fact_layer_contract.py`                                                                                   |
 
 `dbt build`가 전부 통과해야 Publish된다. Grain/Measure Test 실패는 Phase 7 품질 Gate에서 Publish를 차단한다.
@@ -593,7 +594,7 @@ models:
 ## 관련 문서
 
 - [데이터 변환 흐름](data-transformation-flow.md) — Source에서 Staging까지의 이름·타입·값 변환
-- [PRD v1.20](../../PRD_v1.21.md) — Section 14 dbt Model, Section 15 SCD2와 Temporal Join
+- [PRD v1.21](../../PRD_v1.21.md) — Section 14 dbt Model, Section 15 SCD2와 Temporal Join
 - [Phase 6. Dimensional Modeling](../phases/phase-06-dimensional-modeling.md) — Model 구현 순서와 Task
 - [Phase 7. Data Quality & Publish](../phases/phase-07-data-quality-publish.md) — Grain/Measure Test의 Publish Gate
 - [Phase 10. BI](../phases/phase-10-bi.md) — Report Model 소비와 Dashboard Metric 정의
