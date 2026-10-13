@@ -155,6 +155,7 @@ erDiagram
     dim_subscription ||--o{ fct_subscription_payment : subscription_key
     dim_date ||--o{ fct_order : purchase_date_key
     dim_date ||--o{ fct_order_item : purchase_date_key
+    dim_customer ||--o{ fct_order_payment : customer_key
     dim_date ||--o{ fct_order_payment : purchase_date_key
     dim_date ||--o{ fct_subscription_payment : payment_date_key
     dim_product ||--o{ fct_order_item : product_id
@@ -169,7 +170,7 @@ erDiagram
 | ------ | ---------------- | ---------- | --------- | ---- |
 | `fct_order` | 주문 1건 | `order_id` | `customer_key`(FK), `purchase_date_key`(FK), `order_status`, `gross_order_value`, `payment_total`, `order_count`, `delivery_days`, `delivery_delay_days`, `is_late` | 배송 Measure 포함 (주문과 Grain 동일 → 1:1 Fact 분리 안 함) |
 | `fct_order_item` | 주문 상품 Line 1건 | `(order_id, order_item_id)` | `product_id`, `seller_id`, `purchase_date_key`, `item_price`, `freight_value`, `line_gross_value` | 주문 합계와 일치 Test |
-| `fct_order_payment` | 주문의 결제 수단 Line 1건 | `(order_id, payment_sequence)` | `purchase_date_key`(FK), `payment_status`, `payment_value` | 주문 구매일 FK·주문 결제 합계 검증 |
+| `fct_order_payment` | 주문의 결제 수단 Line 1건 | `(order_id, payment_sequence)` | `customer_key`(FK), `purchase_date_key`(FK), `payment_status`, `payment_value` | 주문 고객·구매일 FK·주문 결제 합계 검증 |
 | `fct_subscription_payment` | 구독 청구 회차의 결제 시도 1건 | `payment_id` / `(subscription_id, billing_cycle_sequence, attempt_sequence)` | `subscription_key`, `customer_key`, `payment_date_key`, `payment_status`, `failure_code`, `payment_value`, `completed_payment_value`, `attempt_count` | 실패 후 재시도는 같은 회차의 다른 `attempt_sequence` |
 
 ### Dimension Table
