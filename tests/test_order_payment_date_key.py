@@ -1,4 +1,4 @@
-"""주문 결제의 구매일 키와 결제 행·증분 범위 보존을 격리된 DuckDB에서 검증한다."""
+"""주문 결제의 고객·구매일 키와 결제 행·증분 범위 보존을 격리된 DuckDB에서 검증한다."""
 
 from collections.abc import Iterator
 from pathlib import Path
@@ -28,12 +28,12 @@ def payment_warehouse() -> Iterator[duckdb.DuckDBPyConnection]:
     """운영 파일을 열지 않고 다중 결제와 UTC 날짜 경계의 주문을 준비한다."""
     with duckdb.connect() as connection:
         connection.execute("SET TimeZone = 'UTC'")
-        connection.execute("CREATE TABLE stg_orders (order_id VARCHAR, purchase_at TIMESTAMPTZ)")
+        connection.execute("CREATE TABLE int_orders_enriched (order_id VARCHAR, customer_key VARCHAR, purchase_at TIMESTAMPTZ)")
         connection.execute(
             """
-            INSERT INTO stg_orders VALUES
-                ('order-a', '2026-09-30 00:30:00+09'),
-                ('order-b', '2026-09-30 23:30:00-03')
+            INSERT INTO int_orders_enriched VALUES
+                ('order-a', 'cust-a-v2', '2026-09-30 00:30:00+09'),
+                ('order-b', 'cust-b-v1', '2026-09-30 23:30:00-03')
             """
         )
         connection.execute(
@@ -77,28 +77,29 @@ def test_payment_purchase_date_uses_order_day_and_preserves_lines(
     assert [column[0] for column in result.description] == [
         "order_id",
         "payment_sequence",
+        "customer_key",
         "purchase_date_key",
         "payment_status",
         "payment_value",
     ]
     assert result.fetchall() == [
-        ("order-a", 1, 20260929, "COMPLETED", 40),
-        ("order-a", 2, 20260929, "REFUNDED", 10),
-        ("order-b", 1, 20261001, "FAILED", 20),
+        ("order-a", 1, "cust-a-v2", 20260929, "COMPLETED", 40),
+        ("order-a", 2, "cust-a-v2", 20260929, "REFUNDED", 10),
+        ("order-b", 1, "cust-b-v1", 20261001, "FAILED", 20),
     ]
 
 
 def test_payment_without_order_remains_visible_to_null_key_gate(
     payment_warehouse: duckdb.DuckDBPyConnection,
 ) -> None:
-    """참조 주문이 없는 결제를 조인으로 숨기지 않고 NULL 구매일로 남긴다."""
+    """참조 주문이 없는 결제를 조인으로 숨기지 않고 NULL 고객·구매일로 남긴다."""
     payment_warehouse.execute(
         "INSERT INTO stg_payments VALUES ('missing-order', 1, 'PENDING', 5, NULL)"
     )
     _prepare_enriched_payments(payment_warehouse)
     assert payment_warehouse.execute(
-        "SELECT purchase_date_key FROM int_order_payments_enriched WHERE order_id = 'missing-order'"
-    ).fetchall() == [(None,)]
+        "SELECT customer_key, purchase_date_key FROM int_order_payments_enriched WHERE order_id = 'missing-order'"
+    ).fetchall() == [(None, None)]
 
 
 def test_incremental_payment_projection_keeps_all_affected_order_lines(
@@ -110,8 +111,8 @@ def test_incremental_payment_projection_keeps_all_affected_order_lines(
         _render_model("models/marts/facts/fct_order_payment.sql", incremental=True)
         + " ORDER BY order_id, payment_sequence"
     ).fetchall() == [
-        ("order-a", 1, 20260929, "COMPLETED", 40),
-        ("order-a", 2, 20260929, "REFUNDED", 10),
+        ("order-a", 1, "cust-a-v2", 20260929, "COMPLETED", 40),
+        ("order-a", 2, "cust-a-v2", 20260929, "REFUNDED", 10),
     ]
 
 
@@ -137,3 +138,27 @@ def test_payment_date_singular_gate_detects_order_date_mismatch(
         "WHERE order_id = 'order-a' AND payment_sequence = 2"
     )
     assert payment_warehouse.execute(gate_sql).fetchall() == [("order-a", 2, 20260930, 20260929)]
+
+
+def test_payment_customer_singular_gate_detects_order_customer_mismatch(
+    payment_warehouse: duckdb.DuckDBPyConnection,
+) -> None:
+    """고객 일치 Test가 정상 결제를 통과시키고 어긋난 결제 순번을 찾아낸다."""
+    _prepare_enriched_payments(payment_warehouse)
+    payment_warehouse.execute(
+        "CREATE TABLE fct_order_payment AS "
+        + _render_model("models/marts/facts/fct_order_payment.sql")
+    )
+    payment_warehouse.execute("CREATE TABLE fct_order (order_id VARCHAR, customer_key VARCHAR)")
+    payment_warehouse.execute(
+        "INSERT INTO fct_order VALUES ('order-a', 'cust-a-v2'), ('order-b', 'cust-b-v1')"
+    )
+    gate_sql = _render_model("tests/fct_order_payment_customer_matches_order.sql")
+    assert payment_warehouse.execute(gate_sql).fetchall() == []
+    payment_warehouse.execute(
+        "UPDATE fct_order_payment SET customer_key = 'cust-a-v1' "
+        "WHERE order_id = 'order-a' AND payment_sequence = 2"
+    )
+    assert payment_warehouse.execute(gate_sql).fetchall() == [
+        ("order-a", 2, "cust-a-v1", "cust-a-v2")
+    ]

@@ -2,6 +2,7 @@
 
 - 날짜: 2026-10-12
 - 판정: **`purchase_date_key` 추가는 승인을 권고한다(계약 개정). `customer_key`는 추가하지 않는다(보류).** 계약 개정이므로 착수 여부는 사용자가 정한다.
+- 개정: 2026-10-13 사용자가 "계정(고객)별 결제 상태" 분석을 요구해 `customer_key` 추가를 승인했다(10절). 아래 판정·결정 중 `customer_key` 보류는 10절이 대체한다.
 - 결정: 2026-10-12 사용자 승인. `purchase_date_key`만 추가하고 `customer_key`와 환불·실패 기간 Card는 만들지 않는다(9절).
 - 계기: 사용자 검토 요청. `fct_order_payment`에 Dimension 참조가 없어 결제를 고객·일자로 자르려면 `fct_order`와 Join해야 한다. 이 Join은 계약 §6을 어긴다.
 - 관련: [045](045_fct-order-item-purchase-date-key.md)(같은 유형의 선례), [046](046_mart-build-session-timezone.md)(재Publish 절차), `docs/reference/mart-grain.md` §3.1·§3.3·§6, PRD v1.21 §14.3
@@ -138,3 +139,16 @@ Full Refresh 재Publish가 필수다. dbt 설정에 `on_schema_change`가 없으
 - 6절의 Metabase 행은 "변경 없음"으로 확정한다.
 - 기존 데이터 반영은 7절 절차를 따른다.
 - 구현은 developer가 진행 중이다.
+
+## 10. 개정 (2026-10-13): `customer_key` 추가
+
+2.3절이 `customer_key` 추가 조건으로 둔 "결제 상태 × 고객" 분석을 사용자가 요구했다. 9절 결정 2를 **추가**로 바꾼다.
+
+- 의미·파생·Test·증분은 2.3절 규칙을 그대로 적용한다. `fct_order.customer_key`와 같은 값이며 `int_orders_enriched`를 `order_id`로 Join해서 가져온다. 결제 시각 기준 버전은 쓰지 않는다.
+- 5절 규칙 2("`int_orders_enriched`를 참조하지 않는다")는 폐기한다. `int_order_payments_enriched`가 `stg_orders` 대신 `int_orders_enriched`를 Join하며 `purchase_date_key`도 이 Model의 `purchase_at`에서 같은 식으로 계산한다.
+- 컬럼 위치는 `payment_sequence` 다음, `purchase_date_key` 앞이다(`fct_order`와 같은 순서).
+- 계약 `mart-grain.md` §3.3에 컬럼과 `dim_customer` 참조를 추가했다.
+- 새 Singular Test: `dbt/tests/fct_order_payment_customer_matches_order.sql`.
+- `schema.yml`: `customer_key`에 `not_null`, `relationships → ref('dim_customer').customer_key`.
+- 기존 데이터 반영: 7절 Full Refresh 절차를 그대로 따른다. `--pipeline-name`은 `contract_056_full_refresh`를 쓰되, 이미 `purchase_date_key` 반영 Publish가 끝났다면 `contract_056b_full_refresh`처럼 구분한다. Logical Hash는 컬럼이 늘어 바뀌므로 개정 전 값과 비교하지 않는다.
+- 2.3절의 "SCD2 결과를 두 번째 Fact에 복제" 위험은 일치 Singular Test로 관리한다. 환불·실패 기간 Card(9절 결정 3)는 그대로 만들지 않는다.

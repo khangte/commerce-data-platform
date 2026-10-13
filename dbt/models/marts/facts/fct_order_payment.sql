@@ -10,6 +10,7 @@
 select
     order_id,
     payment_sequence,
+    customer_key,
     purchase_date_key,
     payment_status,
     payment_value
