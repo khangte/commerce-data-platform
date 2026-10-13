@@ -233,6 +233,7 @@ team/
 
 # Claude
 CLAUDE.md
+.claudeignore
 
 # Codex
 AGENTS.md
