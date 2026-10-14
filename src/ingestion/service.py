@@ -342,6 +342,7 @@ def ingest_table(
             )
         raise
     finally:
+        _remove_local_artifacts(local_directory, config, run_id)
         if table_lease is not None:
             with suppress(Exception):
                 release_table_lease(postgres, table_lease, now=current_time)
@@ -393,6 +394,12 @@ def quarantine_object_keys(
     _assert_utc(logical_date, "logical_date")
     prefix = f"{QUARANTINE_PREFIX}/{source_table}/ingestion_date={logical_date.date().isoformat()}/batch_id={batch_id}"
     return f"{prefix}/records.parquet", f"{prefix}/manifest.json"
+
+
+def _remove_local_artifacts(local_directory: Path, config: TableConfig, run_id: uuid.UUID) -> None:
+    """업로드 뒤 또는 실패 뒤 남은 Run의 Local Bronze·Quarantine Parquet을 지운다."""
+    for suffix in (".parquet", ".quarantine.parquet"):
+        (local_directory / config.source_table / f"{run_id}{suffix}").unlink(missing_ok=True)
 
 
 def _write_local_artifacts(

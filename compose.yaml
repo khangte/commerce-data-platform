@@ -79,7 +79,7 @@ services:
       METABASE_DB_USER: ${METABASE_DB_USER}
       METABASE_DB_PASSWORD: ${METABASE_DB_PASSWORD}
     ports:
-      - "${POSTGRES_PORT}:5432"
+      - "127.0.0.1:${POSTGRES_PORT}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql
       - ./sql/bootstrap:/docker-entrypoint-initdb.d:ro
@@ -102,7 +102,7 @@ services:
       AWS_ACCESS_KEY_ID: ${SEAWEEDFS_ACCESS_KEY}
       AWS_SECRET_ACCESS_KEY: ${SEAWEEDFS_SECRET_KEY}
     ports:
-      - "${SEAWEEDFS_S3_PORT}:8333"
+      - "127.0.0.1:${SEAWEEDFS_S3_PORT}:8333"
     volumes:
       - seaweedfs_data:/data
     healthcheck:
@@ -128,7 +128,7 @@ services:
       MB_PLUGINS_DIR: /plugins
       JAVA_OPTS: -Xmx1g
     ports:
-      - "${METABASE_PORT}:3000"
+      - "127.0.0.1:${METABASE_PORT}:3000"
     volumes:
       - ./data/serving:/serving:ro
       - ./metabase/plugins:/plugins
@@ -158,7 +158,7 @@ services:
     <<: *airflow-common
     command: api-server
     ports:
-      - "${AIRFLOW_PORT:-8080}:8080"
+      - "127.0.0.1:${AIRFLOW_PORT:-8080}:8080"
     depends_on: *airflow-runtime-depends-on
     healthcheck:
       test: ["CMD-SHELL", "curl --fail --silent --show-error http://localhost:8080/api/v2/monitor/health"]
