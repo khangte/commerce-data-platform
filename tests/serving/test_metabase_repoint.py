@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import uuid
 from http.client import IncompleteRead
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
+
+import pytest
 
 from src.serving.metabase_repoint import (
+    _failure_message,
     metabase_repoint_summary_status,
     repoint_and_prune_serving,
     repoint_metabase_serving,
@@ -124,3 +127,18 @@ def test_repoint_identifies_response_format_errors(monkeypatch, capsys) -> None:
         monkeypatch.setattr("src.serving.metabase_repoint._request_json", invalid_response)
         assert repoint_metabase_serving(str(uuid.uuid4()), "http://metabase:3000", "secret", "2") == "FAILED"
         assert "설정 또는 응답 형식 오류" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    ("error", "subject", "action", "expected"),
+    (
+        (HTTPError("u", 503, "x", {}, None), "데이터베이스", "조회", "Metabase 데이터베이스 조회 실패: HTTP 503"),
+        (HTTPError("u", 500, "x", {}, None), "서빙 파일", "재지정", "Metabase 서빙 파일 재지정 실패: HTTP 500"),
+        (URLError("down"), "데이터베이스", "조회", "Metabase 서빙 파일 재지정 실패: 서버에 연결할 수 없음"),
+        (TimeoutError(), "서빙 파일", "재지정", "Metabase 서빙 파일 요청 실패(시간 초과 또는 연결 끊김): TimeoutError"),
+        (KeyError("details"), "데이터베이스", "조회", "Metabase 데이터베이스 설정 또는 응답 형식 오류: KeyError"),
+    ),
+)
+def test_failure_message_names_the_stage_and_error_kind(error, subject, action, expected) -> None:
+    """예외 종류와 단계(대상·동작)에 맞는 로그 메시지를 만든다."""
+    assert _failure_message(error, subject, action) == expected

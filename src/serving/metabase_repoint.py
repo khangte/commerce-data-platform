@@ -10,6 +10,19 @@ from urllib.request import Request, urlopen
 
 from src.serving.export import prune_serving_exports
 
+_API_ERRORS = (HTTPError, URLError, OSError, HTTPException, ValueError, TypeError, KeyError)
+
+
+def _failure_message(error: Exception, subject: str, action: str) -> str:
+    """Metabase 요청 예외를 단계(대상·동작)별 한 줄 로그 메시지로 바꾼다."""
+    if isinstance(error, HTTPError):
+        return f"Metabase {subject} {action} 실패: HTTP {error.code}"
+    if isinstance(error, URLError):
+        return "Metabase 서빙 파일 재지정 실패: 서버에 연결할 수 없음"
+    if isinstance(error, (OSError, HTTPException)):
+        return f"Metabase {subject} 요청 실패(시간 초과 또는 연결 끊김): {type(error).__name__}"
+    return f"Metabase {subject} 설정 또는 응답 형식 오류: {type(error).__name__}"
+
 
 def _request_json(url: str, api_key: str, method: str, payload: dict | None = None) -> dict:
     """API Key를 헤더로만 보내고 Metabase JSON 응답을 읽는다."""
@@ -35,17 +48,8 @@ def repoint_metabase_serving(
         base = metabase_url.rstrip("/")
         database_url = f"{base}/api/database/{numeric_id}"
         database = _request_json(database_url, api_key, "GET")
-    except HTTPError as error:
-        print(f"Metabase 데이터베이스 조회 실패: HTTP {error.code}")
-        return "FAILED"
-    except URLError:
-        print("Metabase 서빙 파일 재지정 실패: 서버에 연결할 수 없음")
-        return "FAILED"
-    except (OSError, HTTPException) as error:
-        print(f"Metabase 데이터베이스 요청 실패(시간 초과 또는 연결 끊김): {type(error).__name__}")
-        return "FAILED"
-    except (ValueError, TypeError, KeyError) as error:
-        print(f"Metabase 데이터베이스 설정 또는 응답 형식 오류: {type(error).__name__}")
+    except _API_ERRORS as error:
+        print(_failure_message(error, "데이터베이스", "조회"))
         return "FAILED"
 
     try:
@@ -66,17 +70,8 @@ def repoint_metabase_serving(
         if rows != [[export_id]]:
             print("Metabase 서빙 매니페스트의 export_id가 새 내보내기와 일치하지 않음")
             return "FAILED"
-    except HTTPError as error:
-        print(f"Metabase 서빙 파일 재지정 실패: HTTP {error.code}")
-        return "FAILED"
-    except URLError:
-        print("Metabase 서빙 파일 재지정 실패: 서버에 연결할 수 없음")
-        return "FAILED"
-    except (OSError, HTTPException) as error:
-        print(f"Metabase 서빙 파일 요청 실패(시간 초과 또는 연결 끊김): {type(error).__name__}")
-        return "FAILED"
-    except (ValueError, TypeError, KeyError) as error:
-        print(f"Metabase 서빙 파일 설정 또는 응답 형식 오류: {type(error).__name__}")
+    except _API_ERRORS as error:
+        print(_failure_message(error, "서빙 파일", "재지정"))
         return "FAILED"
     return "SUCCESS"
 
