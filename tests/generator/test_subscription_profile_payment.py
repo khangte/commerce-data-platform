@@ -83,6 +83,9 @@ def billing_memory(monkeypatch):
         return payment.billing_period_start_at, payment.billing_period_end_at
 
     monkeypatch.setattr(service, "_fetch_subscriptions_ordered", lambda _: tuple(subscriptions))
+    monkeypatch.setattr(
+        service, "_fetch_due_subscriptions", lambda _, __: tuple(subscriptions)
+    )
     monkeypatch.setattr(service, "persist_subscription_records", save_subscriptions)
     monkeypatch.setattr(service, "persist_subscription_payments", save_payments)
     monkeypatch.setattr(service, "next_billing_cycle_sequence", next_cycle)

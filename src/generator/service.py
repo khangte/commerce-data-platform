@@ -455,6 +455,30 @@ def _fetch_subscriptions_ordered(connection) -> tuple[SubscriptionRecord, ...]:
     return tuple(SubscriptionRecord(*row) for row in rows)
 
 
+def _fetch_due_subscriptions(connection, now: datetime) -> tuple[SubscriptionRecord, ...]:
+    """스캔이 처리할 수 있는 구독만 SQL로 좁혀 사람 키와 계약 키 순서로 읽는다."""
+    rows = connection.execute(
+        """
+        SELECT subscription_id, customer_unique_id, subscription_status, auto_renew_enabled,
+               subscription_started_at, current_period_started_at, current_period_ends_at,
+               billing_due_at, next_payment_attempt_at, payment_failed_at, cancel_requested_at,
+               ended_at, status_changed_at, created_at, updated_at
+        FROM customer_subscriptions
+        WHERE updated_at < %(now)s
+          AND (
+            (subscription_status IN ('CANCEL_REQUESTED', 'PAYMENT_FAILED')
+                AND current_period_ends_at <= %(now)s)
+            OR (subscription_status = 'ACTIVE' AND auto_renew_enabled
+                AND next_payment_attempt_at <= %(now)s)
+            OR (subscription_status = 'PAYMENT_FAILED' AND next_payment_attempt_at <= %(now)s)
+          )
+        ORDER BY customer_unique_id COLLATE "C", subscription_id
+        """,
+        {"now": now},
+    ).fetchall()
+    return tuple(SubscriptionRecord(*row) for row in rows)
+
+
 def _select_due_subscription_for_failed_profile(connection, config: GeneratorConfig) -> uuid.UUID:
     """예정일이 지난 미결제 정기 청구 후보를 결정적으로 고른다."""
     candidates = tuple(
@@ -502,7 +526,7 @@ def _run_subscription_expiry_scan(
     재실행하면 같은 결과가 나온다.
     """
     now = config.logical_date
-    for record in _fetch_subscriptions_ordered(connection):
+    for record in _fetch_due_subscriptions(connection, now):
         if record.updated_at >= now:
             continue
         status = record.subscription_status
