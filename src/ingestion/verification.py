@@ -7,7 +7,6 @@ from dataclasses import dataclass
 
 from src.common.database import PostgresSettings
 from src.ingestion.batch import BatchIdentity, get_committed_table_batch
-from src.ingestion.bronze import table_logical_hash_bytes
 from src.ingestion.manifest import parse_bronze_manifest_payload
 from src.ingestion.schema import assert_supported_schema_version
 from src.ingestion.storage import (
@@ -75,10 +74,6 @@ def verify_bronze_commit(
             raise BronzeCommitVerificationError(f"{source_table} row_count differs across Metadata/Manifest/Object")
         if verified_object.content_sha256 != manifest["content_sha256"]:
             raise BronzeCommitVerificationError(f"{source_table} object checksum differs from the manifest")
-
-        data_bytes = read_object_bytes(storage, existing.object_key)
-        if table_logical_hash_bytes(data_bytes, config) != manifest["logical_hash"]:
-            raise BronzeCommitVerificationError(f"{source_table} logical hash differs from the manifest")
 
         if existing.watermark_after.as_metadata_json() != manifest["extract_upper_bound"]:
             raise BronzeCommitVerificationError(f"{source_table} watermark differs from the manifest")

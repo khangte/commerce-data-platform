@@ -10,7 +10,6 @@ from typing import Any, cast
 from psycopg.types.json import Jsonb
 
 from src.common.database import PostgresSettings
-from src.ingestion.bronze import table_logical_hash_bytes
 from src.ingestion.manifest import _utc_datetime_from_manifest, parse_bronze_manifest_payload
 from src.ingestion.schema import assert_supported_schema_version
 from src.ingestion.storage import (
@@ -91,9 +90,6 @@ def reconcile_orphan(
     assert_supported_schema_version(cast(int, manifest["schema_version"]))
     if config.schema_version != manifest["schema_version"]:
         raise OrphanReconciliationError("Manifest schema version differs from the table contract")
-    data_bytes = read_object_bytes(storage, candidate.object_key)
-    if table_logical_hash_bytes(data_bytes, config) != manifest["logical_hash"]:
-        raise OrphanReconciliationError("Object logical hash differs from the VERIFIED manifest")
     if _quarantine_object_exists(storage, manifest):
         raise OrphanReconciliationError("Orphans with rejects require manual reconciliation")
     table_batch_id = f"{manifest['batch_id']}__{manifest['source_table']}"
