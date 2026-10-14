@@ -1,6 +1,7 @@
 # ROADMAP: Commerce Analytics Data Platform
 
-> 기준 PRD: PRD v1.20
+> 기준 PRD: PRD v1.22
+> 상태: Phase 0~10 전체 Done. 이후는 Phase 외 리팩터링·계약 보정
 > 목적: Phase 0부터 Phase 10까지의 실제 개발 순서와 검증 기준 정의  
 > 원칙: 전체 아키텍처와 핵심 계약은 PRD를 기준으로 유지하고, 구현은 Phase 단위로 완료·검증한 뒤 다음 단계로 진행한다.
 
@@ -8,7 +9,7 @@
 
 ## Phase 실행 문서
 
-ROADMAP은 전체 순서와 범위를 관리하고, 아래 문서는 Phase별 Task, 산출물, 검증 Evidence, Definition of Done을 관리한다. 공통 Architecture와 데이터 계약의 Source of Truth는 [PRD v1.20](../../PRD_v1.21.md)다.
+ROADMAP은 전체 순서와 범위를 관리하고, 아래 문서는 Phase별 Task, 산출물, 검증 Evidence, Definition of Done을 관리한다. 공통 Architecture와 데이터 계약의 Source of Truth는 [PRD v1.22](../../PRD_v1.22.md)다.
 
 | Phase | 실행 문서                                                      | 주요 Gate                        |
 | ----- | -------------------------------------------------------------- | -------------------------------- |
@@ -119,6 +120,9 @@ Phase 3~7
 Phase 8~10
 → 신뢰성·성능·활용 가능성을 포트폴리오 증거로 정리
 특히 프로젝트의 핵심 비중은 Phase 3, 6, 8, 9에 둔다.
+
+Phase 10 이후
+→ 리팩터링과 계약 보정 (Phase 외 작업, 아래 "Phase 완료 이후 변경" 참고)
 ```
 
 ---
@@ -128,7 +132,7 @@ Phase 8~10
 프로젝트 전체 코드를 한 번에 생성한 뒤 수정하는 방식은 사용하지 않는다.
 
 ```text
-PRD v1.11
+PRD (현재 v1.22)
 전체 Architecture / Contract 확정
         ↓
 Phase 0 구현
@@ -304,7 +308,7 @@ P1-25 seed_runs 기록
 P1-26 Seed Guard
 ```
 
-먼저 `customers` 한 Table로 Seed Flow를 검증한 뒤 9개 Table로 확장한다.
+먼저 `customers` 한 Table로 Seed Flow를 검증한 뒤 Olist 6개 Table로 확장한다. 구독 관련 3개 Table(`customer_subscriptions`, `customer_membership_tiers`, `subscription_payments`)은 Seed가 아니라 Phase 2 Generator가 만든다.
 
 ### 테스트
 
@@ -593,11 +597,16 @@ Upload
 
 ```text
 customers
+customer_subscriptions
+customer_membership_tiers
+subscription_payments
 products
 sellers
 order_items
 order_payments
 ```
+
+최종 Ingestion 대상은 `orders`를 포함한 9개 Source Table이다(`src/ingestion/tables.py`).
 
 Cursor 차이:
 
@@ -605,8 +614,8 @@ Cursor 차이:
 Mutable
 → updated_at + PK
 
-order_items
-→ created_at + Composite PK
+customers, order_items
+→ created_at + PK (order_items는 Composite PK)
 ```
 
 ---
@@ -683,25 +692,35 @@ P4-02 warehouse_pipeline_dag
 ### Task Graph
 
 ```text
+source_simulation_dag (@hourly, max_active_runs=1)
+    ↓
+run_source_simulation
+    ↓
+trigger_warehouse_pipeline
+    ↓
+warehouse_pipeline_dag (schedule=None, max_active_runs=1)
+
 initialize_run
     ↓
-extract_validate_load[
-    customers,
-    products,
-    sellers,
-    orders,
-    order_items,
-    order_payments
-]
+acquire_source_snapshot_lease
+    ↓
+extract_validate_load[9개 Source Table]  (max_active_tis_per_dag=3)
+    ├── release_source_snapshot_lease
     ↓
 verify_bronze_commit
     ↓
-sync_bronze_catalog
+prepare_warehouse_build   (Bronze Catalog 동기화 포함)
     ↓
 dbt_build
     ↓
-publish_run_summary
+publish_mart
+    ↓
+export_serving_mart
+    ↓
+repoint_metabase_serving
 ```
+
+`publish_run_summary`는 위 흐름과 별도로 실행 요약을 남긴다.
 
 ### Retry
 
@@ -1149,6 +1168,12 @@ Metabase
 
 를 대안으로 사용하고 ADR을 작성한다.
 
+**결과**: DuckDB Connection Gate를 통과해 PostgreSQL 대안은 쓰지 않았다
+([ADR-012](../adr/012-metabase-serving-strategy.md), [ADR-019](../adr/019-serving-file-visibility-for-metabase.md)).
+Published Warehouse를 직접 연결하지 않고 `dimensions`·`facts`·`metrics`만 복사한
+`data/serving/mart.duckdb`를 읽기 전용으로 마운트한다. Publish 뒤 `export_serving_mart`와
+`repoint_metabase_serving` Task가 Export와 Connection 재지정을 맡는다(`src/serving/`).
+
 ### Dashboard
 
 #### Sales
@@ -1206,7 +1231,10 @@ Phase 4
 Airflow
     ↓
 Phase 5
-Warehouse / dbt
+Bronze Catalog + Staging
+    ↓
+Phase 6
+Dimensional Modeling
     ↓
 Phase 7
 Quality / Publish
@@ -1235,6 +1263,7 @@ Milestone 2 — Data Platform Core
 ├── Phase 3
 ├── Phase 4
 ├── Phase 5
+├── Phase 6
 └── Phase 7
 
 Milestone 3 — Portfolio Evidence
@@ -1243,7 +1272,7 @@ Milestone 3 — Portfolio Evidence
 └── Phase 10
 ```
 
-투입 비중은 Phase 3, 5, 7, 8을 가장 높게 잡는다.
+투입 비중은 Phase 3, 5, 6, 7, 8을 가장 높게 잡는다.
 
 ```text
 Phase 0       낮음
@@ -1252,6 +1281,7 @@ Phase 2       중간
 Phase 3       매우 높음
 Phase 4       높음
 Phase 5       매우 높음
+Phase 6       매우 높음
 Phase 7       높음
 Phase 8       매우 높음
 Phase 9       매우 높음
@@ -1288,7 +1318,7 @@ P3-08 Watermark CAS 구현
 # 실제 시작 순서
 
 ```text
-1. PRD v1.11 Baseline Commit
+1. PRD Baseline Commit
 2. AGENTS.md 확정
 3. Phase 0 구현
 4. Phase 0 DoD 검증
@@ -1319,3 +1349,21 @@ PRD는 구현 중 발견된 실제 증거에 따라 변경할 수 있다.
 ```
 
 단순히 구현이 어려워졌다는 이유만으로 Contract를 조용히 변경하지 않는다.
+
+---
+
+# Phase 완료 이후 변경
+
+Phase 0~10 완료 뒤 계약과 코드에서 바뀐 항목이다. 상세 근거는 PRD v1.19~v1.22와 `docs/architect-review/`에 있다.
+
+```text
+Serving       Mart를 읽기 전용 Serving DuckDB로 Export하고 Metabase를 재지정 (PRD v1.19, ADR-012/019)
+Generator     주문을 실행당 한 단계씩 전이 (v1.20)
+              구독 결제 기간 Invariant 강제 (v1.21)
+              Source Commit Lease Fence (ADR-017)
+              주문 수 환경변수·진행 시간 Scale (v1.22)
+Mart          fct_order_payment에 purchase_date_key, customer_key 추가
+Ingestion     포트를 127.0.0.1로 제한, Run 종료 시 Local Parquet 정리(finally), 미사용 orders 전용 경로 제거
+Refactor      미사용 Generator Helper 제거, fsync_directory·wal_path 공개, Metabase 오류 처리 통합
+Docs          README를 포트폴리오 개요로 재작성
+```
