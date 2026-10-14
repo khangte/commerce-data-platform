@@ -30,7 +30,7 @@ from src.ingestion.bronze import (
     TableBronzeWriter,
     table_logical_hash,
 )
-from src.ingestion.corruption import CorruptionPlan
+from src.ingestion.corruption import CorruptionPlan, inject_corruption
 from src.ingestion.errors import BATCH_IDENTITY_CONFLICT, classify_error
 from src.ingestion.extract import SourcePage, open_table_snapshot
 from src.ingestion.lease import (
@@ -339,16 +339,10 @@ def _write_local_artifacts(
     rows_corrupted = 0
     try:
         for page in snapshot.pages():
-            records = (
-                request.corruption_plan.apply_page(tuple(page.records), rows_extracted)
-                if request.corruption_plan is not None
-                else tuple(page.records)
+            records, page_corrupted = inject_corruption(
+                request.corruption_plan, tuple(page.records), rows_extracted
             )
-            if request.corruption_plan is not None:
-                rows_corrupted += sum(
-                    request.corruption_plan.rules.get(rows_extracted + index) is not None
-                    for index in range(len(page.records))
-                )
+            rows_corrupted += page_corrupted
             rows_extracted += len(page.records)
             validation_page = SourcePage(
                 records=records,

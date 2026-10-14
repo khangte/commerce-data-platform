@@ -80,6 +80,18 @@ class CorruptionPlan:
         return tuple(output)
 
 
+def inject_corruption(
+    plan: CorruptionPlan | None, records: tuple[SourceRecord, ...], first_ordinal: int
+) -> tuple[tuple[SourceRecord, ...], int]:
+    """Plan이 없으면 Record를 그대로, 있으면 Corruption 적용본과 오염 건수를 반환한다."""
+    if plan is None:
+        return records, 0
+    corrupted = sum(
+        plan.rules.get(first_ordinal + index) is not None for index in range(len(records))
+    )
+    return plan.apply_page(records, first_ordinal), corrupted
+
+
 def _child_reference_column(record: SourceRecord) -> str:
     """Broken Reference를 만들 수 있는 Child FK Column을 반환한다."""
     if record.config.source_table in {"order_items", "order_payments"}:
