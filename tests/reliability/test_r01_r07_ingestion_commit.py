@@ -42,10 +42,10 @@ from src.ingestion.metadata import (
 from src.ingestion.orphan import OrphanReconciliationError, find_orphan_candidates, reconcile_orphan
 from src.ingestion.schema import SourceContractError as BronzeSchemaContractError
 from src.ingestion.service import (
-    OrdersIngestionRequest,
-    ingest_orders,
-    orders_object_keys,
+    TableIngestionRequest,
+    ingest_table,
     quarantine_object_keys,
+    table_object_keys,
 )
 from src.ingestion.storage import SeaweedFSSettings, seaweedfs_s3_client, stored_object_from_head
 from src.warehouse.publish_metadata import ensure_publish_metadata
@@ -80,7 +80,8 @@ def test_r01_duplicate_batch_is_idempotent_across_three_runs(tmp_path) -> None:
     ensure_publish_metadata(postgres)
     now = datetime(2026, 9, 20, tzinfo=UTC)
     pipeline_name = f"r01-{uuid.uuid4().hex}"
-    request = OrdersIngestionRequest.for_dag_run(
+    request = TableIngestionRequest.for_dag_run(
+        source_table="orders",
         dag_id=pipeline_name,
         logical_date=now,
         pipeline_name=pipeline_name,
@@ -88,16 +89,16 @@ def test_r01_duplicate_batch_is_idempotent_across_three_runs(tmp_path) -> None:
     )
     _set_watermark(postgres, pipeline_name, _lower_bound_before_five_rows(postgres), now)
     try:
-        first = ingest_orders(postgres, storage, request, local_directory=tmp_path, now=now)
+        first = ingest_table(postgres, storage, request, local_directory=tmp_path, now=now)
         prefix = first.object_key.rsplit("/", 1)[0] if first.object_key else ""
         after_first = collect_state(
             postgres, storage, warehouse_path=None, marts=(), object_prefix=prefix
         )
-        second = ingest_orders(postgres, storage, request, local_directory=tmp_path, now=now)
+        second = ingest_table(postgres, storage, request, local_directory=tmp_path, now=now)
         after_second = collect_state(
             postgres, storage, warehouse_path=None, marts=(), object_prefix=prefix
         )
-        third = ingest_orders(postgres, storage, request, local_directory=tmp_path, now=now)
+        third = ingest_table(postgres, storage, request, local_directory=tmp_path, now=now)
         after_third = collect_state(
             postgres, storage, warehouse_path=None, marts=(), object_prefix=prefix
         )
@@ -149,8 +150,8 @@ def test_r06_orphan_reconciliation_commits_a_match_and_rejects_a_mismatch(
         with monkeypatch.context() as scoped:
             scoped.setattr(ingestion_service, "commit_table_run", _crash)
             with pytest.raises(_CrashAfterFinalObject):
-                ingest_orders(postgres, storage, accepted, local_directory=tmp_path, now=now)
-        accepted_key, accepted_manifest = orders_object_keys(accepted.batch_id, now)
+                ingest_table(postgres, storage, accepted, local_directory=tmp_path, now=now)
+        accepted_key, accepted_manifest = table_object_keys("orders", accepted.batch_id, now)
         accepted_before = collect_state(
             postgres,
             storage,
@@ -172,8 +173,8 @@ def test_r06_orphan_reconciliation_commits_a_match_and_rejects_a_mismatch(
         with monkeypatch.context() as scoped:
             scoped.setattr(ingestion_service, "commit_table_run", _crash)
             with pytest.raises(_CrashAfterFinalObject):
-                ingest_orders(postgres, storage, rejected, local_directory=tmp_path, now=now)
-        rejected_key, _ = orders_object_keys(rejected.batch_id, now)
+                ingest_table(postgres, storage, rejected, local_directory=tmp_path, now=now)
+        rejected_key, _ = table_object_keys("orders", rejected.batch_id, now)
         rejected_before = collect_state(
             postgres, storage, warehouse_path=None, marts=(), object_prefix=rejected_key.rsplit("/", 1)[0]
         )
@@ -240,7 +241,7 @@ def test_r07_broken_manifest_variants_block_automatic_commit(
     now = datetime(2026, 9, 20, tzinfo=UTC)
     request = _orphan_request(f"r07-{kind.lower()}", now, page_size=2)
     _set_watermark(postgres, request.pipeline_name, _lower_bound_before_five_rows(postgres), now)
-    object_key, manifest_key = orders_object_keys(request.batch_id, now)
+    object_key, manifest_key = table_object_keys("orders", request.batch_id, now)
     baseline = collect_state(
         postgres, storage, warehouse_path=None, marts=(), object_prefix=object_key.rsplit("/", 1)[0]
     )
@@ -253,7 +254,7 @@ def test_r07_broken_manifest_variants_block_automatic_commit(
         with monkeypatch.context() as scoped:
             scoped.setattr(ingestion_service, "commit_table_run", _crash)
             with pytest.raises(_CrashAfterFinalObject):
-                ingest_orders(postgres, storage, request, local_directory=tmp_path, now=now)
+                ingest_table(postgres, storage, request, local_directory=tmp_path, now=now)
         corrupt_manifest(storage, manifest_key, kind=kind)
         candidate = next(
             item for item in find_orphan_candidates(postgres, storage) if item.object_key == object_key
@@ -296,12 +297,12 @@ def test_r02_upload_failure_keeps_the_watermark_and_commits_nothing(monkeypatch,
     request = _orphan_request("r02", now, page_size=2)
     lower_bound = _lower_bound_before_five_rows(postgres)
     _set_watermark(postgres, request.pipeline_name, lower_bound, now)
-    object_key, _ = orders_object_keys(request.batch_id, now)
+    object_key, _ = table_object_keys("orders", request.batch_id, now)
     prefix = object_key.rsplit("/", 1)[0]
     before = collect_state(postgres, storage, warehouse_path=None, marts=(), object_prefix=prefix)
     try:
         with fail_object_upload(monkeypatch), pytest.raises(Exception) as error:
-            ingest_orders(postgres, storage, request, local_directory=tmp_path, now=now)
+            ingest_table(postgres, storage, request, local_directory=tmp_path, now=now)
         failed = collect_state(postgres, storage, warehouse_path=None, marts=(), object_prefix=prefix)
         with postgres.pipeline_connection() as connection:
             object_count = connection.execute(
@@ -320,7 +321,7 @@ def test_r02_upload_failure_keeps_the_watermark_and_commits_nothing(monkeypatch,
         assert classified == OBJECT_STORAGE_ERROR
         http_status = error.value.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
         assert is_retryable(error.value)
-        recovered = ingest_orders(postgres, storage, request, local_directory=tmp_path, now=now)
+        recovered = ingest_table(postgres, storage, request, local_directory=tmp_path, now=now)
         assert recovered.status == "SUCCESS"
         write_evidence(
             "r02",
@@ -347,11 +348,11 @@ def test_r03_a_commit_crash_leaves_a_reconcilable_orphan(monkeypatch, tmp_path) 
     now = datetime(2026, 9, 20, tzinfo=UTC)
     request = _orphan_request("r03-crash", now, page_size=2)
     _set_watermark(postgres, request.pipeline_name, _lower_bound_before_five_rows(postgres), now)
-    object_key, _ = orders_object_keys(request.batch_id, now)
+    object_key, _ = table_object_keys("orders", request.batch_id, now)
     baseline = collect_state(postgres, storage, warehouse_path=None, marts=(), object_prefix=object_key.rsplit("/", 1)[0])
     try:
         with crash_metadata_commit(monkeypatch), pytest.raises(InjectedCrash):
-            ingest_orders(postgres, storage, request, local_directory=tmp_path, now=now)
+            ingest_table(postgres, storage, request, local_directory=tmp_path, now=now)
         before = collect_state(postgres, storage, warehouse_path=None, marts=(), object_prefix=object_key.rsplit("/", 1)[0])
         candidate = next(item for item in find_orphan_candidates(postgres, storage) if item.object_key == object_key)
         assert object_key in before.object_keys
@@ -385,11 +386,11 @@ def test_r03_a_handled_commit_failure_refuses_automatic_reconciliation(monkeypat
     now = datetime(2026, 9, 20, tzinfo=UTC)
     request = _orphan_request("r03-handled", now, page_size=2)
     _set_watermark(postgres, request.pipeline_name, _lower_bound_before_five_rows(postgres), now)
-    object_key, _ = orders_object_keys(request.batch_id, now)
+    object_key, _ = table_object_keys("orders", request.batch_id, now)
     baseline = collect_state(postgres, storage, warehouse_path=None, marts=(), object_prefix=object_key.rsplit("/", 1)[0])
     try:
         with fail_metadata_commit(monkeypatch), pytest.raises(RuntimeError) as error:
-            ingest_orders(postgres, storage, request, local_directory=tmp_path, now=now)
+            ingest_table(postgres, storage, request, local_directory=tmp_path, now=now)
         before = collect_state(postgres, storage, warehouse_path=None, marts=(), object_prefix=object_key.rsplit("/", 1)[0])
         candidate = next(item for item in find_orphan_candidates(postgres, storage) if item.object_key == object_key)
         with pytest.raises(
@@ -839,10 +840,11 @@ def _lower_bound_before_twenty_rows(settings: PostgresSettings) -> CursorPositio
 
 def _orphan_request(
     prefix: str, now: datetime, **kwargs: object
-) -> OrdersIngestionRequest:
+) -> TableIngestionRequest:
     """시나리오 전용 표준 Batch 요청을 만든다."""
     identifier = f"{prefix}-{uuid.uuid4().hex}"
-    return OrdersIngestionRequest.for_dag_run(
+    return TableIngestionRequest.for_dag_run(
+        source_table="orders",
         dag_id=identifier, logical_date=now, pipeline_name=identifier, **kwargs
     )
 
@@ -861,10 +863,10 @@ def _set_watermark(
 
 
 def _cleanup(
-    postgres: PostgresSettings, storage: SeaweedFSSettings, pipeline_name: str, request: OrdersIngestionRequest
+    postgres: PostgresSettings, storage: SeaweedFSSettings, pipeline_name: str, request: TableIngestionRequest
 ) -> None:
     """이 시나리오의 Metadata와 Final Object를 역순으로 제거한다."""
-    object_key, manifest_key = orders_object_keys(request.batch_id, request.logical_date)
+    object_key, manifest_key = table_object_keys("orders", request.batch_id, request.logical_date)
     quarantine_key, quarantine_manifest_key = quarantine_object_keys(
         "orders", request.batch_id, request.logical_date
     )

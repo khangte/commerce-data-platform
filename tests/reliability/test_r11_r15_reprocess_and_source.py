@@ -27,7 +27,7 @@ from src.generator.subscription_payments import (
 from src.ingestion.errors import SOURCE_CONNECTION_ERROR, classify_error, is_retryable
 from src.ingestion.metadata import CursorPosition
 from src.ingestion.reprocess import rewind_tables
-from src.ingestion.service import TableIngestionResult, ingest_orders, orders_object_keys
+from src.ingestion.service import TableIngestionResult, ingest_table, table_object_keys
 from src.ingestion.storage import SeaweedFSSettings
 from src.warehouse.mart_hash import describe_mart_difference, mart_logical_hashes, target_for
 from tests.integration.test_incremental_full_refresh_hash_integration import (
@@ -98,14 +98,14 @@ def test_r15_source_connection_failure_creates_no_object_and_holds_the_watermark
 
     try:
         with fail_source_connection(monkeypatch), pytest.raises(OperationalError) as failure:
-            ingest_orders(postgres, storage, request, local_directory=tmp_path, now=now)
+            ingest_table(postgres, storage, request, local_directory=tmp_path, now=now)
 
         classified = classify_error(failure.value)
         retryable = is_retryable(failure.value)
         assert classified == SOURCE_CONNECTION_ERROR
         assert retryable
 
-        object_key, _ = orders_object_keys(request.batch_id, now)
+        object_key, _ = table_object_keys("orders", request.batch_id, now)
         with postgres.pipeline_connection() as connection:
             object_count = connection.execute(
                 "SELECT count(*) FROM bronze_objects WHERE table_batch_id = %s",
@@ -129,7 +129,7 @@ def test_r15_source_connection_failure_creates_no_object_and_holds_the_watermark
         assert failed_run == ("FAILED", SOURCE_CONNECTION_ERROR)
         assert watermark_after == watermark_before
 
-        retry = ingest_orders(postgres, storage, request, local_directory=tmp_path, now=now)
+        retry = ingest_table(postgres, storage, request, local_directory=tmp_path, now=now)
         assert retry.status == "SUCCESS"
         assert retry.object_key == object_key
 

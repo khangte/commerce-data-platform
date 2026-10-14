@@ -28,10 +28,10 @@ from src.ingestion.orphan import (
     reconcile_orphan,
 )
 from src.ingestion.service import (
-    OrdersIngestionRequest,
-    ingest_orders,
-    orders_object_keys,
+    TableIngestionRequest,
+    ingest_table,
     quarantine_object_keys,
+    table_object_keys,
 )
 from src.ingestion.storage import SeaweedFSSettings, ensure_bucket, seaweedfs_s3_client
 
@@ -53,7 +53,8 @@ def test_orders_service_commits_verified_manifest_object_run_and_watermark(tmp_p
     storage = SeaweedFSSettings.from_environment()
     now = datetime(2026, 9, 7, tzinfo=UTC)
     pipeline_name = f"test_orders_service_{uuid.uuid4().hex}"
-    request = OrdersIngestionRequest.for_dag_run(
+    request = TableIngestionRequest.for_dag_run(
+        source_table="orders",
         dag_id=f"warehouse_{uuid.uuid4().hex}",
         logical_date=now,
         pipeline_name=pipeline_name,
@@ -64,7 +65,7 @@ def test_orders_service_commits_verified_manifest_object_run_and_watermark(tmp_p
 
     result = None
     try:
-        result = ingest_orders(postgres, storage, request, local_directory=tmp_path, now=now)
+        result = ingest_table(postgres, storage, request, local_directory=tmp_path, now=now)
 
         assert result.status == "SUCCESS"
         assert result.row_count == 5
@@ -122,7 +123,8 @@ def test_orders_service_keeps_watermark_when_final_object_already_exists(tmp_pat
     storage = SeaweedFSSettings.from_environment()
     now = datetime(2026, 9, 7, tzinfo=UTC)
     pipeline_name = f"test_orders_failure_{uuid.uuid4().hex}"
-    request = OrdersIngestionRequest.for_dag_run(
+    request = TableIngestionRequest.for_dag_run(
+        source_table="orders",
         dag_id=f"warehouse_{uuid.uuid4().hex}",
         logical_date=now,
         pipeline_name=pipeline_name,
@@ -130,14 +132,14 @@ def test_orders_service_keeps_watermark_when_final_object_already_exists(tmp_pat
     )
     lower_bound = _lower_bound_before_five_latest_rows(postgres)
     _set_watermark(postgres, pipeline_name, lower_bound, now)
-    object_key, _ = orders_object_keys(request.batch_id, request.logical_date)
+    object_key, _ = table_object_keys("orders", request.batch_id, request.logical_date)
     ensure_bucket(storage)
     client = seaweedfs_s3_client(storage)
     client.put_object(Bucket=storage.bucket, Key=object_key, Body=b"must-not-be-overwritten")
 
     try:
         with pytest.raises(FileExistsError):
-            ingest_orders(postgres, storage, request, local_directory=tmp_path, now=now)
+            ingest_table(postgres, storage, request, local_directory=tmp_path, now=now)
 
         assert (
             client.get_object(Bucket=storage.bucket, Key=object_key)["Body"].read()
@@ -178,7 +180,8 @@ def test_orders_service_finishes_an_empty_range_without_object_or_watermark_chan
     storage = SeaweedFSSettings.from_environment()
     now = datetime(2026, 9, 7, tzinfo=UTC)
     pipeline_name = f"test_orders_empty_{uuid.uuid4().hex}"
-    request = OrdersIngestionRequest.for_dag_run(
+    request = TableIngestionRequest.for_dag_run(
+        source_table="orders",
         dag_id=f"warehouse_{uuid.uuid4().hex}",
         logical_date=now,
         pipeline_name=pipeline_name,
@@ -187,7 +190,7 @@ def test_orders_service_finishes_an_empty_range_without_object_or_watermark_chan
     _set_watermark(postgres, pipeline_name, maximum_cursor, now)
 
     try:
-        result = ingest_orders(postgres, storage, request, local_directory=tmp_path, now=now)
+        result = ingest_table(postgres, storage, request, local_directory=tmp_path, now=now)
 
         assert result.status == "SUCCESS_NO_DATA"
         assert result.object_key is None
@@ -231,7 +234,8 @@ def test_orders_service_reuses_a_committed_standard_batch_without_new_object_or_
     storage = SeaweedFSSettings.from_environment()
     now = datetime(2026, 9, 7, tzinfo=UTC)
     pipeline_name = f"test_orders_reuse_{uuid.uuid4().hex}"
-    request = OrdersIngestionRequest.for_dag_run(
+    request = TableIngestionRequest.for_dag_run(
+        source_table="orders",
         dag_id=f"warehouse_{uuid.uuid4().hex}",
         logical_date=now,
         pipeline_name=pipeline_name,
@@ -240,8 +244,8 @@ def test_orders_service_reuses_a_committed_standard_batch_without_new_object_or_
     _set_watermark(postgres, pipeline_name, _lower_bound_before_five_latest_rows(postgres), now)
 
     try:
-        first = ingest_orders(postgres, storage, request, local_directory=tmp_path, now=now)
-        reused = ingest_orders(postgres, storage, request, local_directory=tmp_path, now=now)
+        first = ingest_table(postgres, storage, request, local_directory=tmp_path, now=now)
+        reused = ingest_table(postgres, storage, request, local_directory=tmp_path, now=now)
 
         assert first.status == "SUCCESS"
         assert reused.status == "SKIPPED_ALREADY_COMMITTED"
@@ -290,7 +294,8 @@ def test_orders_service_rejects_a_standard_batch_when_the_current_range_differs(
     storage = SeaweedFSSettings.from_environment()
     now = datetime(2026, 9, 7, tzinfo=UTC)
     pipeline_name = f"test_orders_identity_conflict_{uuid.uuid4().hex}"
-    request = OrdersIngestionRequest.for_dag_run(
+    request = TableIngestionRequest.for_dag_run(
+        source_table="orders",
         dag_id=f"warehouse_{uuid.uuid4().hex}",
         logical_date=now,
         pipeline_name=pipeline_name,
@@ -300,11 +305,11 @@ def test_orders_service_rejects_a_standard_batch_when_the_current_range_differs(
     _set_watermark(postgres, pipeline_name, lower_bound, now)
 
     try:
-        first = ingest_orders(postgres, storage, request, local_directory=tmp_path, now=now)
+        first = ingest_table(postgres, storage, request, local_directory=tmp_path, now=now)
         _set_watermark(postgres, pipeline_name, lower_bound, now)
 
         with pytest.raises(BatchIdentityConflictError, match="range"):
-            ingest_orders(postgres, storage, request, local_directory=tmp_path, now=now)
+            ingest_table(postgres, storage, request, local_directory=tmp_path, now=now)
 
         with postgres.pipeline_connection() as connection:
             object_count = connection.execute(
@@ -348,7 +353,8 @@ def test_orders_service_commits_valid_rows_and_verified_quarantine_metadata_for_
     storage = SeaweedFSSettings.from_environment()
     now = datetime(2026, 9, 7, tzinfo=UTC)
     pipeline_name = f"test_orders_quarantine_{uuid.uuid4().hex}"
-    request = OrdersIngestionRequest.for_dag_run(
+    request = TableIngestionRequest.for_dag_run(
+        source_table="orders",
         dag_id=f"warehouse_{uuid.uuid4().hex}",
         logical_date=now,
         pipeline_name=pipeline_name,
@@ -358,7 +364,7 @@ def test_orders_service_commits_valid_rows_and_verified_quarantine_metadata_for_
     _set_watermark(postgres, pipeline_name, _lower_bound_before_twenty_latest_rows(postgres), now)
 
     try:
-        result = ingest_orders(postgres, storage, request, local_directory=tmp_path, now=now)
+        result = ingest_table(postgres, storage, request, local_directory=tmp_path, now=now)
 
         assert result.status == "SUCCESS"
         assert result.row_count == 19
@@ -411,17 +417,18 @@ def test_orders_service_does_not_read_or_publish_when_generator_holds_the_global
     storage = SeaweedFSSettings.from_environment()
     now = datetime(2026, 9, 7, tzinfo=UTC)
     pipeline_name = f"test_orders_lease_conflict_{uuid.uuid4().hex}"
-    request = OrdersIngestionRequest.for_dag_run(
+    request = TableIngestionRequest.for_dag_run(
+        source_table="orders",
         dag_id=f"warehouse_{uuid.uuid4().hex}", logical_date=now, pipeline_name=pipeline_name
     )
     _set_watermark(postgres, pipeline_name, _lower_bound_before_five_latest_rows(postgres), now)
     generator_lease = acquire_source_mutation_lease(
         postgres, owner_type=GENERATOR_OWNER_TYPE, owner_id=uuid.uuid4(), now=now
     )
-    object_key, _ = orders_object_keys(request.batch_id, request.logical_date)
+    object_key, _ = table_object_keys("orders", request.batch_id, request.logical_date)
     try:
         with pytest.raises(LeaseUnavailableError):
-            ingest_orders(postgres, storage, request, local_directory=tmp_path, now=now)
+            ingest_table(postgres, storage, request, local_directory=tmp_path, now=now)
 
         assert object_key not in _bucket_keys(storage, object_key)
         with postgres.pipeline_connection() as connection:
@@ -451,7 +458,8 @@ def test_orphan_reconciliation_commits_an_interrupted_verified_bronze_object(
     storage = SeaweedFSSettings.from_environment()
     now = datetime(2026, 9, 7, tzinfo=UTC)
     pipeline_name = f"test_orders_orphan_{uuid.uuid4().hex}"
-    request = OrdersIngestionRequest.for_dag_run(
+    request = TableIngestionRequest.for_dag_run(
+        source_table="orders",
         dag_id=f"warehouse_{uuid.uuid4().hex}",
         logical_date=now,
         pipeline_name=pipeline_name,
@@ -465,10 +473,10 @@ def test_orphan_reconciliation_commits_an_interrupted_verified_bronze_object(
         raise _CrashAfterFinalObject()
 
     monkeypatch.setattr(ingestion_service, "commit_table_run", _interrupt_commit)
-    object_key, _ = orders_object_keys(request.batch_id, request.logical_date)
+    object_key, _ = table_object_keys("orders", request.batch_id, request.logical_date)
     try:
         with pytest.raises(_CrashAfterFinalObject):
-            ingest_orders(postgres, storage, request, local_directory=tmp_path, now=now)
+            ingest_table(postgres, storage, request, local_directory=tmp_path, now=now)
 
         candidate = next(
             item
@@ -511,7 +519,8 @@ def test_orphan_reconciliation_rejects_a_batch_with_a_quarantine_object(
     storage = SeaweedFSSettings.from_environment()
     now = datetime(2026, 9, 7, tzinfo=UTC)
     pipeline_name = f"test_orders_orphan_reject_{uuid.uuid4().hex}"
-    request = OrdersIngestionRequest.for_dag_run(
+    request = TableIngestionRequest.for_dag_run(
+        source_table="orders",
         dag_id=f"warehouse_{uuid.uuid4().hex}",
         logical_date=now,
         pipeline_name=pipeline_name,
@@ -525,10 +534,10 @@ def test_orphan_reconciliation_rejects_a_batch_with_a_quarantine_object(
         raise _CrashAfterFinalObject()
 
     monkeypatch.setattr(ingestion_service, "commit_table_run", _interrupt_commit)
-    object_key, _ = orders_object_keys(request.batch_id, request.logical_date)
+    object_key, _ = table_object_keys("orders", request.batch_id, request.logical_date)
     try:
         with pytest.raises(_CrashAfterFinalObject):
-            ingest_orders(postgres, storage, request, local_directory=tmp_path, now=now)
+            ingest_table(postgres, storage, request, local_directory=tmp_path, now=now)
 
         candidate = next(
             item
@@ -619,10 +628,10 @@ def _delete_test_rows_and_objects(
     postgres: PostgresSettings,
     storage: SeaweedFSSettings,
     pipeline_name: str,
-    request: OrdersIngestionRequest,
+    request: TableIngestionRequest,
 ) -> None:
     """테스트가 만든 정확한 Metadata와 Final Object만 역순으로 정리한다."""
-    object_key, manifest_key = orders_object_keys(request.batch_id, request.logical_date)
+    object_key, manifest_key = table_object_keys("orders", request.batch_id, request.logical_date)
     quarantine_key, quarantine_manifest_key = quarantine_object_keys(
         "orders", request.batch_id, request.logical_date
     )

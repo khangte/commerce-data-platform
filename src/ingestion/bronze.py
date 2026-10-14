@@ -1,4 +1,4 @@
-"""`orders` Page를 명시적 Arrow Schema의 Local Bronze Parquet으로 기록한다."""
+"""Source Table Record를 명시적 Arrow Schema의 Local Bronze Parquet으로 기록한다."""
 
 from __future__ import annotations
 
@@ -15,23 +15,9 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from src.ingestion.extract import SourcePage, SourceRecord
-from src.ingestion.orders import OrdersPage, SourceOrderRecord
-from src.ingestion.tables import BRONZE_SCHEMA_VERSION, ORDERS_TABLE, TableConfig
+from src.ingestion.tables import BRONZE_SCHEMA_VERSION, TableConfig
 
 ROW_GROUP_TARGET_ROWS = 128_000
-ORDERS_BUSINESS_COLUMNS = (
-    "order_id",
-    "customer_id",
-    "order_status",
-    "order_purchase_timestamp",
-    "order_approved_at",
-    "order_delivered_carrier_date",
-    "order_delivered_customer_date",
-    "order_estimated_delivery_date",
-    "created_at",
-    "updated_at",
-)
-ORDERS_BRONZE_SCHEMA = ORDERS_TABLE.bronze_schema
 
 
 @dataclass(frozen=True)
@@ -123,122 +109,6 @@ class TableBronzeWriter:
         self._writer.close()
         self._closed = True
         return LocalParquetArtifact(path=self._path, row_count=self._row_count)
-
-
-class OrdersBronzeWriter:
-    """`orders` Page를 제한된 Row Group Buffer로 Local Parquet에 순차 기록한다."""
-
-    def __init__(
-        self,
-        output_path: Path,
-        context: BronzeWriteContext,
-        *,
-        row_group_target_rows: int = ROW_GROUP_TARGET_ROWS,
-    ) -> None:
-        """새 Local 파일 Writer를 열고 최대 128K Row의 메모리 Buffer를 준비한다."""
-        if row_group_target_rows <= 0:
-            raise ValueError("row_group_target_rows must be greater than zero")
-        if output_path.exists():
-            raise FileExistsError(f"Local Bronze Parquet already exists: {output_path}")
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        self._path = output_path
-        self._context = context
-        self._row_group_target_rows = row_group_target_rows
-        self._writer = pq.ParquetWriter(
-            output_path,
-            ORDERS_BRONZE_SCHEMA,
-            compression="zstd",
-            coerce_timestamps="us",
-            allow_truncated_timestamps=False,
-        )
-        self._buffer: list[pa.Table] = []
-        self._buffer_row_count = 0
-        self._row_count = 0
-        self._closed = False
-
-    def write_page(self, page: OrdersPage) -> None:
-        """한 Keyset Page를 Arrow Table로 변환해 제한된 Row Group Buffer에 추가한다."""
-        self._assert_open()
-        table = _orders_page_to_arrow_table(page, self._context)
-        self._row_count += table.num_rows
-        offset = 0
-        while offset < table.num_rows:
-            remaining_capacity = self._row_group_target_rows - self._buffer_row_count
-            length = min(remaining_capacity, table.num_rows - offset)
-            self._buffer.append(table.slice(offset, length))
-            self._buffer_row_count += length
-            offset += length
-            if self._buffer_row_count == self._row_group_target_rows:
-                self._flush_row_group()
-
-    def close(self) -> LocalParquetArtifact:
-        """남은 Row Group을 쓰고 파일을 닫은 뒤 Local Artifact 증적을 반환한다."""
-        self._assert_open()
-        try:
-            self._flush_row_group()
-            self._writer.close()
-        finally:
-            self._closed = True
-        return LocalParquetArtifact(path=self._path, row_count=self._row_count)
-
-    def _flush_row_group(self) -> None:
-        """현재 Buffer를 한 Row Group으로 기록하고 메모리를 비운다."""
-        if not self._buffer:
-            return
-        table = pa.concat_tables(self._buffer)
-        self._writer.write_table(table, row_group_size=self._row_group_target_rows)
-        self._buffer.clear()
-        self._buffer_row_count = 0
-
-    def _assert_open(self) -> None:
-        """닫힌 Writer에 대한 추가 쓰기 또는 중복 Close를 막는다."""
-        if self._closed:
-            raise RuntimeError("Orders Bronze Writer is already closed")
-
-
-def _orders_page_to_arrow_table(page: OrdersPage, context: BronzeWriteContext) -> pa.Table:
-    """Raw-compatible Source Order Page와 기술 Column을 Arrow Schema로 변환한다."""
-    rows = [_order_row(record, context) for record in page.records]
-    return pa.Table.from_pylist(rows, schema=ORDERS_BRONZE_SCHEMA)
-
-
-def _order_row(record: SourceOrderRecord, context: BronzeWriteContext) -> dict[str, object]:
-    """Source Order와 고정 기술 Column을 Bronze Arrow Row 표현으로 변환한다."""
-    return {
-        "order_id": record.order_id,
-        "customer_id": record.customer_id,
-        "order_status": record.order_status,
-        "order_purchase_timestamp": record.order_purchase_timestamp,
-        "order_approved_at": record.order_approved_at,
-        "order_delivered_carrier_date": record.order_delivered_carrier_date,
-        "order_delivered_customer_date": record.order_delivered_customer_date,
-        "order_estimated_delivery_date": record.order_estimated_delivery_date,
-        "created_at": record.created_at,
-        "updated_at": record.updated_at,
-        "_batch_id": context.batch_id,
-        "_run_id": str(context.run_id),
-        "_ingested_at": context.ingested_at,
-        "_source_table": context.source_table,
-        "_schema_version": context.schema_version,
-    }
-
-
-def orders_logical_hash(path: Path) -> str:
-    """Local Bronze를 PK 순서 Business Column Canonical JSON으로 Hash한다."""
-    digest = hashlib.sha256()
-    column_list = ", ".join(ORDERS_BUSINESS_COLUMNS)
-    connection = duckdb.connect()
-    try:
-        batches = connection.execute(
-            f"SELECT {column_list} FROM read_parquet(?) ORDER BY order_id", [str(path)]
-        ).to_arrow_reader(batch_size=50_000)
-        for batch in batches:
-            for row in batch.to_pylist():
-                digest.update(_canonical_business_json(row).encode("utf-8"))
-                digest.update(b"\n")
-    finally:
-        connection.close()
-    return digest.hexdigest()
 
 
 def _canonical_business_json(row: dict[str, object]) -> str:

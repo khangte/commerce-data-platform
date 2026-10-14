@@ -5,11 +5,9 @@ from __future__ import annotations
 import pyarrow as pa
 import pytest
 
-from src.ingestion.bronze import ORDERS_BRONZE_SCHEMA
 from src.ingestion.tables import (
     BRONZE_SCHEMA_VERSION,
     ORDER_ITEMS_TABLE,
-    ORDERS_TABLE,
     TABLE_CONFIGS,
     TableConfig,
     table_config,
@@ -49,7 +47,6 @@ def test_table_configs_cover_all_source_tables_with_complete_composite_cursors()
 
 def test_table_configs_define_raw_compatible_schemas_and_decimal_money_columns() -> None:
     """Table Schema는 Source 순서·UTC Timestamp와 금액 Decimal 정밀도를 고정한다."""
-    assert ORDERS_TABLE.bronze_schema == ORDERS_BRONZE_SCHEMA
     assert (
         TABLE_CONFIGS["customer_subscriptions"]
         .source_schema.field("subscription_status")

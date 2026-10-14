@@ -72,9 +72,6 @@ from src.ingestion.storage import (
 from src.ingestion.tables import TableConfig, table_config
 from src.ingestion.validation import ValidationPipeline
 
-ORDERS_PIPELINE_NAME = "orders_bronze"
-ORDERS_SOURCE_TABLE = "orders"
-
 
 @dataclass(frozen=True)
 class TableIngestionRequest:
@@ -134,59 +131,6 @@ class TableIngestionRequest:
 
 
 @dataclass(frozen=True)
-class OrdersIngestionRequest:
-    """기존 호출부를 위한 `orders` 전용 요청 호환 계약이다."""
-
-    batch_id: str
-    logical_date: datetime
-    attempt_number: int = 1
-    run_id: uuid.UUID | None = None
-    pipeline_name: str = ORDERS_PIPELINE_NAME
-    page_size: int | None = None
-    corruption_plan: CorruptionPlan | None = None
-
-    def __post_init__(self) -> None:
-        """`orders` 공통 요청으로 변환 가능한 입력인지 검증한다."""
-        self.as_table_request()
-
-    @classmethod
-    def for_dag_run(
-        cls,
-        *,
-        dag_id: str,
-        logical_date: datetime,
-        attempt_number: int = 1,
-        run_id: uuid.UUID | None = None,
-        pipeline_name: str = ORDERS_PIPELINE_NAME,
-        page_size: int | None = None,
-        corruption_plan: CorruptionPlan | None = None,
-    ) -> OrdersIngestionRequest:
-        """기존 DAG 호출을 위한 표준 `orders` Batch 요청을 만든다."""
-        return cls(
-            batch_id=BatchIdentity(dag_id=dag_id, logical_date=logical_date).batch_id,
-            logical_date=logical_date,
-            attempt_number=attempt_number,
-            run_id=run_id,
-            pipeline_name=pipeline_name,
-            page_size=page_size,
-            corruption_plan=corruption_plan,
-        )
-
-    def as_table_request(self) -> TableIngestionRequest:
-        """현재 값을 공통 `orders` Table 요청으로 변환한다."""
-        return TableIngestionRequest(
-            source_table=ORDERS_SOURCE_TABLE,
-            batch_id=self.batch_id,
-            logical_date=self.logical_date,
-            attempt_number=self.attempt_number,
-            run_id=self.run_id,
-            pipeline_name=self.pipeline_name,
-            page_size=self.page_size,
-            corruption_plan=self.corruption_plan,
-        )
-
-
-@dataclass(frozen=True)
 class TableIngestionResult:
     """실행 상태·Commit된 Bronze 증적과 Count를 반환한다."""
 
@@ -198,9 +142,6 @@ class TableIngestionResult:
     rows_rejected: int = 0
     rows_corrupted: int = 0
     quarantine_object_key: str | None = None
-
-
-OrdersIngestionResult = TableIngestionResult
 
 
 def ingest_table(
@@ -351,26 +292,6 @@ def ingest_table(
                 release_source_mutation_lease(postgres, active_source_lease, now=current_time)
 
 
-def ingest_orders(
-    postgres: PostgresSettings,
-    storage: SeaweedFSSettings,
-    request: OrdersIngestionRequest,
-    *,
-    local_directory: Path,
-    now: datetime | None = None,
-    source_lease: SourceMutationLease | None = None,
-) -> OrdersIngestionResult:
-    """기존 `orders` API를 공통 6개 Table Commit 서비스로 위임한다."""
-    return ingest_table(
-        postgres,
-        storage,
-        request.as_table_request(),
-        local_directory=local_directory,
-        now=now,
-        source_lease=source_lease,
-    )
-
-
 def table_object_keys(source_table: str, batch_id: str, logical_date: datetime) -> tuple[str, str]:
     """지정 Table의 불변 Bronze Parquet와 Manifest Key를 반환한다."""
     table_config(source_table)
@@ -378,11 +299,6 @@ def table_object_keys(source_table: str, batch_id: str, logical_date: datetime) 
     _assert_utc(logical_date, "logical_date")
     prefix = f"{BRONZE_PREFIX}/{source_table}/ingestion_date={logical_date.date().isoformat()}/batch_id={batch_id}"
     return f"{prefix}/data.parquet", f"{prefix}/manifest.json"
-
-
-def orders_object_keys(batch_id: str, logical_date: datetime) -> tuple[str, str]:
-    """기존 호출부를 위해 `orders` Bronze Key를 반환한다."""
-    return table_object_keys(ORDERS_SOURCE_TABLE, batch_id, logical_date)
 
 
 def quarantine_object_keys(
