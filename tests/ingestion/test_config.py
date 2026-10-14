@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.ingestion.config import DEFAULT_INGESTION_PAGE_SIZE, ingestion_page_size
+from src.ingestion.contract.config import DEFAULT_INGESTION_PAGE_SIZE, ingestion_page_size
 
 
 def test_ingestion_page_size_uses_default_when_not_configured() -> None:

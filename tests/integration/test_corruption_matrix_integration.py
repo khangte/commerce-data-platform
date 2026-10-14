@@ -10,7 +10,10 @@ import pytest
 from psycopg.types.json import Jsonb
 
 from src.common.database import PostgresSettings
-from src.ingestion.corruption import (
+from src.ingestion.bronze.storage import SeaweedFSSettings, seaweedfs_s3_client
+from src.ingestion.contract.tables import TableConfig, table_config
+from src.ingestion.control.metadata import CursorPosition, get_or_create_watermark
+from src.ingestion.extraction.corruption import (
     BROKEN_REFERENCE,
     DUPLICATE_PRIMARY_KEY,
     INVALID_STATUS,
@@ -18,15 +21,12 @@ from src.ingestion.corruption import (
     NULL_PRIMARY_KEY,
     CorruptionPlan,
 )
-from src.ingestion.metadata import CursorPosition, get_or_create_watermark
 from src.ingestion.service import (
     TableIngestionRequest,
     ingest_table,
     quarantine_object_keys,
     table_object_keys,
 )
-from src.ingestion.storage import SeaweedFSSettings, seaweedfs_s3_client
-from src.ingestion.tables import TableConfig, table_config
 
 pytestmark = pytest.mark.integration
 

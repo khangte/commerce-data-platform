@@ -19,21 +19,21 @@ from src.generator.core.lease import (
     release_source_mutation_lease,
 )
 from src.ingestion import service as ingestion_service
-from src.ingestion.batch import BatchIdentityConflictError
-from src.ingestion.corruption import INVALID_STATUS, CorruptionPlan
-from src.ingestion.metadata import CursorPosition, get_or_create_watermark
-from src.ingestion.orphan import (
+from src.ingestion.bronze.orphan import (
     OrphanReconciliationError,
     find_orphan_candidates,
     reconcile_orphan,
 )
+from src.ingestion.bronze.storage import SeaweedFSSettings, ensure_bucket, seaweedfs_s3_client
+from src.ingestion.control.batch import BatchIdentityConflictError
+from src.ingestion.control.metadata import CursorPosition, get_or_create_watermark
+from src.ingestion.extraction.corruption import INVALID_STATUS, CorruptionPlan
 from src.ingestion.service import (
     TableIngestionRequest,
     ingest_table,
     quarantine_object_keys,
     table_object_keys,
 )
-from src.ingestion.storage import SeaweedFSSettings, ensure_bucket, seaweedfs_s3_client
 
 pytestmark = pytest.mark.integration
 

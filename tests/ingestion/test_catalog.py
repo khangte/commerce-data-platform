@@ -7,9 +7,9 @@ from datetime import UTC, datetime
 import duckdb
 import pytest
 
-from src.ingestion import catalog
-from src.ingestion.catalog import BronzeCatalogEntry, sync_bronze_catalog
-from src.ingestion.schema import SourceContractError
+from src.ingestion.bronze import catalog
+from src.ingestion.bronze.catalog import BronzeCatalogEntry, sync_bronze_catalog
+from src.ingestion.contract.schema import SourceContractError
 
 
 def test_catalog_replaces_entries_with_committed_metadata_snapshot(monkeypatch, tmp_path) -> None:

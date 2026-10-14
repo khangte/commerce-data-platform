@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 
 from src.common.database import PostgresSettings, environment_values
-from src.ingestion.storage import SeaweedFSSettings
+from src.ingestion.bronze.storage import SeaweedFSSettings
 
 
 @dataclass(frozen=True)

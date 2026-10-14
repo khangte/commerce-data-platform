@@ -12,9 +12,9 @@ import psycopg
 import pyarrow as pa
 
 from src.common.database import PostgresSettings
-from src.ingestion.config import ingestion_page_size
-from src.ingestion.metadata import CursorPosition
-from src.ingestion.tables import TableConfig, table_config
+from src.ingestion.contract.config import ingestion_page_size
+from src.ingestion.contract.tables import TableConfig, table_config
+from src.ingestion.control.metadata import CursorPosition
 
 
 @dataclass(frozen=True)

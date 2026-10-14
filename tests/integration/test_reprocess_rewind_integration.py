@@ -10,19 +10,19 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from src.common.database import PostgresSettings
-from src.ingestion.extract import cursor_before_timestamp
-from src.ingestion.lease import (
+from src.ingestion.contract.tables import table_config
+from src.ingestion.control.lease import (
     TableLeaseOwnershipLostError,
     acquire_table_lease,
 )
-from src.ingestion.metadata import (
+from src.ingestion.control.metadata import (
     CursorPosition,
     WatermarkRewindError,
     get_or_create_watermark,
     rewind_watermark,
 )
+from src.ingestion.extraction.extract import cursor_before_timestamp
 from src.ingestion.reprocess import main
-from src.ingestion.tables import table_config
 
 pytestmark = pytest.mark.integration
 

@@ -10,8 +10,8 @@ import pytest
 
 from src.common.database import PostgresSettings
 from src.generator.core.ids import logical_hash
-from src.ingestion.lease import acquire_table_lease
-from src.ingestion.metadata import (
+from src.ingestion.control.lease import acquire_table_lease
+from src.ingestion.control.metadata import (
     CursorPosition,
     PipelineRun,
     TableCommit,

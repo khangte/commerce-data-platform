@@ -5,7 +5,7 @@ from __future__ import annotations
 import pyarrow as pa
 import pytest
 
-from src.ingestion.tables import (
+from src.ingestion.contract.tables import (
     BRONZE_SCHEMA_VERSION,
     ORDER_ITEMS_TABLE,
     TABLE_CONFIGS,

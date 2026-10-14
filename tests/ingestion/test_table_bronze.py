@@ -11,14 +11,14 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
-from src.ingestion.bronze import (
+from src.ingestion.bronze.bronze import (
     BronzeWriteContext,
     TableBronzeWriter,
     table_logical_hash,
     table_logical_hash_bytes,
 )
-from src.ingestion.extract import SourceRecord
-from src.ingestion.tables import ORDER_PAYMENTS_TABLE
+from src.ingestion.contract.tables import ORDER_PAYMENTS_TABLE
+from src.ingestion.extraction.extract import SourceRecord
 
 
 def test_table_bronze_writer_supports_non_orders_decimal_table_and_stable_logical_hash(

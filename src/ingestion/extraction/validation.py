@@ -11,10 +11,10 @@ from uuid import UUID
 
 import pyarrow as pa
 
-from src.ingestion import rules
-from src.ingestion.extract import SourcePage, SourceRecord
-from src.ingestion.metadata import CursorPosition
-from src.ingestion.tables import SourceColumn, TableConfig
+from src.ingestion.contract import rules
+from src.ingestion.contract.tables import SourceColumn, TableConfig
+from src.ingestion.control.metadata import CursorPosition
+from src.ingestion.extraction.extract import SourcePage, SourceRecord
 
 
 @dataclass(frozen=True)

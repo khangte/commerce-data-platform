@@ -12,7 +12,7 @@ import duckdb
 import pytest
 
 from src.common.database import PostgresSettings
-from src.ingestion.metadata import ensure_ingestion_metadata
+from src.ingestion.control.metadata import ensure_ingestion_metadata
 from src.warehouse.dbt_runner import DbtRunResult
 from src.warehouse.errors import (
     DBT_TEST_ERROR,

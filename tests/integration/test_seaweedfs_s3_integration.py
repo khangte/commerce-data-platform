@@ -11,7 +11,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
-from src.ingestion.storage import SeaweedFSSettings, ensure_bucket, seaweedfs_s3_client
+from src.ingestion.bronze.storage import SeaweedFSSettings, ensure_bucket, seaweedfs_s3_client
 
 pytestmark = pytest.mark.integration
 

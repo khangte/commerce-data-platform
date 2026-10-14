@@ -13,7 +13,7 @@ from pathlib import Path
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from src.ingestion.validation import RejectedRecord
+from src.ingestion.extraction.validation import RejectedRecord
 
 MAX_REJECT_RATE = 0.05
 QUARANTINE_RECORD_NAMESPACE = uuid.UUID("a5c4e58c-fac7-5fc5-93fa-35f3f74d6518")

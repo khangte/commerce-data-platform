@@ -8,7 +8,7 @@ from pathlib import Path
 import duckdb
 
 from src.common.database import PostgresSettings
-from src.ingestion.schema import assert_supported_schema_version
+from src.ingestion.contract.schema import assert_supported_schema_version
 
 
 @dataclass(frozen=True)

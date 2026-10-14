@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from src.ingestion.extract import SourcePage, TableSnapshot
+from src.ingestion.extraction.extract import SourcePage, TableSnapshot
 
 
 @dataclass(frozen=True)

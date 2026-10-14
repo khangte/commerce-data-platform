@@ -24,11 +24,11 @@ from src.generator.customers.subscription_payments import (
     persist_subscription_payments,
     plan_subscription_payment,
 )
+from src.ingestion.bronze.storage import SeaweedFSSettings
+from src.ingestion.control.metadata import CursorPosition
 from src.ingestion.errors import SOURCE_CONNECTION_ERROR, classify_error, is_retryable
-from src.ingestion.metadata import CursorPosition
 from src.ingestion.reprocess import rewind_tables
 from src.ingestion.service import TableIngestionResult, ingest_table, table_object_keys
-from src.ingestion.storage import SeaweedFSSettings
 from src.warehouse.mart_hash import describe_mart_difference, mart_logical_hashes, target_for
 from tests.integration.test_incremental_full_refresh_hash_integration import (
     _run_full_refresh_build,

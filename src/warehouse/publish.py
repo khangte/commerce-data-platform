@@ -17,7 +17,7 @@ from pathlib import Path
 import duckdb
 
 from src.common.database import PROJECT_ROOT, PostgresSettings
-from src.ingestion.catalog import sync_bronze_catalog
+from src.ingestion.bronze.catalog import sync_bronze_catalog
 from src.ingestion.errors import classify_error
 from src.warehouse.dbt_runner import DbtRunResult, run_dbt_build
 from src.warehouse.errors import (

@@ -3,8 +3,8 @@
 import uuid
 from pathlib import Path
 
+from src.ingestion.contract.tables import table_config
 from src.ingestion.service import _remove_local_artifacts
-from src.ingestion.tables import table_config
 
 
 def test_remove_local_artifacts_deletes_only_the_run_files(tmp_path: Path) -> None:

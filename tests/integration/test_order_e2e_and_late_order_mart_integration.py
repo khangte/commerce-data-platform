@@ -29,9 +29,9 @@ from src.generator.orders.orders import (
     persist_order_bundle,
 )
 from src.generator.orders.scenarios import late_order_bundle
-from src.ingestion.metadata import CursorPosition, get_or_create_watermark
+from src.ingestion.bronze.storage import SeaweedFSSettings, seaweedfs_s3_client
+from src.ingestion.control.metadata import CursorPosition, get_or_create_watermark
 from src.ingestion.service import TableIngestionRequest, TableIngestionResult, ingest_table
-from src.ingestion.storage import SeaweedFSSettings, seaweedfs_s3_client
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 FIXTURE_SNAPSHOT_ID = "fixture:order-e2e-late-order-mart"

@@ -10,9 +10,8 @@ from typing import Any, cast
 from psycopg.types.json import Jsonb
 
 from src.common.database import PostgresSettings
-from src.ingestion.manifest import _utc_datetime_from_manifest, parse_bronze_manifest_payload
-from src.ingestion.schema import assert_supported_schema_version
-from src.ingestion.storage import (
+from src.ingestion.bronze.manifest import _utc_datetime_from_manifest, parse_bronze_manifest_payload
+from src.ingestion.bronze.storage import (
     BRONZE_PREFIX,
     QUARANTINE_PREFIX,
     SeaweedFSSettings,
@@ -21,7 +20,8 @@ from src.ingestion.storage import (
     stored_object_from_head,
     verify_parquet_object,
 )
-from src.ingestion.tables import table_config
+from src.ingestion.contract.schema import assert_supported_schema_version
+from src.ingestion.contract.tables import table_config
 
 
 class OrphanReconciliationError(RuntimeError):

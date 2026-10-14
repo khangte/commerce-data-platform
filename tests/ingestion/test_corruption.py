@@ -8,7 +8,9 @@ from types import MappingProxyType
 
 import pytest
 
-from src.ingestion.corruption import (
+from src.ingestion.contract.tables import ORDER_ITEMS_TABLE, ORDERS_TABLE
+from src.ingestion.control.metadata import CursorPosition
+from src.ingestion.extraction.corruption import (
     BROKEN_REFERENCE,
     DUPLICATE_PRIMARY_KEY,
     INVALID_STATUS,
@@ -17,10 +19,8 @@ from src.ingestion.corruption import (
     TYPE_MISMATCH,
     CorruptionPlan,
 )
-from src.ingestion.extract import SourcePage, SourceRecord
-from src.ingestion.metadata import CursorPosition
-from src.ingestion.tables import ORDER_ITEMS_TABLE, ORDERS_TABLE
-from src.ingestion.validation import ValidationPipeline
+from src.ingestion.extraction.extract import SourcePage, SourceRecord
+from src.ingestion.extraction.validation import ValidationPipeline
 
 
 def test_corruption_plan_keeps_source_unchanged_and_separates_input_corrupted_valid_rejected_counts() -> None:

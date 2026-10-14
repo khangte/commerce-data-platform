@@ -6,16 +6,16 @@ import hashlib
 from dataclasses import dataclass
 
 from src.common.database import PostgresSettings
-from src.ingestion.batch import BatchIdentity, get_committed_table_batch
-from src.ingestion.manifest import parse_bronze_manifest_payload
-from src.ingestion.schema import assert_supported_schema_version
-from src.ingestion.storage import (
+from src.ingestion.bronze.manifest import parse_bronze_manifest_payload
+from src.ingestion.bronze.storage import (
     SeaweedFSSettings,
     read_object_bytes,
     stored_object_from_head,
     verify_parquet_object,
 )
-from src.ingestion.tables import table_config
+from src.ingestion.contract.schema import assert_supported_schema_version
+from src.ingestion.contract.tables import table_config
+from src.ingestion.control.batch import BatchIdentity, get_committed_table_batch
 
 
 class BronzeCommitVerificationError(RuntimeError):

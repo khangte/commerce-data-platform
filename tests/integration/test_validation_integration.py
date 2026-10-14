@@ -7,10 +7,10 @@ import os
 import pytest
 
 from src.common.database import PostgresSettings
-from src.ingestion.extract import open_table_snapshot
-from src.ingestion.metadata import CursorPosition
-from src.ingestion.tables import ORDERS_TABLE
-from src.ingestion.validation import ValidationPipeline
+from src.ingestion.contract.tables import ORDERS_TABLE
+from src.ingestion.control.metadata import CursorPosition
+from src.ingestion.extraction.extract import open_table_snapshot
+from src.ingestion.extraction.validation import ValidationPipeline
 
 pytestmark = pytest.mark.integration
 

@@ -13,22 +13,24 @@ from psycopg.types.json import Jsonb
 from src.common.database import PostgresSettings
 from src.generator.core.ids import logical_hash
 from src.ingestion import service as ingestion_service
-from src.ingestion.corruption import INVALID_STATUS, CorruptionPlan
-from src.ingestion.errors import (
-    LEASE_OWNERSHIP_LOST,
-    OBJECT_STORAGE_ERROR,
-    UNKNOWN_ERROR,
-    WATERMARK_CONFLICT,
-    classify_error,
-    is_retryable,
+from src.ingestion.bronze.orphan import (
+    OrphanReconciliationError,
+    find_orphan_candidates,
+    reconcile_orphan,
 )
-from src.ingestion.lease import (
+from src.ingestion.bronze.storage import (
+    SeaweedFSSettings,
+    seaweedfs_s3_client,
+    stored_object_from_head,
+)
+from src.ingestion.contract.schema import SourceContractError as BronzeSchemaContractError
+from src.ingestion.control.lease import (
     TableLeaseOwnershipLostError,
     acquire_table_lease,
     assert_table_lease,
     release_table_lease,
 )
-from src.ingestion.metadata import (
+from src.ingestion.control.metadata import (
     CursorPosition,
     PipelineRun,
     TableCommit,
@@ -39,15 +41,21 @@ from src.ingestion.metadata import (
     record_failed_run,
     record_started_run,
 )
-from src.ingestion.orphan import OrphanReconciliationError, find_orphan_candidates, reconcile_orphan
-from src.ingestion.schema import SourceContractError as BronzeSchemaContractError
+from src.ingestion.errors import (
+    LEASE_OWNERSHIP_LOST,
+    OBJECT_STORAGE_ERROR,
+    UNKNOWN_ERROR,
+    WATERMARK_CONFLICT,
+    classify_error,
+    is_retryable,
+)
+from src.ingestion.extraction.corruption import INVALID_STATUS, CorruptionPlan
 from src.ingestion.service import (
     TableIngestionRequest,
     ingest_table,
     quarantine_object_keys,
     table_object_keys,
 )
-from src.ingestion.storage import SeaweedFSSettings, seaweedfs_s3_client, stored_object_from_head
 from src.warehouse.publish_metadata import ensure_publish_metadata
 from tests.reliability.faults import (
     InjectedCrash,

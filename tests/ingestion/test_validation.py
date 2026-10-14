@@ -9,10 +9,14 @@ from uuid import UUID
 
 import pytest
 
-from src.ingestion.extract import SourcePage, SourceRecord
-from src.ingestion.metadata import CursorPosition
-from src.ingestion.tables import CUSTOMER_SUBSCRIPTIONS_TABLE, ORDER_ITEMS_TABLE, ORDERS_TABLE
-from src.ingestion.validation import (
+from src.ingestion.contract.tables import (
+    CUSTOMER_SUBSCRIPTIONS_TABLE,
+    ORDER_ITEMS_TABLE,
+    ORDERS_TABLE,
+)
+from src.ingestion.control.metadata import CursorPosition
+from src.ingestion.extraction.extract import SourcePage, SourceRecord
+from src.ingestion.extraction.validation import (
     SourceContractError,
     ValidationPipeline,
     _schema_and_type_errors,

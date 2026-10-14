@@ -9,7 +9,7 @@ Task 8 계획은 `SCHEMA_VERSION` 변형의 기대 거절 메시지를 `OrphanRe
 
 ## 판정
 
-**(1) 채택. 변형을 미지원 Version(`schema_version=4`)으로 만들고 기대 예외를 `src.ingestion.schema.SourceContractError`로 계획 문서를 수정한다. (2) 소스 변경은 반려한다.**
+**(1) 채택. 변형을 미지원 Version(`schema_version=4`)으로 만들고 기대 예외를 `src.ingestion.contract.schema.SourceContractError`로 계획 문서를 수정한다. (2) 소스 변경은 반려한다.**
 
 근거는 셋이다.
 
@@ -22,7 +22,7 @@ Task 8 계획은 `SCHEMA_VERSION` 변형의 기대 거절 메시지를 `OrphanRe
 | 대상 | 조치 |
 | ---- | ---- |
 | `docs/superpowers/plans/.../phase8-reliability-scenarios.md` Task 8 | `SCHEMA_VERSION` 행의 기대 거절을 `SourceContractError: SOURCE_CONTRACT_ERROR: unsupported schema_version=4`로 고친다. 주입 값은 `4`로 명시한다. |
-| `tests/reliability/test_r01_r07_ingestion_commit.py` | `SCHEMA_VERSION` 변형만 `pytest.raises(SourceContractError, match="SOURCE_CONTRACT_ERROR")`로 단언한다. import는 `src.ingestion.schema`에서 한다. `src.ingestion.validation`에 같은 이름의 다른 클래스가 있으므로 혼동하지 않는다. 나머지 두 변형은 계획 그대로 `OrphanReconciliationError`다. |
+| `tests/reliability/test_r01_r07_ingestion_commit.py` | `SCHEMA_VERSION` 변형만 `pytest.raises(SourceContractError, match="SOURCE_CONTRACT_ERROR")`로 단언한다. import는 `src.ingestion.contract.schema`에서 한다. `src.ingestion.extraction.validation`에 같은 이름의 다른 클래스가 있으므로 혼동하지 않는다. 나머지 두 변형은 계획 그대로 `OrphanReconciliationError`다. |
 | `tests/reliability/test_r01_r07_ingestion_commit.py` | 세 변형 모두 거절 뒤 `COMMITTED` Row 부재와 Watermark 불변을 단언하는 요건은 그대로다. 예외 타입만 변형별로 다르다. |
 | `docs/runbooks/r07-broken-manifest.md` | AC-24 대응은 `SCHEMA_VERSION` 변형이 맡는다고 적되, 차단 지점이 `assert_supported_schema_version`이고 오류 코드가 `SOURCE_CONTRACT_ERROR`임을 명시한다. |
 | `src/ingestion/orphan.py` | 변경하지 않는다. |

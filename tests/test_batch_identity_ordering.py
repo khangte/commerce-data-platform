@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from src.ingestion.batch import BatchIdentity
+from src.ingestion.control.batch import BatchIdentity
 
 
 def test_batch_id_lexicographic_order_matches_logical_date_order() -> None:

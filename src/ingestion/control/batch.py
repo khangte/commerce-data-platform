@@ -6,8 +6,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from src.common.database import PostgresSettings
-from src.ingestion.metadata import CursorPosition, Watermark
-from src.ingestion.tables import TableConfig, table_config
+from src.ingestion.contract.tables import TableConfig, table_config
+from src.ingestion.control.metadata import CursorPosition, Watermark
 
 
 class BatchIdentityConflictError(RuntimeError):

@@ -9,14 +9,14 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from src.common.database import PostgresSettings
-from src.ingestion.lease import (
+from src.ingestion.control.lease import (
     TableLeaseUnavailableError,
     acquire_table_lease,
     release_table_lease,
     renew_table_lease,
     warehouse_source_freeze,
 )
-from src.ingestion.metadata import get_or_create_watermark
+from src.ingestion.control.metadata import get_or_create_watermark
 
 pytestmark = pytest.mark.integration
 

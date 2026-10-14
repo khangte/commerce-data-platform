@@ -12,9 +12,11 @@ from botocore.exceptions import ClientError
 from psycopg import OperationalError
 from pytest import MonkeyPatch
 
-from src.ingestion import extract, metadata, service
-from src.ingestion import storage as storage_module
-from src.ingestion.storage import SeaweedFSSettings, read_object_bytes, seaweedfs_s3_client
+from src.ingestion import service
+from src.ingestion.bronze import storage as storage_module
+from src.ingestion.bronze.storage import SeaweedFSSettings, read_object_bytes, seaweedfs_s3_client
+from src.ingestion.control import metadata
+from src.ingestion.extraction import extract
 
 ManifestCorruptionKind = Literal["CHECKSUM", "ROW_RANGE", "SCHEMA_VERSION"]
 

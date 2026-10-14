@@ -15,9 +15,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from src.ingestion.bronze.storage import SeaweedFSSettings, seaweedfs_s3_client
+from src.ingestion.contract.tables import TABLE_CONFIGS
 from src.ingestion.service import table_object_keys
-from src.ingestion.storage import SeaweedFSSettings, seaweedfs_s3_client
-from src.ingestion.tables import TABLE_CONFIGS
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:

@@ -32,9 +32,9 @@ from src.generator.orders.scenarios import (
     subscription_transition_scenario,
 )
 from src.generator.orders.transitions import fetch_payment_state
-from src.ingestion.metadata import CursorPosition
+from src.ingestion.bronze.storage import SeaweedFSSettings
+from src.ingestion.control.metadata import CursorPosition
 from src.ingestion.service import TableIngestionRequest, TableIngestionResult, ingest_table
-from src.ingestion.storage import SeaweedFSSettings
 from src.warehouse.mart_hash import mart_logical_hashes, mart_row_counts
 from tests.generator_support import apply_payment_transition
 from tests.integration.test_order_e2e_and_late_order_mart_integration import (

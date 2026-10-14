@@ -9,7 +9,7 @@ from types import MappingProxyType
 
 import pyarrow as pa
 
-from src.ingestion.schema import assert_supported_schema_version
+from src.ingestion.contract.schema import assert_supported_schema_version
 
 BRONZE_SCHEMA_VERSION = 3
 

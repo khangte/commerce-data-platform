@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
 
-from src.ingestion.extract import SourceRecord
+from src.ingestion.extraction.extract import SourceRecord
 
 NULL_PRIMARY_KEY = "NULL_PRIMARY_KEY"
 INVALID_STATUS = "INVALID_STATUS"

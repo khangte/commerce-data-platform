@@ -8,8 +8,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import cast
 
-from src.ingestion.metadata import CursorPosition
-from src.ingestion.tables import table_config
+from src.ingestion.contract.tables import table_config
+from src.ingestion.control.metadata import CursorPosition
 
 MANIFEST_VERSION = 1
 VERIFIED_OBJECT_STATE = "VERIFIED"

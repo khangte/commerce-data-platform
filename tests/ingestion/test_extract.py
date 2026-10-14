@@ -8,8 +8,8 @@ from types import MappingProxyType
 
 import pyarrow as pa
 
-from src.ingestion.extract import SourceRecord, _cursor_expression
-from src.ingestion.tables import TableConfig, _text, _timestamp, _uuid
+from src.ingestion.contract.tables import TableConfig, _text, _timestamp, _uuid
+from src.ingestion.extraction.extract import SourceRecord, _cursor_expression
 
 UUID_CURSOR_TABLE = TableConfig(
     source_table="uuid_cursor_fixture",

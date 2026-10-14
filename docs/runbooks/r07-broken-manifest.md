@@ -17,7 +17,7 @@ VERIFIED Manifest와 실제 Object·Run 상태가 어긋나면 `reconcile_orphan
 |---|---|---|---|
 | `CHECKSUM` | `content_sha256`을 전부 `0`으로 변조 | `OrphanReconciliationError`: `Object HEAD or checksum differs from the VERIFIED manifest` | 일치 |
 | `ROW_RANGE` | `extract_upper_bound`을 `{timestamp: null, keys: []}`로 변조 | `OrphanReconciliationError`: `Pipeline run range differs from the orphan manifest` | 일치 |
-| `SCHEMA_VERSION` | `schema_version`을 미지원 값 `4`로 변조 | `src.ingestion.schema.SourceContractError`: `SOURCE_CONTRACT_ERROR: unsupported schema_version=4` | 일치 |
+| `SCHEMA_VERSION` | `schema_version`을 미지원 값 `4`로 변조 | `src.ingestion.contract.schema.SourceContractError`: `SOURCE_CONTRACT_ERROR: unsupported schema_version=4` | 일치 |
 
 세 변형 모두 거절 뒤 `bronze_objects`에 COMMITTED 행이 생기지 않고 `watermarks`가 변경 없이 유지된다.
 

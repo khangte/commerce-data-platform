@@ -7,13 +7,13 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 from src.generator.core.errors import SourceCursorRegressionError
 from src.generator.core.lease import LeaseOwnershipLostError, LeaseUnavailableError
-from src.ingestion.batch import BatchIdentityConflictError
-from src.ingestion.lease import TableLeaseOwnershipLostError, TableLeaseUnavailableError
-from src.ingestion.metadata import WatermarkConflictError
-from src.ingestion.quarantine import RejectRateExceededError
-from src.ingestion.schema import SourceContractError as BronzeSchemaContractError
-from src.ingestion.validation import SourceContractError as BatchValidationContractError
-from src.ingestion.verification import BronzeCommitVerificationError
+from src.ingestion.bronze.verification import BronzeCommitVerificationError
+from src.ingestion.contract.schema import SourceContractError as BronzeSchemaContractError
+from src.ingestion.control.batch import BatchIdentityConflictError
+from src.ingestion.control.lease import TableLeaseOwnershipLostError, TableLeaseUnavailableError
+from src.ingestion.control.metadata import WatermarkConflictError
+from src.ingestion.extraction.quarantine import RejectRateExceededError
+from src.ingestion.extraction.validation import SourceContractError as BatchValidationContractError
 from src.warehouse.errors import (
     DBT_BUILD_ERROR,
     DBT_TEST_ERROR,

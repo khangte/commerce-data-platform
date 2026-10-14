@@ -10,10 +10,10 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from src.common.database import PostgresSettings
-from src.ingestion.extract import cursor_before_timestamp
-from src.ingestion.lease import acquire_table_lease, release_table_lease
-from src.ingestion.metadata import CursorPosition, get_or_create_watermark, rewind_watermark
-from src.ingestion.tables import TABLE_CONFIGS, table_config
+from src.ingestion.contract.tables import TABLE_CONFIGS, table_config
+from src.ingestion.control.lease import acquire_table_lease, release_table_lease
+from src.ingestion.control.metadata import CursorPosition, get_or_create_watermark, rewind_watermark
+from src.ingestion.extraction.extract import cursor_before_timestamp
 
 
 @dataclass(frozen=True)

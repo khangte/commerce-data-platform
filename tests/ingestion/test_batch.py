@@ -6,13 +6,13 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from src.ingestion.batch import (
+from src.ingestion.control.batch import (
     BatchIdentity,
     BatchIdentityConflictError,
     CommittedTableBatch,
     assert_reusable_table_batch,
 )
-from src.ingestion.metadata import CursorPosition, Watermark
+from src.ingestion.control.metadata import CursorPosition, Watermark
 
 
 def test_batch_identity_builds_one_deterministic_batch_and_six_unique_table_batches() -> None:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.ingestion.schema import SourceContractError, assert_supported_schema_version
+from src.ingestion.contract.schema import SourceContractError, assert_supported_schema_version
 
 
 def test_schema_version_three_is_supported_and_old_version_is_contract_error() -> None:

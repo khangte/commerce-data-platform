@@ -9,10 +9,13 @@ from dataclasses import replace
 import pytest
 
 from src.common.database import PostgresSettings
-from src.ingestion.extract import SourcePage, open_table_snapshot
-from src.ingestion.metadata import CursorPosition
-from src.ingestion.references import CHILD_PARENT_REFERENCES, find_broken_parent_references
-from src.ingestion.tables import TableConfig, table_config
+from src.ingestion.contract.tables import TableConfig, table_config
+from src.ingestion.control.metadata import CursorPosition
+from src.ingestion.extraction.extract import SourcePage, open_table_snapshot
+from src.ingestion.extraction.references import (
+    CHILD_PARENT_REFERENCES,
+    find_broken_parent_references,
+)
 
 pytestmark = pytest.mark.integration
 

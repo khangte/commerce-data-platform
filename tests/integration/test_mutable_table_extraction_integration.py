@@ -22,9 +22,9 @@ from src.generator.customers.subscription_payments import (
     persist_subscription_payments,
     plan_subscription_payment,
 )
-from src.ingestion.extract import open_table_snapshot
-from src.ingestion.metadata import CursorPosition
-from src.ingestion.tables import table_config
+from src.ingestion.contract.tables import table_config
+from src.ingestion.control.metadata import CursorPosition
+from src.ingestion.extraction.extract import open_table_snapshot
 
 pytestmark = pytest.mark.integration
 

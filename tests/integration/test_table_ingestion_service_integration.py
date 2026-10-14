@@ -10,9 +10,9 @@ import pytest
 from psycopg.types.json import Jsonb
 
 from src.common.database import PostgresSettings
-from src.ingestion.metadata import CursorPosition, get_or_create_watermark
+from src.ingestion.bronze.storage import SeaweedFSSettings, seaweedfs_s3_client
+from src.ingestion.control.metadata import CursorPosition, get_or_create_watermark
 from src.ingestion.service import TableIngestionRequest, ingest_table, table_object_keys
-from src.ingestion.storage import SeaweedFSSettings, seaweedfs_s3_client
 
 pytestmark = pytest.mark.integration
 

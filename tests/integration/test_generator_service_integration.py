@@ -22,7 +22,7 @@ from src.generator.core.lease import (
 from src.generator.customers.customers import new_customer_record
 from src.generator.orders.orders import fetch_order_catalog, new_order_bundle
 from src.generator.service import MUTABLE_SOURCE_TABLES, resolve_source_snapshot_id, run_generator
-from src.ingestion.tables import TABLE_CONFIGS
+from src.ingestion.contract.tables import TABLE_CONFIGS
 
 pytestmark = pytest.mark.integration
 

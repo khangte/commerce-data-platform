@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.ingestion.storage import (
+from src.ingestion.bronze.storage import (
     BRONZE_PREFIX,
     QUARANTINE_PREFIX,
     STAGING_PREFIX,
@@ -36,7 +36,7 @@ def test_seaweedfs_settings_uses_default_local_host() -> None:
 
 def test_seaweedfs_settings_requires_all_credentials(monkeypatch) -> None:
     """필수 S3 Credential 또는 Bucket이 없으면 환경 설정을 거부한다."""
-    monkeypatch.setattr("src.ingestion.storage.environment_values", dict)
+    monkeypatch.setattr("src.ingestion.bronze.storage.environment_values", dict)
 
     with pytest.raises(ValueError, match="SEAWEEDFS_S3_PORT"):
         SeaweedFSSettings.from_environment()

@@ -5,9 +5,9 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from src.ingestion import rules
+from src.ingestion.contract import rules
 
-VALIDATION_SOURCE = Path(__file__).resolve().parents[2] / "src/ingestion/validation.py"
+VALIDATION_SOURCE = Path(__file__).resolve().parents[2] / "src/ingestion/extraction/validation.py"
 
 
 def test_registry_follows_prd_section_11_order() -> None:

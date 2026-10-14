@@ -10,11 +10,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from src.common.database import PROJECT_ROOT, PostgresSettings
-from src.ingestion.catalog import sync_bronze_catalog
-from src.ingestion.lease import warehouse_source_freeze
+from src.ingestion.bronze.catalog import sync_bronze_catalog
+from src.ingestion.bronze.storage import SeaweedFSSettings
+from src.ingestion.contract.tables import TABLE_CONFIGS
+from src.ingestion.control.lease import warehouse_source_freeze
 from src.ingestion.service import TableIngestionRequest, TableIngestionResult, ingest_table
-from src.ingestion.storage import SeaweedFSSettings
-from src.ingestion.tables import TABLE_CONFIGS
 
 DEFAULT_LOCAL_DIRECTORY = Path(tempfile.gettempdir()) / "commerce-data-platform" / "ingestion"
 DEFAULT_CATALOG_PATH = PROJECT_ROOT / "data" / "warehouse" / "warehouse.duckdb"

@@ -16,7 +16,24 @@ from src.generator.core.lease import (
     assert_source_mutation_lease,
     release_source_mutation_lease,
 )
-from src.ingestion.batch import (
+from src.ingestion.bronze.bronze import (
+    BronzeWriteContext,
+    LocalParquetArtifact,
+    TableBronzeWriter,
+    table_logical_hash,
+)
+from src.ingestion.bronze.manifest import BronzeManifest, QuarantineManifest
+from src.ingestion.bronze.storage import (
+    BRONZE_PREFIX,
+    QUARANTINE_PREFIX,
+    SeaweedFSSettings,
+    ensure_bucket,
+    upload_new_bytes,
+    upload_new_file,
+    verify_parquet_object,
+)
+from src.ingestion.contract.tables import TableConfig, table_config
+from src.ingestion.control.batch import (
     BatchIdentity,
     BatchIdentityConflictError,
     CommittedTableBatch,
@@ -24,24 +41,14 @@ from src.ingestion.batch import (
     assert_reusable_table_batch,
     get_committed_table_batch,
 )
-from src.ingestion.bronze import (
-    BronzeWriteContext,
-    LocalParquetArtifact,
-    TableBronzeWriter,
-    table_logical_hash,
-)
-from src.ingestion.corruption import CorruptionPlan, inject_corruption
-from src.ingestion.errors import BATCH_IDENTITY_CONFLICT, classify_error
-from src.ingestion.extract import SourcePage, open_table_snapshot
-from src.ingestion.lease import (
+from src.ingestion.control.lease import (
     LeaseHeartbeat,
     TableLease,
     acquire_table_lease,
     assert_table_lease,
     release_table_lease,
 )
-from src.ingestion.manifest import BronzeManifest, QuarantineManifest
-from src.ingestion.metadata import (
+from src.ingestion.control.metadata import (
     PipelineRun,
     QuarantineBatch,
     TableCommit,
@@ -53,24 +60,17 @@ from src.ingestion.metadata import (
     record_started_run,
     record_success_no_data_run,
 )
-from src.ingestion.quarantine import (
+from src.ingestion.errors import BATCH_IDENTITY_CONFLICT, classify_error
+from src.ingestion.extraction.corruption import CorruptionPlan, inject_corruption
+from src.ingestion.extraction.extract import SourcePage, open_table_snapshot
+from src.ingestion.extraction.quarantine import (
     LocalQuarantineArtifact,
     QuarantineWriteContext,
     QuarantineWriter,
     assert_reject_rate,
 )
-from src.ingestion.references import find_broken_parent_references
-from src.ingestion.storage import (
-    BRONZE_PREFIX,
-    QUARANTINE_PREFIX,
-    SeaweedFSSettings,
-    ensure_bucket,
-    upload_new_bytes,
-    upload_new_file,
-    verify_parquet_object,
-)
-from src.ingestion.tables import TableConfig, table_config
-from src.ingestion.validation import ValidationPipeline
+from src.ingestion.extraction.references import find_broken_parent_references
+from src.ingestion.extraction.validation import ValidationPipeline
 
 
 @dataclass(frozen=True)

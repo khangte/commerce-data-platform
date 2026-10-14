@@ -43,7 +43,7 @@ from src.generator.customers.subscription_scan import (
 from src.generator.orders.existing_orders import run_existing_order_transitions
 from src.generator.orders.new_orders import create_new_orders
 from src.generator.orders.orders import fetch_order_catalog
-from src.ingestion.tables import TABLE_CONFIGS
+from src.ingestion.contract.tables import TABLE_CONFIGS
 
 MUTABLE_SOURCE_TABLES = (
     "customers",

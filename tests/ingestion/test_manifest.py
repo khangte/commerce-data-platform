@@ -8,8 +8,8 @@ from datetime import UTC, datetime
 
 import pytest
 
-from src.ingestion.manifest import VERIFIED_OBJECT_STATE, BronzeManifest
-from src.ingestion.metadata import CursorPosition
+from src.ingestion.bronze.manifest import VERIFIED_OBJECT_STATE, BronzeManifest
+from src.ingestion.control.metadata import CursorPosition
 
 
 def test_manifest_serializes_verified_object_evidence_without_commit_secrets_or_paths() -> None:

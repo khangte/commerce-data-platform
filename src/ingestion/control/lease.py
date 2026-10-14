@@ -17,7 +17,7 @@ from src.generator.core.lease import (
     release_source_mutation_lease,
     renew_source_mutation_lease,
 )
-from src.ingestion.metadata import TableLeaseOwnershipLostError, get_or_create_watermark
+from src.ingestion.control.metadata import TableLeaseOwnershipLostError, get_or_create_watermark
 
 DEFAULT_TABLE_LEASE_TTL = timedelta(minutes=30)
 DEFAULT_LEASE_RENEWAL_INTERVAL = timedelta(minutes=5)

@@ -32,12 +32,12 @@ from src.common.database import PostgresSettings
 from src.common.row_hash import hash_cursor_rows
 from src.generator.core.config import GENERATOR_VERSION, GeneratorConfig
 from src.generator.service import resolve_source_snapshot_id, run_generator
-from src.ingestion.extract import cursor_before_timestamp
-from src.ingestion.metadata import CursorPosition, get_or_create_watermark
+from src.ingestion.bronze.storage import SeaweedFSSettings, stored_object_from_head
+from src.ingestion.contract.tables import TABLE_CONFIGS, table_config
+from src.ingestion.control.metadata import CursorPosition, get_or_create_watermark
+from src.ingestion.extraction.extract import cursor_before_timestamp
 from src.ingestion.reprocess import RewindOutcome, rewind_tables
 from src.ingestion.service import TableIngestionRequest, TableIngestionResult, ingest_table
-from src.ingestion.storage import SeaweedFSSettings, stored_object_from_head
-from src.ingestion.tables import TABLE_CONFIGS, table_config
 
 EXTRACT_SCENARIO = BenchmarkScenario(
     scenario="extract",

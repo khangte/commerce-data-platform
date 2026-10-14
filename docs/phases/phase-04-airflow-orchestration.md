@@ -150,7 +150,7 @@ Health Check를 추가했다.
 - `docker compose config --quiet`와 `docker compose --profile airflow config --quiet`로 기본 및 Airflow
   Profile Compose 구성을 검증했다.
 - `docker compose --profile airflow build airflow-api-server`와 Image 내부 `pip check`를 통과했다.
-- Airflow Container에서 `airflow`, 프로젝트 의존성, `src.ingestion.storage` Import를 확인했다.
+- Airflow Container에서 `airflow`, 프로젝트 의존성, `src.ingestion.bronze.storage` Import를 확인했다.
 - 호스트 사용자 UID로 실행한 Airflow Container가 Log와 DuckDB Warehouse 쓰기 경로에 파일을 생성·제거할 수
   있음을 확인했다.
 - `docker compose --profile airflow down`과 `up -d`로 Fresh Boot를 재현했다. `airflow-init`이

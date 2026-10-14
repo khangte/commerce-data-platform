@@ -26,9 +26,9 @@ from src.generator.customers.subscription_payments import (
     persist_subscription_payments,
     plan_subscription_payment,
 )
-from src.ingestion.metadata import CursorPosition
+from src.ingestion.bronze.storage import SeaweedFSSettings
+from src.ingestion.control.metadata import CursorPosition
 from src.ingestion.service import TableIngestionResult
-from src.ingestion.storage import SeaweedFSSettings
 from src.warehouse.mart_hash import describe_mart_difference, mart_logical_hashes, target_for
 from tests.integration.test_subscription_payment_temporal_join_integration import (
     FIXTURE_START,

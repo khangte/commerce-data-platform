@@ -10,8 +10,9 @@ from types import MappingProxyType
 import pyarrow.parquet as pq
 import pytest
 
-from src.ingestion.extract import SourceRecord
-from src.ingestion.quarantine import (
+from src.ingestion.contract.tables import ORDERS_TABLE
+from src.ingestion.extraction.extract import SourceRecord
+from src.ingestion.extraction.quarantine import (
     MAX_REJECT_RATE,
     QuarantineWriteContext,
     QuarantineWriter,
@@ -19,8 +20,7 @@ from src.ingestion.quarantine import (
     assert_reject_rate,
     quarantine_record_id,
 )
-from src.ingestion.tables import ORDERS_TABLE
-from src.ingestion.validation import RejectedRecord
+from src.ingestion.extraction.validation import RejectedRecord
 
 
 def test_quarantine_writer_preserves_deterministic_id_raw_payload_and_error_counts(

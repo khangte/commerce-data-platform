@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import duckdb
 
-from src.ingestion.storage import SeaweedFSSettings
+from src.ingestion.bronze.storage import SeaweedFSSettings
 
 
 def configure_s3(connection: duckdb.DuckDBPyConnection, storage: SeaweedFSSettings) -> None:

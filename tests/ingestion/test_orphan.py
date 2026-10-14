@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from src.ingestion import orphan
-from src.ingestion.orphan import OrphanCandidate, find_orphan_candidates
+from src.ingestion.bronze import orphan
+from src.ingestion.bronze.orphan import OrphanCandidate, find_orphan_candidates
 
 
 class _Connection:

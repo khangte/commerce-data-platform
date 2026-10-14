@@ -11,8 +11,8 @@ from typing import cast
 from uuid import UUID
 
 from src.common.database import PostgresSettings
-from src.ingestion.orphan import find_orphan_candidates
-from src.ingestion.storage import SeaweedFSSettings, list_object_keys
+from src.ingestion.bronze.orphan import find_orphan_candidates
+from src.ingestion.bronze.storage import SeaweedFSSettings, list_object_keys
 from src.warehouse.mart_hash import mart_logical_hashes, mart_row_counts, target_for
 from src.warehouse.publish_metadata import PublishRecord, get_publish_run
 

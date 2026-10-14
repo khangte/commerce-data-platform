@@ -14,8 +14,8 @@ import duckdb
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from src.ingestion.extract import SourcePage, SourceRecord
-from src.ingestion.tables import BRONZE_SCHEMA_VERSION, TableConfig
+from src.ingestion.contract.tables import BRONZE_SCHEMA_VERSION, TableConfig
+from src.ingestion.extraction.extract import SourcePage, SourceRecord
 
 ROW_GROUP_TARGET_ROWS = 128_000
 

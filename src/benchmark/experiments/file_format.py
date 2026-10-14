@@ -27,14 +27,14 @@ from src.benchmark.runner import ArmResult
 from src.benchmark.settings import benchmark_settings
 from src.benchmark.store import BENCHMARK_DATA_ROOT
 from src.common.row_hash import canonical_row_json
-from src.ingestion.storage import (
+from src.ingestion.bronze.storage import (
     SeaweedFSSettings,
     StoredObject,
     ensure_bucket,
     stored_object_from_head,
     upload_new_file,
 )
-from src.ingestion.tables import table_config
+from src.ingestion.contract.tables import table_config
 
 FIXTURE_TABLE = "sellers"
 

@@ -8,9 +8,9 @@ import pyarrow as pa
 import pytest
 
 from src.common.database import PostgresSettings
-from src.ingestion.extract import open_table_snapshot
-from src.ingestion.metadata import CursorPosition
-from src.ingestion.tables import TableConfig, table_config
+from src.ingestion.contract.tables import TableConfig, table_config
+from src.ingestion.control.metadata import CursorPosition
+from src.ingestion.extraction.extract import open_table_snapshot
 
 pytestmark = pytest.mark.integration
 

@@ -20,11 +20,11 @@ from src.generator.core.lease import (
     acquire_source_mutation_lease,
     release_source_mutation_lease,
 )
-from src.ingestion.batch import BatchIdentity
+from src.ingestion.bronze.storage import SeaweedFSSettings
+from src.ingestion.bronze.verification import verify_bronze_commit
+from src.ingestion.control.batch import BatchIdentity
 from src.ingestion.errors import classify_error, is_retryable
 from src.ingestion.service import TableIngestionRequest, ingest_table
-from src.ingestion.storage import SeaweedFSSettings
-from src.ingestion.verification import verify_bronze_commit
 from src.serving.export import ServingPaths, export_serving_mart
 from src.serving.metabase_repoint import (
     metabase_repoint_summary_status,

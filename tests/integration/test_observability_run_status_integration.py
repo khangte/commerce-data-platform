@@ -11,7 +11,7 @@ import pytest
 from psycopg.types.json import Jsonb
 
 from src.common.database import PostgresSettings
-from src.ingestion.metadata import ensure_ingestion_metadata
+from src.ingestion.control.metadata import ensure_ingestion_metadata
 from src.warehouse.publish_metadata import ensure_publish_metadata
 
 pytestmark = pytest.mark.integration
