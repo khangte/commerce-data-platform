@@ -75,7 +75,7 @@ class WarehousePaths:
     @property
     def published_wal(self) -> Path:
         """Published 파일의 WAL 경로를 반환한다."""
-        return _wal_path(self.published)
+        return wal_path(self.published)
 
     def build_file(self, publish_run_id: uuid.UUID) -> Path:
         """Publish Run의 Build 파일 경로를 반환한다."""
@@ -186,13 +186,13 @@ def publish_build(
     build_path = paths.build_file(publish_run_id)
     try:
         _checkpoint(build_path)
-        if _wal_path(build_path).exists():
+        if wal_path(build_path).exists():
             raise PublishedWalError(f"Build warehouse still has a WAL: {build_path}")
         hashes = mart_logical_hashes(build_path, targets)
         counts = mart_row_counts(build_path, targets)
         mark_publishing(settings, publish_run_id, mart_hashes=hashes, mart_row_counts=counts)
         os.replace(build_path, paths.published)
-        _fsync_directory(paths.published.parent)
+        fsync_directory(paths.published.parent)
         mark_published(settings, publish_run_id, now=now or datetime.now(UTC))
     except Exception as error:
         if build_path.exists():
@@ -274,8 +274,8 @@ def _isolate_build(
     paths.failed_dir.mkdir(parents=True, exist_ok=True)
     target = paths.failed_file(publish_run_id)
     os.replace(source, target)
-    if _wal_path(source).exists():
-        os.replace(_wal_path(source), _wal_path(target))
+    if wal_path(source).exists():
+        os.replace(wal_path(source), wal_path(target))
     os.utime(target, (now.timestamp(), now.timestamp()))
     return target
 
@@ -289,7 +289,7 @@ def _prune_failed_builds(failed_dir: Path, keep: int = FAILED_BUILD_RETENTION) -
     )
     for stale in builds[keep:]:
         stale.unlink(missing_ok=True)
-        _wal_path(stale).unlink(missing_ok=True)
+        wal_path(stale).unlink(missing_ok=True)
 
 
 def _checkpoint(warehouse_path: Path) -> None:
@@ -298,7 +298,7 @@ def _checkpoint(warehouse_path: Path) -> None:
         connection.execute("CHECKPOINT")
 
 
-def _fsync_directory(directory: Path) -> None:
+def fsync_directory(directory: Path) -> None:
     """Rename 결과가 Disk에 남도록 Directory를 fsync한다."""
     descriptor = os.open(directory, os.O_RDONLY)
     try:
@@ -307,7 +307,7 @@ def _fsync_directory(directory: Path) -> None:
         os.close(descriptor)
 
 
-def _wal_path(warehouse_path: Path) -> Path:
+def wal_path(warehouse_path: Path) -> Path:
     """DuckDB 파일의 WAL 경로를 반환한다."""
     return warehouse_path.with_name(f"{warehouse_path.name}.wal")
 

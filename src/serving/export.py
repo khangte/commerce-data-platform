@@ -15,7 +15,7 @@ import duckdb
 
 from src.common.database import PROJECT_ROOT, PostgresSettings
 from src.warehouse.mart_hash import mart_logical_hashes, mismatched_relations, target_for
-from src.warehouse.publish import DEFAULT_WAREHOUSE_ROOT, _fsync_directory, _wal_path
+from src.warehouse.publish import DEFAULT_WAREHOUSE_ROOT, fsync_directory, wal_path
 from src.warehouse.publish_metadata import PUBLISHED, get_latest_publish_run, get_publish_run
 
 SERVING_FILE_NAME = "mart.duckdb"
@@ -59,8 +59,8 @@ def export_serving_mart(
     now: datetime,
 ) -> ServingExportResult:
     """Published Mart만 복사해 Serving 파일을 원자 교체하고 Publish Hash를 기록한다."""
-    if _wal_path(published).exists():
-        raise ValueError(f"Published warehouse has a WAL: {_wal_path(published)}")
+    if wal_path(published).exists():
+        raise ValueError(f"Published warehouse has a WAL: {wal_path(published)}")
     if not published.is_file():
         raise FileNotFoundError(f"Published warehouse does not exist: {published}")
     targets = tuple(target_for(relation) for relation in mart_hashes)
@@ -87,19 +87,19 @@ def export_serving_mart(
         )
         _validate_serving_file(build_path)
         _checkpoint(build_path)
-        if _wal_path(build_path).exists():
-            raise ValueError(f"Serving build has a WAL: {_wal_path(build_path)}")
+        if wal_path(build_path).exists():
+            raise ValueError(f"Serving build has a WAL: {wal_path(build_path)}")
         paths.serving.parent.mkdir(parents=True, exist_ok=True)
         versions_dir = paths.serving.parent / "exports"
         versions_dir.mkdir(parents=True, exist_ok=True)
         versioned_path = versions_dir / f"{export_id}.duckdb"
         os.link(build_path, versioned_path)
         os.replace(build_path, paths.serving)
-        _fsync_directory(versions_dir)
-        _fsync_directory(paths.serving.parent)
+        fsync_directory(versions_dir)
+        fsync_directory(paths.serving.parent)
     except Exception:
         build_path.unlink(missing_ok=True)
-        _wal_path(build_path).unlink(missing_ok=True)
+        wal_path(build_path).unlink(missing_ok=True)
         if versioned_path is not None:
             versioned_path.unlink(missing_ok=True)
         raise
@@ -113,7 +113,7 @@ def prune_serving_exports(versions_dir: Path, keep: int = 3) -> None:
     )
     for old_version in versions[keep:]:
         old_version.unlink()
-    _fsync_directory(versions_dir)
+    fsync_directory(versions_dir)
 
 
 def _copy_mart_objects(published: Path, build_path: Path, storage_version: str) -> dict[str, int]:
