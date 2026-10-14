@@ -6,8 +6,8 @@ import uuid
 from datetime import UTC, datetime
 from unittest.mock import MagicMock
 
-from src.generator.commits import committed_result, record_source_commit
-from src.generator.config import GENERATOR_VERSION, GeneratorConfig
+from src.generator.core.commits import committed_result, record_source_commit
+from src.generator.core.config import GENERATOR_VERSION, GeneratorConfig
 
 
 def _config() -> GeneratorConfig:

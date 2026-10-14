@@ -6,9 +6,12 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from src.generator import subscription_payments, subscription_scan
-from src.generator.config import GENERATOR_VERSION, GeneratorConfig
-from src.generator.customers import AxisMutationResult, new_subscription_record_for_customer
+from src.generator.core.config import GENERATOR_VERSION, GeneratorConfig
+from src.generator.customers import subscription_payments, subscription_scan
+from src.generator.customers.customers import (
+    AxisMutationResult,
+    new_subscription_record_for_customer,
+)
 
 DUE = datetime(2026, 10, 4, tzinfo=UTC)
 

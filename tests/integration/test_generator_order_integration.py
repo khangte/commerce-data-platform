@@ -11,9 +11,9 @@ import psycopg
 import pytest
 
 from src.common.database import PostgresSettings
-from src.generator.config import GENERATOR_VERSION, GeneratorConfig
-from src.generator.customers import new_customer_record
-from src.generator.orders import (
+from src.generator.core.config import GENERATOR_VERSION, GeneratorConfig
+from src.generator.customers.customers import new_customer_record
+from src.generator.orders.orders import (
     OrderBundle,
     fetch_order_catalog,
     new_order_bundle,

@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from unittest.mock import MagicMock
 
 from src.generator import service
-from src.generator.config import GENERATOR_VERSION, GeneratorConfig
+from src.generator.core.config import GENERATOR_VERSION, GeneratorConfig
 
 
 def test_successful_result_query_matches_progress_time_scale() -> None:

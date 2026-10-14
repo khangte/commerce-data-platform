@@ -10,8 +10,8 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from src.common.database import PostgresSettings
-from src.generator.config import GENERATOR_VERSION, GeneratorConfig
-from src.generator.customers import (
+from src.generator.core.config import GENERATOR_VERSION, GeneratorConfig
+from src.generator.customers.customers import (
     ensure_membership_tier_records,
     ensure_subscription_records,
     membership_tier_change_records,

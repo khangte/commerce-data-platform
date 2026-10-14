@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from src.generator.config import GeneratorConfig
-from src.generator.customers import (
+from src.generator.core.config import GeneratorConfig
+from src.generator.core.ids import logical_hash
+from src.generator.customers.customers import (
     MembershipTierRecord,
     SubscriptionRecord,
     membership_tier_change_records,
@@ -12,7 +13,6 @@ from src.generator.customers import (
     persist_subscription_records,
     subscription_transition_records,
 )
-from src.generator.ids import logical_hash
 
 
 def apply_membership_tier_change(connection, config: GeneratorConfig):

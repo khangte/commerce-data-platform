@@ -10,16 +10,15 @@ from datetime import datetime
 import psycopg
 
 from src.common.database import PostgresSettings
-from src.generator.commits import (
+from src.generator.core.commits import (
     committed_result,
     ensure_generator_commits,
     record_source_commit,
 )
-from src.generator.config import GeneratorConfig
-from src.generator.errors import SourceCursorRegressionError
-from src.generator.existing_orders import run_existing_order_transitions
-from src.generator.ids import logical_hash
-from src.generator.lease import (
+from src.generator.core.config import GeneratorConfig
+from src.generator.core.errors import SourceCursorRegressionError
+from src.generator.core.ids import logical_hash
+from src.generator.core.lease import (
     GENERATOR_OWNER_TYPE,
     SourceMutationLease,
     acquire_source_mutation_lease,
@@ -27,22 +26,23 @@ from src.generator.lease import (
     fenced_source_commit,
     release_source_mutation_lease,
 )
-from src.generator.metadata import (
+from src.generator.core.metadata import (
     ensure_generator_metadata,
     record_finished_run,
     record_started_run,
 )
-from src.generator.new_orders import create_new_orders
-from src.generator.orders import fetch_order_catalog
-from src.generator.profile_mutations import (
+from src.generator.customers.profile_mutations import (
     apply_membership_tier_change,
     apply_subscription_transition,
 )
-from src.generator.subscription_scan import (
+from src.generator.customers.subscription_scan import (
     forced_failure_row,
     run_subscription_expiry_scan,
     select_due_subscription_for_failed_profile,
 )
+from src.generator.orders.existing_orders import run_existing_order_transitions
+from src.generator.orders.new_orders import create_new_orders
+from src.generator.orders.orders import fetch_order_catalog
 from src.ingestion.tables import TABLE_CONFIGS
 
 MUTABLE_SOURCE_TABLES = (

@@ -10,8 +10,10 @@ from unittest.mock import MagicMock
 import pytest
 
 from src.common.database import PostgresSettings
-from src.generator import new_orders, service, subscription_payments
-from src.generator.config import GENERATOR_VERSION, GeneratorConfig
+from src.generator import service
+from src.generator.core.config import GENERATOR_VERSION, GeneratorConfig
+from src.generator.customers import subscription_payments
+from src.generator.orders import new_orders
 
 pytestmark = pytest.mark.integration
 

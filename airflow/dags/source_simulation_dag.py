@@ -11,7 +11,7 @@ from airflow.sdk.definitions.param import Param
 from airflow.sdk.exceptions import AirflowFailException
 
 from src.common.database import PostgresSettings
-from src.generator.config import (
+from src.generator.core.config import (
     GENERATOR_VERSION,
     SUPPORTED_ANOMALY_PROFILES,
     GeneratorConfig,

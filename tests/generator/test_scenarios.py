@@ -8,21 +8,21 @@ from uuid import UUID
 
 import pytest
 
-from src.generator.config import GENERATOR_VERSION, GeneratorConfig
-from src.generator.customers import (
+from src.generator.core.config import GENERATOR_VERSION, GeneratorConfig
+from src.generator.customers.customers import (
     MembershipTierRecord,
     SubscriptionRecord,
     new_customer_record,
 )
-from src.generator.orders import OrderCatalog, ProductReference, SellerReference
-from src.generator.scenarios import (
+from src.generator.orders.orders import OrderCatalog, ProductReference, SellerReference
+from src.generator.orders.scenarios import (
     delayed_payment_transition,
     late_order_bundle,
     late_order_update_transition,
     membership_change_scenario,
     subscription_transition_scenario,
 )
-from src.generator.transitions import OrderState, PaymentState
+from src.generator.orders.transitions import OrderState, PaymentState
 
 
 def _config() -> GeneratorConfig:

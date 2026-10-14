@@ -8,8 +8,8 @@ from uuid import UUID
 
 import pytest
 
-from src.generator.config import GENERATOR_VERSION, GeneratorConfig
-from src.generator.subscription_payments import (
+from src.generator.core.config import GENERATOR_VERSION, GeneratorConfig
+from src.generator.customers.subscription_payments import (
     MONTHLY_SUBSCRIPTION_FEE,
     SubscriptionPaymentRecord,
     plan_subscription_payment,

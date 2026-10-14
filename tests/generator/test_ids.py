@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 
-from src.generator.ids import deterministic_uuid, logical_hash
+from src.generator.core.ids import deterministic_uuid, logical_hash
 
 
 def test_deterministic_uuid_is_stable_and_changes_with_business_input() -> None:

@@ -5,21 +5,21 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import datetime, timedelta
 
-from src.generator.config import GeneratorConfig
-from src.generator.customers import (
+from src.generator.core.config import GeneratorConfig
+from src.generator.customers.customers import (
     CustomerRecord,
     MembershipTierRecord,
     SubscriptionRecord,
     membership_tier_change_records,
     subscription_transition_records,
 )
-from src.generator.orders import (
+from src.generator.orders.orders import (
     OrderBundle,
     OrderCatalog,
     estimated_delivery_date,
     new_order_bundle,
 )
-from src.generator.transitions import (
+from src.generator.orders.transitions import (
     OrderState,
     OrderTransition,
     PaymentState,

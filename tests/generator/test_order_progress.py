@@ -6,9 +6,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.generator.config import GENERATOR_VERSION, GeneratorConfig
-from src.generator.order_progress import plan_order_progress, planned_order_times
-from src.generator.transitions import OrderState, PaymentState
+from src.generator.core.config import GENERATOR_VERSION, GeneratorConfig
+from src.generator.orders.order_progress import plan_order_progress, planned_order_times
+from src.generator.orders.transitions import OrderState, PaymentState
 
 
 def test_progress_is_deterministic_and_advances_one_stage_per_run() -> None:
@@ -60,7 +60,8 @@ def test_cancellation_branches_update_payment_consistently() -> None:
 
 def test_source_step_excludes_seed_and_updates_order_with_payment(monkeypatch) -> None:
     """Seed 뒤 생성된 주문 한 건에만 한 단계와 결제 전이를 같은 실행 시각으로 적용한다."""
-    from src.generator import existing_orders, service
+    from src.generator import service
+    from src.generator.orders import existing_orders
 
     created_at = datetime(2026, 9, 4, tzinfo=UTC)
     logical_date = created_at + timedelta(days=20)
@@ -111,7 +112,8 @@ def test_source_step_excludes_seed_and_updates_order_with_payment(monkeypatch) -
 
 def test_future_candidate_does_not_fetch_row_or_check_lease(monkeypatch) -> None:
     """전이 예정 전 주문은 후보 조회 후 추가 조회와 쓰기를 하지 않는다."""
-    from src.generator import existing_orders, service
+    from src.generator import service
+    from src.generator.orders import existing_orders
 
     logical_date = datetime(2026, 9, 29, 10, tzinfo=UTC)
     seeded_at = logical_date - timedelta(days=30)
@@ -146,7 +148,8 @@ def test_scale_one_matches_previous_schedule() -> None:
 
 def test_source_step_passes_scale_and_recorded_times(monkeypatch) -> None:
     """후보의 기록된 승인·출고 시각과 Config 배율을 진행 계획에 넘긴다."""
-    from src.generator import existing_orders, service
+    from src.generator import service
+    from src.generator.orders import existing_orders
 
     created_at = datetime(2026, 9, 4, tzinfo=UTC)
     approved_at = created_at + timedelta(minutes=1)
@@ -223,7 +226,8 @@ def test_scale_decrease_waits_full_delay_from_recorded_time() -> None:
 
 def test_missing_successful_seed_has_clear_error() -> None:
     """성공한 Seed 이력이 사라졌으면 원인을 드러내며 중단한다."""
-    from src.generator import existing_orders, service
+    from src.generator import service
+    from src.generator.orders import existing_orders
 
     logical_date = datetime(2026, 9, 29, 10, tzinfo=UTC)
     config = GeneratorConfig("seed:test", 0, logical_date, 0, "default", GENERATOR_VERSION)

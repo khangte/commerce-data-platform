@@ -9,9 +9,9 @@ from datetime import UTC, datetime
 import pytest
 
 from src.common.database import PostgresSettings
-from src.generator.config import GENERATOR_VERSION, GeneratorConfig
-from src.generator.ids import logical_hash
-from src.generator.metadata import (
+from src.generator.core.config import GENERATOR_VERSION, GeneratorConfig
+from src.generator.core.ids import logical_hash
+from src.generator.core.metadata import (
     ensure_generator_metadata,
     record_finished_run,
     record_started_run,

@@ -30,7 +30,7 @@ from src.benchmark.runner import ArmResult
 from src.benchmark.settings import benchmark_settings
 from src.common.database import PostgresSettings
 from src.common.row_hash import hash_cursor_rows
-from src.generator.config import GENERATOR_VERSION, GeneratorConfig
+from src.generator.core.config import GENERATOR_VERSION, GeneratorConfig
 from src.generator.service import resolve_source_snapshot_id, run_generator
 from src.ingestion.extract import cursor_before_timestamp
 from src.ingestion.metadata import CursorPosition, get_or_create_watermark

@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from src.generator.config import (
+from src.generator.core.config import (
     GENERATOR_VERSION,
     GeneratorConfig,
     int_from_environment,

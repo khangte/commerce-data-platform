@@ -9,8 +9,9 @@ from decimal import Decimal
 
 import psycopg
 
-from src.generator.config import GeneratorConfig
-from src.generator.customers import (
+from src.generator.core.config import GeneratorConfig
+from src.generator.core.ids import deterministic_uuid, logical_hash
+from src.generator.customers.customers import (
     AxisMutationResult,
     CustomerMutationResult,
     CustomerRecord,
@@ -18,7 +19,6 @@ from src.generator.customers import (
     new_membership_tier_record,
     persist_customer_records,
 )
-from src.generator.ids import deterministic_uuid, logical_hash
 
 PAYMENT_TYPES = ("credit_card", "boleto", "voucher")
 ESTIMATED_DELIVERY_DELAY = timedelta(days=7)

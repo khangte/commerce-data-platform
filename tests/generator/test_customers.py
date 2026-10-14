@@ -7,8 +7,8 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from src.generator.config import GENERATOR_VERSION, GeneratorConfig
-from src.generator.customers import (
+from src.generator.core.config import GENERATOR_VERSION, GeneratorConfig
+from src.generator.customers.customers import (
     MembershipTierRecord,
     membership_tier,
     membership_tier_change_records,

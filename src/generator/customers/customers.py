@@ -9,8 +9,8 @@ from uuid import UUID
 
 import psycopg
 
-from src.generator.config import GeneratorConfig
-from src.generator.ids import deterministic_uuid, logical_hash
+from src.generator.core.config import GeneratorConfig
+from src.generator.core.ids import deterministic_uuid, logical_hash
 
 MEMBERSHIP_TIERS = frozenset({"BRONZE", "SILVER", "GOLD"})
 SUBSCRIPTION_STATUSES = frozenset(

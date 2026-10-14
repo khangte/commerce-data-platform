@@ -11,16 +11,16 @@ import pytest
 
 from src.common.database import PostgresSettings
 from src.generator import service
-from src.generator.config import GENERATOR_VERSION, GeneratorConfig
-from src.generator.customers import new_customer_record
-from src.generator.lease import (
+from src.generator.core.config import GENERATOR_VERSION, GeneratorConfig
+from src.generator.core.lease import (
     WAREHOUSE_OWNER_TYPE,
     LeaseOwnershipLostError,
     LeaseUnavailableError,
     acquire_source_mutation_lease,
     release_source_mutation_lease,
 )
-from src.generator.orders import fetch_order_catalog, new_order_bundle
+from src.generator.customers.customers import new_customer_record
+from src.generator.orders.orders import fetch_order_catalog, new_order_bundle
 from src.generator.service import MUTABLE_SOURCE_TABLES, resolve_source_snapshot_id, run_generator
 from src.ingestion.tables import TABLE_CONFIGS
 

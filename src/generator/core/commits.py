@@ -9,7 +9,7 @@ import psycopg
 from psycopg.types.json import Jsonb
 
 from src.common.database import PostgresSettings, apply_sql_file
-from src.generator.config import GeneratorConfig
+from src.generator.core.config import GeneratorConfig
 
 
 @dataclass(frozen=True)

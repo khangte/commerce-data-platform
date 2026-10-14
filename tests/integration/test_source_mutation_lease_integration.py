@@ -9,7 +9,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from src.common.database import PostgresSettings
-from src.generator.lease import (
+from src.generator.core.lease import (
     GENERATOR_OWNER_TYPE,
     WAREHOUSE_OWNER_TYPE,
     LeaseOwnershipLostError,

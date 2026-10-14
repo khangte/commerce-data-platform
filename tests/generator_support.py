@@ -1,8 +1,8 @@
 """Generator 통합·신뢰성 테스트가 Source에 Fixture 행을 넣는 데 쓰는 트랜잭션 도우미다."""
 
 from src.common.database import PostgresSettings
-from src.generator.orders import OrderBundle, OrderBundleMutationResult, persist_order_bundle
-from src.generator.transitions import (
+from src.generator.orders.orders import OrderBundle, OrderBundleMutationResult, persist_order_bundle
+from src.generator.orders.transitions import (
     PaymentTransition,
     TransitionResult,
     persist_payment_transition,

@@ -9,20 +9,20 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from src.common.database import PostgresSettings
-from src.generator.config import GENERATOR_VERSION, GeneratorConfig
-from src.generator.customers import (
+from src.generator.core.config import GENERATOR_VERSION, GeneratorConfig
+from src.generator.customers.customers import (
     new_customer_record,
     new_membership_tier_record,
     persist_membership_tier_records,
 )
-from src.generator.orders import OrderBundle, fetch_order_catalog
-from src.generator.scenarios import (
+from src.generator.orders.orders import OrderBundle, fetch_order_catalog
+from src.generator.orders.scenarios import (
     delayed_payment_transition,
     late_order_bundle,
     late_order_update_transition,
     membership_change_scenario,
 )
-from src.generator.transitions import (
+from src.generator.orders.transitions import (
     apply_order_transition,
     fetch_order_state,
     fetch_payment_state,

@@ -6,14 +6,14 @@ import uuid
 from dataclasses import replace
 from datetime import datetime, timedelta
 
-from src.generator.config import GeneratorConfig
-from src.generator.customers import (
+from src.generator.core.config import GeneratorConfig
+from src.generator.core.ids import logical_hash
+from src.generator.customers.customers import (
     SubscriptionRecord,
     persist_subscription_records,
     subscription_transition_records,
 )
-from src.generator.ids import logical_hash
-from src.generator.subscription_payments import (
+from src.generator.customers.subscription_payments import (
     latest_completed_billing_period,
     next_attempt_sequence,
     next_billing_cycle_sequence,

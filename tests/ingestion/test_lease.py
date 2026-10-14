@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from src.generator.lease import LeaseOwnershipLostError, SourceMutationLease
+from src.generator.core.lease import LeaseOwnershipLostError, SourceMutationLease
 from src.ingestion import lease
 from src.ingestion.lease import LeaseHeartbeat, TableLease
 

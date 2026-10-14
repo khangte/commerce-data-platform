@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from src.generator.transitions import (
+from src.generator.orders.transitions import (
     OrderState,
     PaymentState,
     plan_order_transition,

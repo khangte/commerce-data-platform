@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-from src.generator.ids import logical_hash
+from src.generator.core.ids import logical_hash
 
 
 @dataclass(frozen=True)

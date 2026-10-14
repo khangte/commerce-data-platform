@@ -11,10 +11,10 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.generator.commits import CommittedResult
-from src.generator.config import GENERATOR_VERSION, GeneratorConfig
-from src.generator.errors import SourceCursorRegressionError
-from src.generator.lease import LeaseOwnershipLostError
+from src.generator.core.commits import CommittedResult
+from src.generator.core.config import GENERATOR_VERSION, GeneratorConfig
+from src.generator.core.errors import SourceCursorRegressionError
+from src.generator.core.lease import LeaseOwnershipLostError
 from src.generator.service import GeneratorResult, run_generator
 from src.ingestion.errors import SOURCE_CONTRACT_ERROR, classify_error, is_retryable
 
@@ -45,7 +45,8 @@ def _config(logical_date: datetime) -> GeneratorConfig:
 @pytest.mark.parametrize("offset", (-timedelta(hours=1), timedelta(0)))
 def test_generator_rejects_earlier_or_equal_cursor_before_source_write(monkeypatch, offset) -> None:
     """이전 최대 갱신 시각 이하의 새 실행은 원천 쓰기 없이 실패한다."""
-    from src.generator import new_orders, service
+    from src.generator import service
+    from src.generator.orders import new_orders
 
     maximum = datetime(2026, 9, 29, 12, tzinfo=UTC)
     config = _config(maximum + offset)
@@ -82,7 +83,8 @@ def test_generator_rejects_earlier_or_equal_cursor_before_source_write(monkeypat
 
 def test_generator_rejects_created_at_cursor_regression(monkeypatch) -> None:
     """주문 항목의 생성 시각 커서만 앞서 있어도 원천 쓰기 전에 실패한다."""
-    from src.generator import new_orders, service
+    from src.generator import service
+    from src.generator.orders import new_orders
 
     logical_date = datetime(2026, 9, 29, 12, tzinfo=UTC)
     settings = MagicMock()
@@ -121,7 +123,8 @@ def test_generator_rejects_created_at_cursor_regression(monkeypatch) -> None:
 
 def test_generator_accepts_forward_cursor_with_empty_tables(monkeypatch) -> None:
     """모든 커서가 이전이거나 비어 있으면 검사를 통과해 원천 쓰기를 시작한다."""
-    from src.generator import new_orders, service
+    from src.generator import service
+    from src.generator.orders import new_orders
 
     logical_date = datetime(2026, 9, 29, 12, tzinfo=UTC)
     settings = MagicMock()
@@ -254,7 +257,8 @@ def test_generator_reports_lease_release_failure_after_success(monkeypatch) -> N
 
 def test_generator_recovers_failed_metadata_write_from_source_commit(monkeypatch) -> None:
     """성공 기록 실패 뒤 재시도가 Source 마커로 원래 실행을 성공으로 복구한다."""
-    from src.generator import new_orders, service
+    from src.generator import service
+    from src.generator.orders import new_orders
 
     config = replace(_config(datetime(2026, 9, 29, 12, tzinfo=UTC)), order_count=0)
     settings = MagicMock()
@@ -303,7 +307,8 @@ def test_generator_recovers_failed_metadata_write_from_source_commit(monkeypatch
 @pytest.mark.parametrize("fence_fails", [False, True])
 def test_source_commit_fence_order_and_rollback(monkeypatch, fence_fails) -> None:
     """마커 기록 뒤 잠금을 잡아 Source 커밋까지 유지하고 진입 실패 시 롤백한다."""
-    from src.generator import new_orders, service
+    from src.generator import service
+    from src.generator.orders import new_orders
 
     config = replace(_config(datetime(2026, 9, 29, 12, tzinfo=UTC)), order_count=0)
     settings = MagicMock()

@@ -11,7 +11,7 @@ import pytest
 from psycopg.types.json import Jsonb
 
 from src.common.database import PostgresSettings
-from src.generator.ids import logical_hash
+from src.generator.core.ids import logical_hash
 from src.ingestion import service as ingestion_service
 from src.ingestion.corruption import INVALID_STATUS, CorruptionPlan
 from src.ingestion.errors import (

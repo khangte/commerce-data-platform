@@ -12,7 +12,7 @@ import duckdb
 import pytest
 
 from src.common.database import PostgresSettings
-from src.generator.customers import (
+from src.generator.customers.customers import (
     ensure_subscription_records,
     new_customer_record,
     new_membership_tier_record,
@@ -20,18 +20,18 @@ from src.generator.customers import (
     persist_membership_tier_records,
     persist_subscription_records,
 )
-from src.generator.orders import new_order_bundle, persist_order_bundle
-from src.generator.scenarios import (
+from src.generator.customers.subscription_payments import (
+    persist_subscription_payments,
+    plan_subscription_payment,
+)
+from src.generator.orders.orders import new_order_bundle, persist_order_bundle
+from src.generator.orders.scenarios import (
     delayed_payment_transition,
     late_order_bundle,
     membership_change_scenario,
     subscription_transition_scenario,
 )
-from src.generator.subscription_payments import (
-    persist_subscription_payments,
-    plan_subscription_payment,
-)
-from src.generator.transitions import fetch_payment_state
+from src.generator.orders.transitions import fetch_payment_state
 from src.ingestion.metadata import CursorPosition
 from src.ingestion.service import TableIngestionRequest, TableIngestionResult, ingest_table
 from src.ingestion.storage import SeaweedFSSettings

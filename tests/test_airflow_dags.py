@@ -88,7 +88,7 @@ def test_source_dag_param_defaults_from_environment(
     monkeypatch: pytest.MonkeyPatch, param: str, variable: str, configured: str | None, expected: int
 ) -> None:
     """원천 DAG 주문 수·배율 Param 기본값은 환경 변수 또는 1이다."""
-    from src.generator.config import int_from_environment
+    from src.generator.core.config import int_from_environment
 
     if configured is None:
         monkeypatch.delenv(variable, raising=False)
@@ -110,7 +110,7 @@ def test_source_dag_param_rejects_invalid_environment(
     monkeypatch: pytest.MonkeyPatch, variable: str, configured: str
 ) -> None:
     """잘못된 env 값은 DAG 파싱 단계에서 실패한다."""
-    from src.generator.config import int_from_environment
+    from src.generator.core.config import int_from_environment
 
     monkeypatch.setenv(variable, configured)
     param = "orders" if variable == "SOURCE_DAG_ORDERS" else "progress_time_scale"

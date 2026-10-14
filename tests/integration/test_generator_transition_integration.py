@@ -9,14 +9,14 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from src.common.database import PostgresSettings
-from src.generator.config import GENERATOR_VERSION, GeneratorConfig
-from src.generator.customers import new_customer_record
-from src.generator.orders import (
+from src.generator.core.config import GENERATOR_VERSION, GeneratorConfig
+from src.generator.customers.customers import new_customer_record
+from src.generator.orders.orders import (
     OrderBundle,
     fetch_order_catalog,
     new_order_bundle,
 )
-from src.generator.transitions import (
+from src.generator.orders.transitions import (
     OrderTransition,
     apply_order_transition,
     fetch_order_state,

@@ -12,7 +12,7 @@ from airflow.sdk import DAG, get_current_context, task
 from airflow.sdk.exceptions import AirflowException, AirflowFailException
 
 from src.common.database import PROJECT_ROOT, PostgresSettings
-from src.generator.lease import (
+from src.generator.core.lease import (
     WAREHOUSE_OWNER_TYPE,
     LeaseOwnershipLostError,
     LeaseUnavailableError,

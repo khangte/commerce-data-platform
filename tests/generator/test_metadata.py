@@ -8,8 +8,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.generator.config import GENERATOR_VERSION, GeneratorConfig
-from src.generator.metadata import record_finished_run, record_started_run
+from src.generator.core.config import GENERATOR_VERSION, GeneratorConfig
+from src.generator.core.metadata import record_finished_run, record_started_run
 
 
 def _config() -> GeneratorConfig:

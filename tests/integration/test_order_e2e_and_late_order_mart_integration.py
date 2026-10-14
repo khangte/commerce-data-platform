@@ -15,20 +15,20 @@ import pytest
 from psycopg.types.json import Jsonb
 
 from src.common.database import PostgresSettings
-from src.generator.config import GENERATOR_VERSION, GeneratorConfig
-from src.generator.customers import (
+from src.generator.core.config import GENERATOR_VERSION, GeneratorConfig
+from src.generator.customers.customers import (
     ensure_subscription_records,
     new_customer_record,
     new_subscription_record,
 )
-from src.generator.orders import (
+from src.generator.orders.orders import (
     OrderBundle,
     OrderCatalog,
     fetch_order_catalog,
     new_order_bundle,
     persist_order_bundle,
 )
-from src.generator.scenarios import late_order_bundle
+from src.generator.orders.scenarios import late_order_bundle
 from src.ingestion.metadata import CursorPosition, get_or_create_watermark
 from src.ingestion.service import TableIngestionRequest, TableIngestionResult, ingest_table
 from src.ingestion.storage import SeaweedFSSettings, seaweedfs_s3_client

@@ -7,11 +7,11 @@ from datetime import timedelta
 import psycopg
 
 from src.common.database import PostgresSettings
-from src.generator.config import GeneratorConfig
-from src.generator.customers import new_customer_record
-from src.generator.lease import SourceMutationLease, assert_source_mutation_lease
-from src.generator.orders import new_order_bundle, persist_order_bundle
-from src.generator.scenarios import late_order_bundle
+from src.generator.core.config import GeneratorConfig
+from src.generator.core.lease import SourceMutationLease, assert_source_mutation_lease
+from src.generator.customers.customers import new_customer_record
+from src.generator.orders.orders import new_order_bundle, persist_order_bundle
+from src.generator.orders.scenarios import late_order_bundle
 
 
 def create_new_orders(

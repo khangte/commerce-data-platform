@@ -6,9 +6,9 @@ import argparse
 import json
 
 from src.common.database import PostgresSettings
-from src.generator.config import GENERATOR_VERSION, SUPPORTED_ANOMALY_PROFILES, GeneratorConfig
-from src.generator.ids import logical_hash
-from src.generator.metadata import ensure_generator_metadata
+from src.generator.core.config import GENERATOR_VERSION, SUPPORTED_ANOMALY_PROFILES, GeneratorConfig
+from src.generator.core.ids import logical_hash
+from src.generator.core.metadata import ensure_generator_metadata
 from src.generator.service import resolve_source_snapshot_id, run_generator
 
 

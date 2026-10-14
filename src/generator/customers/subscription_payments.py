@@ -10,9 +10,9 @@ from uuid import UUID
 
 import psycopg
 
-from src.generator.config import GeneratorConfig
-from src.generator.customers import SUBSCRIPTION_PERIOD
-from src.generator.ids import deterministic_uuid, logical_hash
+from src.generator.core.config import GeneratorConfig
+from src.generator.core.ids import deterministic_uuid, logical_hash
+from src.generator.customers.customers import SUBSCRIPTION_PERIOD
 
 MONTHLY_SUBSCRIPTION_FEE = Decimal("29.90")
 PAYMENT_FAILURE_RATE_BASIS_POINTS = 1500

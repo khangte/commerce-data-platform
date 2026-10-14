@@ -5,8 +5,8 @@ from __future__ import annotations
 import psycopg
 from botocore.exceptions import BotoCoreError, ClientError
 
-from src.generator.errors import SourceCursorRegressionError
-from src.generator.lease import LeaseOwnershipLostError, LeaseUnavailableError
+from src.generator.core.errors import SourceCursorRegressionError
+from src.generator.core.lease import LeaseOwnershipLostError, LeaseUnavailableError
 from src.ingestion.batch import BatchIdentityConflictError
 from src.ingestion.lease import TableLeaseOwnershipLostError, TableLeaseUnavailableError
 from src.ingestion.metadata import WatermarkConflictError

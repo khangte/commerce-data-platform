@@ -15,8 +15,8 @@ import pytest
 from psycopg.types.json import Jsonb
 
 from src.common.database import PostgresSettings
-from src.generator.config import GENERATOR_VERSION, GeneratorConfig
-from src.generator.customers import (
+from src.generator.core.config import GENERATOR_VERSION, GeneratorConfig
+from src.generator.customers.customers import (
     ensure_membership_tier_records,
     ensure_subscription_records,
     new_customer_record,
@@ -26,7 +26,7 @@ from src.generator.customers import (
     persist_subscription_records,
     subscription_transition_records,
 )
-from src.generator.subscription_payments import (
+from src.generator.customers.subscription_payments import (
     persist_subscription_payments,
     plan_subscription_payment,
 )
