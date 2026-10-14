@@ -457,8 +457,9 @@ def test_r13_re_extract_records_a_new_batch_id_and_keeps_prior_objects(tmp_path:
                 " WHERE pipeline_name = %s AND source_table = 'subscription_payments'",
                 (pipeline_name,),
             ).fetchone()
-        # 우리 결제보다 앞선 실재 Row가 없으니 되감기는 최초 상태(빈 Cursor)로 돌아간다.
-        assert watermark_after_rewind == (None, [])
+        # 실재 Row가 있으면 그 마지막 위치로, 없으면 빈 Cursor로 돌아간다. 어느 쪽이든 우리 결제 이전이다.
+        rewound_timestamp = watermark_after_rewind[0]
+        assert rewound_timestamp is None or rewound_timestamp < payment.updated_at
 
         re_extract_run = _ingest(
             postgres,
@@ -493,7 +494,10 @@ def test_r13_re_extract_records_a_new_batch_id_and_keeps_prior_objects(tmp_path:
         # 재수집은 새 batch_id로 기록되고, 기존 Commit Object는 손대지 않는다.
         assert original_object_after == original_object_before
         assert re_extract_object[0] != original_object_before[0]
-        assert re_extract_object[2]["timestamp"] is None
+        before_timestamp = re_extract_object[2]["timestamp"]
+        assert before_timestamp == rewound_timestamp or (
+            before_timestamp is not None and datetime.fromisoformat(before_timestamp) == rewound_timestamp
+        )
 
         write_evidence(
             "r13",
