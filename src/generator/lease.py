@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Iterator
-from typing import cast
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import cast
 
 import psycopg
 

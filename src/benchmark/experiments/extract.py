@@ -16,9 +16,9 @@ import dataclasses
 import hashlib
 import tempfile
 from collections.abc import Mapping
-from typing import cast
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import cast
 
 import duckdb
 

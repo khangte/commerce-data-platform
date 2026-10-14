@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any, cast
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
+from typing import Any, cast
 from uuid import UUID
 
 import pyarrow as pa

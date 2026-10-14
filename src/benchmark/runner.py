@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import dataclasses
-from dataclasses import dataclass
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal, cast

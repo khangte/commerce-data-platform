@@ -13,8 +13,8 @@ import hashlib
 import json
 import tempfile
 from collections.abc import Mapping, Sequence
-from typing import cast
 from pathlib import Path
+from typing import cast
 
 import duckdb
 import pyarrow as pa
