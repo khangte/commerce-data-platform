@@ -15,10 +15,10 @@ from src.generator.config import GENERATOR_VERSION, GeneratorConfig
 from src.generator.customers import new_customer_record
 from src.generator.orders import (
     OrderBundle,
-    apply_order_bundle,
     fetch_order_catalog,
     new_order_bundle,
 )
+from tests.generator_support import apply_order_bundle
 
 pytestmark = pytest.mark.integration
 

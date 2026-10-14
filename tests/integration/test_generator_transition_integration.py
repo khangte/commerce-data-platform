@@ -13,19 +13,18 @@ from src.generator.config import GENERATOR_VERSION, GeneratorConfig
 from src.generator.customers import new_customer_record
 from src.generator.orders import (
     OrderBundle,
-    apply_order_bundle,
     fetch_order_catalog,
     new_order_bundle,
 )
 from src.generator.transitions import (
     OrderTransition,
     apply_order_transition,
-    apply_payment_transition,
     fetch_order_state,
     fetch_payment_state,
     plan_order_transition,
     plan_payment_transition,
 )
+from tests.generator_support import apply_order_bundle, apply_payment_transition
 
 pytestmark = pytest.mark.integration
 

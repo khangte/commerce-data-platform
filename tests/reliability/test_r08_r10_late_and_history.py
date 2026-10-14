@@ -31,11 +31,12 @@ from src.generator.subscription_payments import (
     persist_subscription_payments,
     plan_subscription_payment,
 )
-from src.generator.transitions import apply_payment_transition, fetch_payment_state
+from src.generator.transitions import fetch_payment_state
 from src.ingestion.metadata import CursorPosition
 from src.ingestion.service import TableIngestionRequest, TableIngestionResult, ingest_table
 from src.ingestion.storage import SeaweedFSSettings
 from src.warehouse.mart_hash import mart_logical_hashes, mart_row_counts
+from tests.generator_support import apply_payment_transition
 from tests.integration.test_order_e2e_and_late_order_mart_integration import (
     FIXTURE_START as ORDER_FIXTURE_START,
 )

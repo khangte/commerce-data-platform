@@ -179,39 +179,6 @@ def new_customer_record(config: GeneratorConfig, order_ordinal: int) -> Customer
     )
 
 
-def repurchase_customer_record(
-    config: GeneratorConfig, existing_records: Iterable[CustomerRecord], order_ordinal: int
-) -> CustomerRecord:
-    """기존 인물을 결정적으로 선택해 재구매용 새 Customer 계정을 만든다."""
-    _assert_positive_ordinal(order_ordinal)
-    latest_records = _latest_record_by_unique_id(existing_records)
-    if not latest_records:
-        raise ValueError("A repurchase scenario requires at least one existing customer")
-    customer_unique_id = _choose_customer_unique_id(config, latest_records, order_ordinal)
-    existing = latest_records[customer_unique_id]
-    return _new_order_customer_record(
-        config,
-        customer_unique_id=customer_unique_id,
-        order_ordinal=order_ordinal,
-        address=existing.address,
-        record_kind="repurchase-customer-record",
-    )
-
-
-def address_change_customer_record(
-    config: GeneratorConfig, existing: CustomerRecord, order_ordinal: int
-) -> CustomerRecord:
-    """과거 계정을 보존하고 변경 주소를 가진 새 Customer 계정을 만든다."""
-    _assert_positive_ordinal(order_ordinal)
-    return _new_order_customer_record(
-        config,
-        customer_unique_id=existing.customer_unique_id,
-        order_ordinal=order_ordinal,
-        address=_changed_address_for(config, existing.address, order_ordinal),
-        record_kind="address-change-customer-record",
-    )
-
-
 def new_subscription_record(customer: CustomerRecord) -> SubscriptionRecord:
     """새 계정의 사람 키로 최초 활성 구독 계약 Record를 만든다."""
     return new_subscription_record_for_customer(customer.customer_unique_id, customer.created_at)
@@ -301,54 +268,6 @@ def subscription_transition_records(
             f"Unsupported subscription transition: {record.subscription_status} -> {next_status}"
         )
     return (_transition_subscription_record(record, next_status, config.logical_date),)
-
-
-def fetch_customer_records(connection: psycopg.Connection) -> tuple[CustomerRecord, ...]:
-    """재구매 선택에 필요한 현재 Customer 계정을 안정된 순서로 읽는다."""
-    rows = connection.execute(
-        """
-        SELECT customer_id, customer_unique_id, customer_city, customer_state, created_at
-        FROM customers
-        ORDER BY customer_unique_id COLLATE "C", created_at, customer_id COLLATE "C"
-        """
-    )
-    return tuple(
-        CustomerRecord(row[0], row[1], CustomerAddress(row[2], row[3]), row[4]) for row in rows
-    )
-
-
-def fetch_subscription_record(
-    connection: psycopg.Connection, customer_unique_id: str
-) -> SubscriptionRecord | None:
-    """한 고객의 유효 구독 계약 상태 Record를 읽는다."""
-    row = connection.execute(
-        """
-        SELECT subscription_id, customer_unique_id, subscription_status, auto_renew_enabled,
-               subscription_started_at, current_period_started_at, current_period_ends_at,
-               billing_due_at, next_payment_attempt_at, payment_failed_at, cancel_requested_at,
-               ended_at, status_changed_at, created_at, updated_at
-        FROM customer_subscriptions
-        WHERE customer_unique_id = %s
-          AND subscription_status <> 'CHURNED'
-        """,
-        (customer_unique_id,),
-    ).fetchone()
-    return None if row is None else SubscriptionRecord(*row)
-
-
-def fetch_membership_tier_record(
-    connection: psycopg.Connection, customer_unique_id: str
-) -> MembershipTierRecord | None:
-    """변경할 사람의 현재 거래 실적 등급 Record를 읽는다."""
-    row = connection.execute(
-        """
-        SELECT customer_unique_id, membership_tier, created_at, updated_at
-        FROM customer_membership_tiers
-        WHERE customer_unique_id = %s
-        """,
-        (customer_unique_id,),
-    ).fetchone()
-    return None if row is None else MembershipTierRecord(*row)
 
 
 def persist_customer_records(
@@ -725,31 +644,6 @@ def _transition_subscription_record(
     raise ValueError(f"Unsupported subscription target: {next_status}")
 
 
-def _latest_record_by_unique_id(records: Iterable[CustomerRecord]) -> dict[str, CustomerRecord]:
-    """동일 인물의 여러 주문 계정 중 최신 주소 계정만 남긴다."""
-    latest_records: dict[str, CustomerRecord] = {}
-    for record in records:
-        previous = latest_records.get(record.customer_unique_id)
-        if previous is None or _record_sort_key(record) > _record_sort_key(previous):
-            latest_records[record.customer_unique_id] = record
-    return latest_records
-
-
-def _choose_customer_unique_id(
-    config: GeneratorConfig, latest_records: dict[str, CustomerRecord], order_ordinal: int
-) -> str:
-    """정렬된 기존 인물 목록에서 재구매 대상을 결정적으로 선택한다."""
-    candidates = tuple(sorted(latest_records))
-    selector_hash = logical_hash(
-        {
-            "generator_inputs": config.deterministic_inputs(),
-            "entity": "repurchase-customer-selection",
-            "order_ordinal": order_ordinal,
-        }
-    )
-    return candidates[int(selector_hash, 16) % len(candidates)]
-
-
 def _address_for(config: GeneratorConfig, address_kind: str, ordinal: int) -> CustomerAddress:
     """Config와 순번으로 주소 카탈로그 항목 하나를 결정적으로 선택한다."""
     selector_hash = logical_hash(
@@ -763,38 +657,9 @@ def _address_for(config: GeneratorConfig, address_kind: str, ordinal: int) -> Cu
     return CustomerAddress(city=city, state=state)
 
 
-def _changed_address_for(
-    config: GeneratorConfig, previous_address: CustomerAddress, order_ordinal: int
-) -> CustomerAddress:
-    """이전 주소와 다른 결정적 주소를 선택한다."""
-    alternatives = tuple(
-        address for address in ADDRESS_CATALOG if address != _address_tuple(previous_address)
-    )
-    selector_hash = logical_hash(
-        {
-            "generator_inputs": config.deterministic_inputs(),
-            "address_kind": "address-change",
-            "order_ordinal": order_ordinal,
-            "previous_address": _address_tuple(previous_address),
-        }
-    )
-    city, state = alternatives[int(selector_hash, 16) % len(alternatives)]
-    return CustomerAddress(city=city, state=state)
-
-
 def _deterministic_id(config: GeneratorConfig, entity_name: str, *components: object) -> str:
     """Source VARCHAR 식별자에 맞는 32자리 UUIDv5 Hex 문자열을 반환한다."""
     return deterministic_uuid(entity_name, config.deterministic_inputs(), *components).hex
-
-
-def _record_sort_key(record: CustomerRecord) -> tuple[datetime, str]:
-    """같은 인물의 최신 Customer 계정을 고르는 안정적인 정렬 Key를 반환한다."""
-    return record.created_at, record.customer_id
-
-
-def _address_tuple(address: CustomerAddress) -> tuple[str, str]:
-    """주소 비교와 Hash 입력에 사용할 불변 Tuple을 반환한다."""
-    return address.city, address.state
 
 
 def _assert_positive_ordinal(order_ordinal: int) -> None:

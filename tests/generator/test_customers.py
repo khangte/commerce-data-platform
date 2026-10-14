@@ -10,12 +10,10 @@ import pytest
 from src.generator.config import GENERATOR_VERSION, GeneratorConfig
 from src.generator.customers import (
     MembershipTierRecord,
-    address_change_customer_record,
     membership_tier,
     membership_tier_change_records,
     new_customer_record,
     new_subscription_record_for_customer,
-    repurchase_customer_record,
     subscription_transition_records,
 )
 
@@ -41,18 +39,6 @@ def test_new_customer_record_uses_stable_person_and_order_record_ids() -> None:
     assert first == second
     assert first.customer_unique_id != another.customer_unique_id
     assert first.customer_id != another.customer_id
-
-
-def test_repurchase_and_address_change_preserve_the_person_identity() -> None:
-    """재구매·주소 변경은 사람 키를 보존하고 주문 계정만 새로 만든다."""
-    first = new_customer_record(_config(), 1)
-    second = new_customer_record(_config(), 2)
-    repurchase = repurchase_customer_record(_config(), (first, second), 3)
-    changed = address_change_customer_record(_config(), first, 2)
-
-    assert repurchase.customer_unique_id in {first.customer_unique_id, second.customer_unique_id}
-    assert changed.customer_unique_id == first.customer_unique_id
-    assert changed.customer_id != first.customer_id
 
 
 @pytest.mark.parametrize(

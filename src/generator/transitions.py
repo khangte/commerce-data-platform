@@ -186,11 +186,6 @@ def apply_order_transition(settings: PostgresSettings, transition: OrderTransiti
         return persist_order_transition(connection, transition)
 
 
-def apply_payment_transition(settings: PostgresSettings, transition: PaymentTransition) -> TransitionResult:
-    """Payment 상태 전이를 하나의 Source Transaction으로 적용한다."""
-    with settings.source_connection() as connection, connection.transaction():
-        return persist_payment_transition(connection, transition)
-
 
 def persist_order_transition(
     connection: psycopg.Connection, transition: OrderTransition

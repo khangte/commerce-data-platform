@@ -15,7 +15,7 @@ from src.generator.customers import (
     new_membership_tier_record,
     persist_membership_tier_records,
 )
-from src.generator.orders import OrderBundle, apply_order_bundle, fetch_order_catalog
+from src.generator.orders import OrderBundle, fetch_order_catalog
 from src.generator.scenarios import (
     delayed_payment_transition,
     late_order_bundle,
@@ -24,10 +24,10 @@ from src.generator.scenarios import (
 )
 from src.generator.transitions import (
     apply_order_transition,
-    apply_payment_transition,
     fetch_order_state,
     fetch_payment_state,
 )
+from tests.generator_support import apply_order_bundle, apply_payment_transition
 
 pytestmark = pytest.mark.integration
 

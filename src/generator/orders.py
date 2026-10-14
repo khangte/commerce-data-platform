@@ -9,7 +9,6 @@ from decimal import Decimal
 
 import psycopg
 
-from src.common.database import PostgresSettings
 from src.generator.config import GeneratorConfig
 from src.generator.customers import (
     AxisMutationResult,
@@ -219,13 +218,6 @@ def new_order_bundle(
     payment = _with_payment_installments(payment, config, order_ordinal)
     return OrderBundle(customer=customer, order=order, items=items, payments=(payment,))
 
-
-def apply_order_bundle(
-    settings: PostgresSettings, bundle: OrderBundle
-) -> OrderBundleMutationResult:
-    """Customer·Order·Item·Payment Bundle을 하나의 Source Transaction으로 저장한다."""
-    with settings.source_connection() as connection, connection.transaction():
-        return persist_order_bundle(connection, bundle)
 
 
 def persist_order_bundle(
