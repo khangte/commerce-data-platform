@@ -60,7 +60,7 @@ def test_cancellation_branches_update_payment_consistently() -> None:
 
 def test_source_step_excludes_seed_and_updates_order_with_payment(monkeypatch) -> None:
     """Seed 뒤 생성된 주문 한 건에만 한 단계와 결제 전이를 같은 실행 시각으로 적용한다."""
-    from src.generator import service
+    from src.generator import existing_orders, service
 
     created_at = datetime(2026, 9, 4, tzinfo=UTC)
     logical_date = created_at + timedelta(days=20)
@@ -82,19 +82,19 @@ def test_source_step_excludes_seed_and_updates_order_with_payment(monkeypatch) -
     connection.execute.side_effect = source_result
     order = OrderState("order-1", "created", None, None, None, created_at)
     payment = PaymentState("order-1", 1, "pending", created_at, None, None, None, created_at)
-    monkeypatch.setattr(service, "fetch_order_state", lambda *_: order)
-    monkeypatch.setattr(service, "fetch_payment_state", lambda *_: payment)
+    monkeypatch.setattr(existing_orders, "fetch_order_state", lambda *_: order)
+    monkeypatch.setattr(existing_orders, "fetch_payment_state", lambda *_: payment)
     saved_order = MagicMock(return_value=SimpleNamespace(updated=1))
     saved_payment = MagicMock(return_value=SimpleNamespace(updated=1))
-    monkeypatch.setattr(service, "persist_order_transition", saved_order)
-    monkeypatch.setattr(service, "persist_payment_transition", saved_payment)
+    monkeypatch.setattr(existing_orders, "persist_order_transition", saved_order)
+    monkeypatch.setattr(existing_orders, "persist_payment_transition", saved_payment)
     counts = service._empty_result_counts()
     rows = []
     lease = MagicMock()
     lease_check = MagicMock()
-    monkeypatch.setattr(service, "assert_source_mutation_lease", lease_check)
+    monkeypatch.setattr(existing_orders, "assert_source_mutation_lease", lease_check)
 
-    service._run_existing_order_transitions(connection, settings, config, lease, counts, rows)
+    existing_orders.run_existing_order_transitions(connection, settings, config, lease, counts, rows)
 
     candidate_query = connection.execute.call_args_list[0]
     assert "created_at > %s" in candidate_query.args[0]
@@ -111,7 +111,7 @@ def test_source_step_excludes_seed_and_updates_order_with_payment(monkeypatch) -
 
 def test_future_candidate_does_not_fetch_row_or_check_lease(monkeypatch) -> None:
     """전이 예정 전 주문은 후보 조회 후 추가 조회와 쓰기를 하지 않는다."""
-    from src.generator import service
+    from src.generator import existing_orders, service
 
     logical_date = datetime(2026, 9, 29, 10, tzinfo=UTC)
     seeded_at = logical_date - timedelta(days=30)
@@ -122,10 +122,10 @@ def test_future_candidate_does_not_fetch_row_or_check_lease(monkeypatch) -> None
     connection.execute.return_value.fetchall.return_value = [("new-order", "created", logical_date, None, None)]
     fetched = MagicMock()
     lease_check = MagicMock()
-    monkeypatch.setattr(service, "fetch_order_state", fetched)
-    monkeypatch.setattr(service, "assert_source_mutation_lease", lease_check)
+    monkeypatch.setattr(existing_orders, "fetch_order_state", fetched)
+    monkeypatch.setattr(existing_orders, "assert_source_mutation_lease", lease_check)
 
-    service._run_existing_order_transitions(
+    existing_orders.run_existing_order_transitions(
         connection, settings, config, MagicMock(), service._empty_result_counts(), []
     )
 
@@ -146,7 +146,7 @@ def test_scale_one_matches_previous_schedule() -> None:
 
 def test_source_step_passes_scale_and_recorded_times(monkeypatch) -> None:
     """후보의 기록된 승인·출고 시각과 Config 배율을 진행 계획에 넘긴다."""
-    from src.generator import service
+    from src.generator import existing_orders, service
 
     created_at = datetime(2026, 9, 4, tzinfo=UTC)
     approved_at = created_at + timedelta(minutes=1)
@@ -159,9 +159,9 @@ def test_source_step_passes_scale_and_recorded_times(monkeypatch) -> None:
     connection = MagicMock()
     connection.execute.return_value.fetchall.return_value = [("order-1", "approved", created_at, approved_at, None)]
     planner = MagicMock(return_value=None)
-    monkeypatch.setattr(service, "plan_order_progress", planner)
+    monkeypatch.setattr(existing_orders, "plan_order_progress", planner)
 
-    service._run_existing_order_transitions(
+    existing_orders.run_existing_order_transitions(
         connection, settings, config, MagicMock(), service._empty_result_counts(), []
     )
 
@@ -223,13 +223,13 @@ def test_scale_decrease_waits_full_delay_from_recorded_time() -> None:
 
 def test_missing_successful_seed_has_clear_error() -> None:
     """성공한 Seed 이력이 사라졌으면 원인을 드러내며 중단한다."""
-    from src.generator import service
+    from src.generator import existing_orders, service
 
     logical_date = datetime(2026, 9, 29, 10, tzinfo=UTC)
     config = GeneratorConfig("seed:test", 0, logical_date, 0, "default", GENERATOR_VERSION)
     settings = MagicMock()
     settings.pipeline_connection.return_value.__enter__.return_value.execute.return_value.fetchone.return_value = None
     with pytest.raises(ValueError, match="successful seed run"):
-        service._run_existing_order_transitions(
+        existing_orders.run_existing_order_transitions(
             MagicMock(), settings, config, MagicMock(), service._empty_result_counts(), []
         )

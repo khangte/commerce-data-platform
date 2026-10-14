@@ -10,7 +10,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from src.common.database import PostgresSettings
-from src.generator import service, subscription_payments
+from src.generator import new_orders, service, subscription_payments
 from src.generator.config import GENERATOR_VERSION, GeneratorConfig
 
 pytestmark = pytest.mark.integration
@@ -67,14 +67,14 @@ def test_run_generator_preserves_subscription_billing_invariants(monkeypatch) ->
         monkeypatch.setattr(
             service, "acquire_source_mutation_lease", lambda *_args, **_kwargs: MagicMock()
         )
-        monkeypatch.setattr(service, "assert_source_mutation_lease", lambda *_: None)
+        monkeypatch.setattr(new_orders, "assert_source_mutation_lease", lambda *_: None)
         monkeypatch.setattr(service, "fenced_source_commit", lambda *_args, **_kwargs: nullcontext())
         monkeypatch.setattr(service, "release_source_mutation_lease", lambda *_: None)
         monkeypatch.setattr(service, "record_source_commit", lambda *_: None)
         monkeypatch.setattr(service, "record_started_run", lambda *_: None)
         monkeypatch.setattr(service, "record_finished_run", lambda *_args, **_kwargs: None)
         monkeypatch.setattr(service, "_assert_source_cursor_forward", lambda *_: None)
-        monkeypatch.setattr(service, "_run_existing_order_transitions", lambda *_: None)
+        monkeypatch.setattr(service, "run_existing_order_transitions", lambda *_: None)
         monkeypatch.setattr(service, "fetch_order_catalog", lambda *_: None)
         monkeypatch.setattr(
             subscription_payments,

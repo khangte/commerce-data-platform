@@ -190,7 +190,7 @@ def test_generator_rolls_back_scan_mutation_when_lease_is_lost(monkeypatch, orde
     )
     bundles = _expected_bundles(settings, config)
     marker_id = f"lease-loss-{uuid.uuid4()}"
-    original_scan = service._run_subscription_expiry_scan
+    original_scan = service.run_subscription_expiry_scan
     original_fence = service.fenced_source_commit
     scan_finished = False
 
@@ -212,7 +212,7 @@ def test_generator_rolls_back_scan_mutation_when_lease_is_lost(monkeypatch, orde
         with original_fence(*args):
             yield
 
-    monkeypatch.setattr(service, "_run_subscription_expiry_scan", scan_and_write)
+    monkeypatch.setattr(service, "run_subscription_expiry_scan", scan_and_write)
     monkeypatch.setattr(service, "fenced_source_commit", lose_after_scan)
     try:
         with pytest.raises(LeaseOwnershipLostError, match="during scan"):
