@@ -1,4 +1,4 @@
-"""6개 Source Table의 검증·Quarantine·Bronze Commit Protocol을 연결한다."""
+"""9개 Source Table의 검증·Quarantine·Bronze Commit Protocol을 연결한다."""
 
 from __future__ import annotations
 
@@ -153,7 +153,7 @@ def ingest_table(
     now: datetime | None = None,
     source_lease: SourceMutationLease | None = None,
 ) -> TableIngestionResult:
-    """6개 Table의 고정 범위를 검증·격리·Bronze Commit까지 처리한다."""
+    """9개 Table의 고정 범위를 검증·격리·Bronze Commit까지 처리한다."""
     current_time = _utc_now(now)
     config = table_config(request.source_table)
     pipeline_name = request.resolved_pipeline_name

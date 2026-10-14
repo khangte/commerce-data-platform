@@ -1,4 +1,4 @@
-"""6개 Table 공통 Batch Identity와 Commit된 Batch 재사용 판정을 제공한다."""
+"""9개 Table 공통 Batch Identity와 Commit된 Batch 재사용 판정을 제공한다."""
 
 from __future__ import annotations
 
