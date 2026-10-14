@@ -119,3 +119,16 @@ def test_generator_config_rejects_boolean_progress_time_scale() -> None:
     """bool은 정수 배율로 받지 않는다."""
     with pytest.raises(TypeError, match="progress_time_scale"):
         GeneratorConfig("seed:abc123", 42, datetime(2026, 9, 4, tzinfo=UTC), 1, "default", GENERATOR_VERSION, True)
+
+
+def test_generator_config_rejects_delayed_payment_profile() -> None:
+    """지연 결제는 실행 Profile이 아니라 Scenario Fixture라서 Config 단계에서 거부한다."""
+    with pytest.raises(ValueError, match="Unsupported anomaly_profile: delayed-payment"):
+        GeneratorConfig.from_values(
+            source_snapshot_id="seed:abc123",
+            random_seed=42,
+            logical_date="2026-09-04T00:00:00Z",
+            order_count=1,
+            anomaly_profile="delayed-payment",
+            generator_version=GENERATOR_VERSION,
+        )

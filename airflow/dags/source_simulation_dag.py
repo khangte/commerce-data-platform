@@ -12,8 +12,8 @@ from airflow.sdk.exceptions import AirflowFailException
 
 from src.common.database import PostgresSettings
 from src.generator.config import (
-    EXECUTABLE_ANOMALY_PROFILES,
     GENERATOR_VERSION,
+    SUPPORTED_ANOMALY_PROFILES,
     GeneratorConfig,
     int_from_environment,
 )
@@ -57,7 +57,7 @@ with DAG(
         "anomaly_profile": Param(
             "default",
             type="string",
-            enum=sorted(EXECUTABLE_ANOMALY_PROFILES),
+            enum=sorted(SUPPORTED_ANOMALY_PROFILES),
             description="Deterministic profile executable by the generator.",
         ),
         "source_snapshot_id": Param(

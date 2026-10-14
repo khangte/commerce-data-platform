@@ -12,7 +12,6 @@ SUPPORTED_ANOMALY_PROFILES = frozenset(
     {
         "default",
         "late-arrival",
-        "delayed-payment",
         "membership-change",
         "subscription-active",
         "subscription-payment-failed",
@@ -20,7 +19,6 @@ SUPPORTED_ANOMALY_PROFILES = frozenset(
         "subscription-churned",
     }
 )
-EXECUTABLE_ANOMALY_PROFILES = SUPPORTED_ANOMALY_PROFILES - {"delayed-payment"}
 
 
 @dataclass(frozen=True)
