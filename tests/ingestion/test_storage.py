@@ -2,13 +2,20 @@
 
 from __future__ import annotations
 
+import base64
+import hashlib
+from unittest.mock import Mock
+
 import pytest
+from botocore.exceptions import ClientError
 
 from src.ingestion.bronze.storage import (
     BRONZE_PREFIX,
     QUARANTINE_PREFIX,
     STAGING_PREFIX,
     SeaweedFSSettings,
+    upload_new_bytes,
+    upload_new_file,
 )
 
 
@@ -40,3 +47,35 @@ def test_seaweedfs_settings_requires_all_credentials(monkeypatch) -> None:
 
     with pytest.raises(ValueError, match="SEAWEEDFS_S3_PORT"):
         SeaweedFSSettings.from_environment()
+
+
+@pytest.mark.parametrize("from_file", [False, True])
+def test_upload_sends_sha256_checksum_and_preserves_head_checks(
+    monkeypatch, tmp_path, from_file
+) -> None:
+    """파일·바이트 PUT에 실제 SHA-256 검증값과 불변 조건을 전달한다."""
+    payload = b"local artifact bytes"
+    digest = hashlib.sha256(payload).digest()
+    client = Mock()
+    client.head_object.side_effect = [
+        ClientError({"Error": {"Code": "NoSuchKey"}}, "HeadObject"),
+        {"ContentLength": len(payload), "Metadata": {"sha256": digest.hex()}},
+    ]
+    monkeypatch.setattr(
+        "src.ingestion.bronze.storage.seaweedfs_s3_client", Mock(return_value=client)
+    )
+    settings = SeaweedFSSettings("localhost", 8333, "access", "secret", "lake")
+    if from_file:
+        path = tmp_path / "data.parquet"
+        path.write_bytes(payload)
+        stored = upload_new_file(settings, "bronze/data.parquet", path)
+    else:
+        stored = upload_new_bytes(settings, "bronze/data.parquet", payload)
+    request = client.put_object.call_args.kwargs
+    assert request["ChecksumSHA256"] == base64.b64encode(digest).decode("ascii")
+    assert request["Metadata"] == {"sha256": stored.content_sha256}
+    assert request["IfNoneMatch"] == "*"
+    assert stored.size == len(payload)
+    assert stored.content_sha256 == digest.hex()
+    assert client.head_object.call_count == 2
+    client.get_object.assert_not_called()

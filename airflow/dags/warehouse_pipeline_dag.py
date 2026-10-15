@@ -164,13 +164,12 @@ with DAG(
 
     @task(trigger_rule="all_success")
     def verify_bronze_commit_task(run_info: dict, extract_results: list) -> dict:
-        """Map Task 성공 응답만 신뢰하지 않고 Metadata·Manifest·Object를 재확인한다."""
+        """메타데이터에서 테이블별 커밋 또는 데이터 없음 성공과 스키마 계약을 확인한다."""
         settings = PostgresSettings.from_environment()
-        storage = SeaweedFSSettings.from_environment()
         logical_date = datetime.fromisoformat(run_info["logical_date"])
         batch = BatchIdentity(dag_id=dag.dag_id, logical_date=logical_date)
         try:
-            verified = verify_bronze_commit(settings, storage, batch, SOURCE_TABLES)
+            verified = verify_bronze_commit(settings, batch, SOURCE_TABLES)
         except Exception as error:
             _reraise_classified(error)
             raise

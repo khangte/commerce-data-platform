@@ -30,7 +30,6 @@ from src.ingestion.bronze.storage import (
     ensure_bucket,
     upload_new_bytes,
     upload_new_file,
-    verify_parquet_object,
 )
 from src.ingestion.contract.tables import TableConfig, table_config
 from src.ingestion.control.batch import (
@@ -391,15 +390,13 @@ def _upload_and_verify_bronze(
     artifact: LocalParquetArtifact,
     current_time: datetime,
 ) -> VerifiedBronzeObject:
-    """Final Bronze·VERIFIED Manifest를 업로드하고 Byte·Row Count를 재검증한다."""
+    """로컬 증적과 SHA-256 검증 업로드로 Bronze·VERIFIED 매니페스트를 게시한다."""
     if run.extract_upper_bound is None:
         raise RuntimeError("Non-empty uploads require an extract upper bound")
     object_key, manifest_key = table_object_keys(
         config.source_table, request.batch_id, request.logical_date
     )
-    verified = verify_parquet_object(storage, upload_new_file(storage, object_key, artifact.path))
-    if verified.row_count != artifact.row_count:
-        raise RuntimeError("Final Parquet row count differs from the local artifact")
+    uploaded = upload_new_file(storage, object_key, artifact.path)
     logical_hash = table_logical_hash(artifact.path, config)
     manifest = BronzeManifest(
         request.batch_id,
@@ -409,10 +406,10 @@ def _upload_and_verify_bronze(
         run.watermark_before,
         run.extract_upper_bound,
         object_key,
-        verified.size,
-        verified.content_sha256,
+        uploaded.size,
+        uploaded.content_sha256,
         logical_hash,
-        verified.row_count,
+        artifact.row_count,
         current_time,
         config.schema_version,
     )
@@ -422,8 +419,8 @@ def _upload_and_verify_bronze(
         object_key,
         manifest_key,
         config.schema_version,
-        verified.row_count,
-        verified.content_sha256,
+        artifact.row_count,
+        uploaded.content_sha256,
         logical_hash,
         run.extract_upper_bound,
     )
@@ -437,23 +434,21 @@ def _publish_quarantine(
     artifact: LocalQuarantineArtifact | None,
     current_time: datetime,
 ) -> QuarantineBatch | None:
-    """Reject Parquet·VERIFIED Manifest를 게시하고 Raw Payload 없는 Metadata를 기록한다."""
+    """로컬 증적과 SHA-256 검증 업로드로 격리 파일·매니페스트·메타데이터를 게시한다."""
     if artifact is None:
         return None
     object_key, manifest_key = quarantine_object_keys(
         config.source_table, request.batch_id, request.logical_date
     )
-    verified = verify_parquet_object(storage, upload_new_file(storage, object_key, artifact.path))
-    if verified.row_count != artifact.row_count:
-        raise RuntimeError("Final quarantine row count differs from the local artifact")
+    uploaded = upload_new_file(storage, object_key, artifact.path)
     manifest = QuarantineManifest(
         request.batch_id,
         run.run_id,
         config.source_table,
         object_key,
-        verified.size,
-        verified.content_sha256,
-        verified.row_count,
+        uploaded.size,
+        uploaded.content_sha256,
+        artifact.row_count,
         artifact.error_counts,
         current_time,
     )
@@ -461,7 +456,7 @@ def _publish_quarantine(
     return QuarantineBatch(
         table_batch_id=f"{request.batch_id}__{config.source_table}",
         object_key=object_key,
-        row_count=verified.row_count,
+        row_count=artifact.row_count,
         error_counts=artifact.error_counts,
     )
 

@@ -121,7 +121,8 @@ Commit Prefix가 아닌 `_smoke/{uuid}/`에서만 수행한다.
 - [x] `P3-06` Manifest 생성 및 `object_state=VERIFIED` 기록
 - [x] `P3-07` `bronze_objects=COMMITTED` Metadata Commit 구현
 - [x] `P3-08` Watermark Compare-and-swap 구현
-- [x] 최종 Bronze 객체 HEAD/Size/Checksum/Row Count 검증
+- [x] 최종 Bronze 객체의 PUT SHA-256 검증·HEAD 크기·메타데이터 확인, 로컬 행 수 사용
+- [x] 2026-10-15 Bronze·격리 파일 게시에서 재다운로드 제거 및 회귀 테스트 추가
 - [x] Final Key 충돌 실패와 Empty Batch에서 Watermark 유지 검증
 
 Commit 순서:
@@ -133,7 +134,7 @@ Commit 순서:
 → Extract / Validate
 → Local Parquet
 → 최종 Bronze 객체 Upload
-→ HEAD / Checksum / Row Count 검증
+→ PUT SHA-256 서버 검증 / HEAD 크기·메타데이터 확인 / 로컬 행 수 사용
 → Manifest VERIFIED
 → Metadata Transaction
    - bronze_objects COMMITTED
@@ -145,7 +146,9 @@ Commit 순서:
 
 현재 `orders` 구현은 최종 Bronze 객체에 조건부 PUT을 사용하고, 기존 Key는 업로드 전에
 명시적으로 거부한다. Parquet는 Local 파일에서 SHA-256을 스트리밍 계산해 업로드한 뒤,
-HEAD의 Size·사용자 Metadata Checksum과 재수신한 Parquet의 Row Count를 확인한다. Metadata
+`ChecksumSHA256`(SHA-256 다이제스트의 Base64 값)을 PUT에 전달해 서버가 매니페스트와 같은
+해시를 검증하며, HEAD의 크기·사용자 메타데이터 해시를 확인한다. Bronze·격리 파일 게시는
+재다운로드 없이 로컬 파일에서 계산한 크기·해시와 작성 시 집계한 행 수를 사용한다. Metadata
 Commit 전 Manifest는 `VERIFIED` 상태로만 작성하며, Commit 실패 후 남은 Object의 정리는
 Phase 3D `P3-23` Orphan Reconciliation 범위다.
 
@@ -427,6 +430,19 @@ Phase 3에서는 Framework-independent Python Pipeline을 완성하고 Phase 4�
 - AC-02~06, 08, 20, 21, 23, 24 자동 테스트
 
 ## 파일·폴더별 변경 요약
+
+Bronze 검증 경량화(2026-10-15):
+
+| 경로 | 변경 | 요약 |
+| --- | --- | --- |
+| `src/ingestion/bronze/storage.py` | 수정 | 조건부 PUT에 `ChecksumSHA256`을 전달한다. 기존 키 거부·`IfNoneMatch`·SHA-256 사용자 메타데이터·HEAD 크기 검사를 유지한다. |
+| `src/ingestion/service.py` | 수정 | Bronze·격리 파일 업로드 뒤 Parquet 재다운로드와 중복 행 수 비교를 제거한다. 로컬 파일에서 계산한 업로드 크기·해시와 로컬 작성 결과의 행 수로 매니페스트·커밋 입력을 구성한다. |
+| `tests/ingestion/test_storage.py` | 수정 | 파일·바이트 업로드의 Base64 SHA-256 전달, 불변 조건·HEAD 검사 보존을 검증한다. |
+| `tests/ingestion/test_service_upload.py` | 생성 | Bronze·격리 파일 게시가 재다운로드 없이 로컬 증적을 매니페스트·메타데이터에 사용하는지 검증한다. |
+| `docs/phases/phase-03-incremental-ingestion.md` | 수정 | 진행 체크리스트·커밋 순서·파일별 변경 요약을 현재 검증 경로에 맞춘다. |
+
+`verify_parquet_object`(원격 Parquet 재검증 함수)와 이를 사용하는 고아 객체 재조정 로직,
+행 검증·잠금 검사·메타데이터 CAS는 유지한다. 기본 테스트와 Ruff 결과는 Phase 4의 동일 작업 기록에 함께 남긴다.
 
 | 경로                                                             | 변경      | 요약                                                                                                                                                                                                                                                                               |
 | ---------------------------------------------------------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

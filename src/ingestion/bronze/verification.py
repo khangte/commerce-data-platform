@@ -1,25 +1,17 @@
-"""COMMITTED Bronze Batch를 Metadata·Manifest·Object 증적으로 재확인한다."""
+"""Bronze 배치의 커밋 여부와 스키마 계약을 메타데이터로 확인한다."""
 
 from __future__ import annotations
 
-import hashlib
 from dataclasses import dataclass
 
 from src.common.database import PostgresSettings
-from src.ingestion.bronze.manifest import parse_bronze_manifest_payload
-from src.ingestion.bronze.storage import (
-    SeaweedFSSettings,
-    read_object_bytes,
-    stored_object_from_head,
-    verify_parquet_object,
-)
 from src.ingestion.contract.schema import assert_supported_schema_version
 from src.ingestion.contract.tables import table_config
 from src.ingestion.control.batch import BatchIdentity, get_committed_table_batch
 
 
 class BronzeCommitVerificationError(RuntimeError):
-    """Batch의 어느 Table이든 Metadata·Manifest·Object 증적이 어긋날 때 발생한다."""
+    """테이블 배치의 커밋 메타데이터가 계약과 어긋날 때 발생한다."""
 
 
 @dataclass(frozen=True)
@@ -33,11 +25,10 @@ class VerifiedTableBatch:
 
 def verify_bronze_commit(
     postgres: PostgresSettings,
-    storage: SeaweedFSSettings,
     batch: BatchIdentity,
     source_tables: tuple[str, ...],
 ) -> tuple[VerifiedTableBatch, ...]:
-    """지정 Table 전부가 COMMITTED이고 Manifest·Object·Hash·Row Count가 일치하는지 확인한다."""
+    """테이블별 COMMITTED 또는 최신 SUCCESS_NO_DATA 상태와 커밋 스키마 계약을 확인한다."""
     verified: list[VerifiedTableBatch] = []
     for source_table in source_tables:
         identity = batch.table_batch(source_table)
@@ -57,26 +48,6 @@ def verify_bronze_commit(
             raise BronzeCommitVerificationError(
                 f"{source_table} committed schema_version differs from the table contract"
             )
-
-        manifest_object = stored_object_from_head(storage, existing.manifest_key)
-        manifest_bytes = read_object_bytes(storage, existing.manifest_key)
-        if hashlib.sha256(manifest_bytes).hexdigest() != manifest_object.content_sha256:
-            raise BronzeCommitVerificationError(f"{source_table} manifest checksum differs from HEAD")
-        try:
-            manifest = parse_bronze_manifest_payload(
-                manifest_bytes, expected_object_key=existing.object_key
-            )
-        except ValueError as error:
-            raise BronzeCommitVerificationError(f"{source_table} manifest is invalid: {error}") from error
-
-        verified_object = verify_parquet_object(storage, stored_object_from_head(storage, existing.object_key))
-        if verified_object.row_count != existing.row_count or verified_object.row_count != manifest["row_count"]:
-            raise BronzeCommitVerificationError(f"{source_table} row_count differs across Metadata/Manifest/Object")
-        if verified_object.content_sha256 != manifest["content_sha256"]:
-            raise BronzeCommitVerificationError(f"{source_table} object checksum differs from the manifest")
-
-        if existing.watermark_after.as_metadata_json() != manifest["extract_upper_bound"]:
-            raise BronzeCommitVerificationError(f"{source_table} watermark differs from the manifest")
 
         verified.append(
             VerifiedTableBatch(

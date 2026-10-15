@@ -13,7 +13,7 @@
 | `WATERMARK_CONFLICT` | `commit_table_run`(`_record_failure_without_masking`) | Watermark Version CAS 경쟁에서 패배 | 재시도 불가능(이 시도 기준). 승자의 Commit이 이미 반영됐는지 확인 후 다음 범위로 진행한다 |
 | `SOURCE_CONTRACT_ERROR` | Schema/Batch 검증(`_record_failure_without_masking`) | Source Schema 또는 Batch 계약 위반 | 재시도 불가능. Source 쪽 계약 위반을 수정한 뒤 재실행한다 |
 | `VALIDATION_THRESHOLD_EXCEEDED` | `assert_reject_rate`(`_record_failure_without_masking`) | 검증 실패(Reject) 비율이 임계값 초과 | 재시도 불가능. Quarantine된 Row를 확인해 Source 데이터 품질을 고친 뒤 재실행한다 |
-| `OBJECT_VERIFICATION_ERROR` | Bronze Object 검증(`_record_failure_without_masking`) | 업로드된 Object의 Checksum/Row Count가 기대와 불일치 | 재시도 불가능. Orphan 후보로 남을 수 있으니 자동 재조정 대상인지 `find_orphan_candidates`로 확인한다 |
+| `OBJECT_VERIFICATION_ERROR` | `verify_bronze_commit`(`BronzeCommitVerificationError`) | Batch의 어떤 Table에 COMMITTED Row가 없고 최신 Run도 `SUCCESS_NO_DATA`가 아니거나, Commit된 `schema_version`이 Table 계약과 다름. Upload 시 Checksum 불일치는 이 코드가 아니라 `OBJECT_STORAGE_ERROR`(`BadDigest`, 4xx)다 | 재시도 불가능. 해당 Table의 `pipeline_runs` 상태와 `schema_version`을 확인하고, Commit되지 않은 Object는 `find_orphan_candidates`로 자동 재조정 대상인지 확인한다 |
 | `BATCH_IDENTITY_CONFLICT` | `_reuse_or_reject_committed_batch` | 동일 Batch Identity로 다른 범위를 재실행 시도 | 재시도 불가능. 의도한 범위인지 확인 후 새 `batch_id`로 실행한다 |
 | `UNKNOWN_ERROR` | 분류 규칙에 없는 예외(`_record_failure_without_masking`/`_record_prestart_failure`) | 예: `RuntimeError`(Metadata Commit 직전 주입, R-03), `FileExistsError`(Object Key 중복, `storage.py`의 412 처리) | 예외 메시지로 원인을 확인한다. Object 중복(`FileExistsError`)은 별개 관심사로 이 문서에서 전용 코드를 만들지 않는다(ADR-018) |
 

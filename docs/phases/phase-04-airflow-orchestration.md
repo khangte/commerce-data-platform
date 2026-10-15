@@ -280,6 +280,7 @@ Generator DAG는 `seed`, `logical_date`, 생성 건수와 Scenario Profile을 Ai
 - [x] `P4-07` `initialize_run`에서 Batch/Run 식별 정보 구성, 별도 Task에서 원천 데이터 동시성 잠금 획득
 - [x] `P4-08` 9개 Table `extract_validate_load` Dynamic Task Mapping
 - [x] `P4-09` `verify_bronze_commit`에서 Metadata 기반 Commit 검증
+- [x] 2026-10-15 커밋 검증을 메타데이터 상태·스키마 계약 확인으로 한정하고 저장소 인자 제거
 - [x] `P4-10` `sync_bronze_catalog` 호출
 - [x] `P4-11` Phase 5 이후 활성화할 dbt Build 호출 경계 구성
 - [x] `P4-12` `publish_run_summary`와 최종 상태 기록
@@ -294,8 +295,9 @@ products → sellers → orders → order_items → order_payments
 ```
 
 `P4-09`는 Map Task의 XCom 성공 응답만 신뢰하지 않는다. `pipeline_metadata.bronze_objects`에서
-Batch의 9개 Table이 모두 `COMMITTED`인지 확인하고, Manifest/Object/Hash/Row Count/Watermark를
-Phase 3 검증 API로 재확인한다. 하나라도 실패·미완료이면 Catalog와 dbt를 실행하지 않는다.
+배치의 9개 테이블이 `COMMITTED`(커밋 완료)인지 또는 최신 실행이 `SUCCESS_NO_DATA`(데이터 없음 성공)인지
+확인한다. 커밋된 행은 `schema_version`(스키마 버전)이 지원 범위와 테이블 계약에 맞아야 한다.
+하나라도 실패·미완료이면 Catalog와 dbt를 실행하지 않는다.
 
 Task Graph:
 
@@ -330,13 +332,11 @@ publish_run_summary
 Lease 해제는 mapped Task 자체가 아니라 별도 Cleanup Task에서 `ALL_DONE`으로 실행한다. Cleanup은 모든
 mapped Task의 종료를 기다리되, 검증 실패 또는 Cleanup 실패 시 Catalog/dbt로 진행하지 않는다.
 
-`P4-09`의 `verify_bronze_commit`은 Phase 3에 재확인 전용 API가 없어 `src/ingestion/verification.py`에
-`verify_bronze_commit()`을 신설했다. `get_committed_table_batch`로 COMMITTED 여부를 확인하고,
-Manifest Object를 재다운로드해 HEAD Checksum과 `orphan.py`가 쓰던 Manifest Type 검증 계약으로
-재파싱한 뒤 Object Checksum/Row Count/Logical Hash/Watermark를 Manifest와 교차 검증한다. Manifest
-파싱 로직은 `orphan.py`와 중복되던 부분을 `src/ingestion/manifest.py`의 `parse_bronze_manifest_payload()`로
-공개해 두 모듈이 공유한다. `SUCCESS_NO_DATA`로 끝나 Bronze Object가 없는 Table은 `pipeline_runs`의
-최신 상태로 정상 완료를 인정한다.
+`P4-09`의 `verify_bronze_commit()`은 현재 `src/ingestion/bronze/verification.py`에 있다.
+`get_committed_table_batch`로 커밋 완료 여부를 확인하고 커밋 스키마 버전을 테이블 계약과 대조한다.
+Bronze 객체가 없는 테이블은 `pipeline_runs`의 최신 상태가 `SUCCESS_NO_DATA`일 때 정상 완료로 인정한다.
+2026-10-15 검증 경량화로 매니페스트·HEAD·객체 재다운로드와 행 수·워터마크 교차 비교를 제거했다.
+이 API는 객체 저장소 설정을 받지 않으며, 고아 객체 재조정의 매니페스트·Parquet 재검증은 유지한다.
 
 검증:
 
@@ -473,7 +473,7 @@ Credential / Secret
 - XCom Payload Schema/Size 검증
 - Lease Token 직렬화/복원, Task 프로세스 경계 Fencing, 초기화 실패 Cleanup no-op 검증
 - 모든 Table 종료 뒤 Lease가 해제되고 Catalog/dbt 구간에서는 Generator가 Lease를 획득할 수 있는지 검증
-- `verify_bronze_commit`이 Metadata·Manifest·Object·Row Count·Watermark 불일치를 차단하는지 검증
+- `verify_bronze_commit`이 커밋 누락·최신 실행 실패·스키마 계약 불일치를 차단하고 데이터 없음 성공을 허용하는지 검증
 - Compose Fresh Boot, Metadata Migration, Health Check, LocalExecutor 실제 Task 실행 검증
 
 ### 부분 성공 시나리오
@@ -566,6 +566,19 @@ Phase 5는 `sync_bronze_catalog`가 만든 메타데이터 기반 Bronze 파일 
 Project/CLI와 Test를 완성한 뒤, Warehouse DAG의 `dbt_build` 호출 경계를 활성화한다.
 
 ## 파일·폴더별 변경 요약
+
+Bronze 검증 경량화(2026-10-15):
+
+| 경로 | 변경 | 요약 |
+| --- | --- | --- |
+| `src/ingestion/bronze/verification.py` | 수정 | 커밋 완료 또는 최신 데이터 없음 성공과 스키마 계약만 확인한다. 저장소 인자·매니페스트·HEAD·재다운로드·행 수·워터마크 비교를 제거하고 기존 오류 클래스를 유지한다. |
+| `airflow/dags/warehouse_pipeline_dag.py` | 수정 | 검증 태스크의 저장소 설정 생성과 API 저장소 인자를 제거한다. 수집 태스크의 저장소 설정은 유지한다. |
+| `tests/ingestion/test_verification.py` | 생성 | 메타데이터만으로 여러 테이블 검증, 데이터 없음 성공, 커밋 누락·실패·지원 밖 스키마·테이블 계약 불일치 거부를 검증한다. |
+| `docs/phases/phase-04-airflow-orchestration.md` | 수정 | 진행 체크리스트·검증 설명·파일별 변경 요약을 현재 API와 동기화한다. |
+
+검증 결과: 변경 전 추가 테스트 11건의 실패를 확인한 뒤 구현했고, 관련 테스트 14건이 통과했다.
+`RUN_*` 환경 변수를 제거한 `uv run pytest tests/ -q`는 336 passed, 104 skipped,
+`uv run ruff check .`는 통과했다. 별도 통합 테스트 실행 옵션은 활성화하지 않았다.
 
 057 구현(2026-10-12):
 

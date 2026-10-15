@@ -13,7 +13,8 @@ Manifest가 정상이어도 Metadata Commit·Watermark CAS가 실패할 수 있�
 ## Decision
 
 - 공식 Bronze의 Source of Truth는 `pipeline_metadata.bronze_objects.status = COMMITTED`다.
-- Upload 뒤 HEAD·Checksum·Row Count를 검증하고 Manifest를 `object_state=VERIFIED`로 기록한다.
+- Upload는 `ChecksumSHA256` 서버 검증과 PUT 직후 HEAD Size·Metadata Checksum 확인을 거친 뒤
+  Manifest를 `object_state=VERIFIED`로 기록한다. Object를 다시 내려받지 않는다(PRD v1.23).
 - Metadata Transaction 하나에서 `bronze_objects → COMMITTED`, `pipeline_runs → SUCCESS`,
   Watermark CAS Update를 처리한다.
 - Metadata COMMITTED가 없는 Object+VERIFIED Manifest는 Orphan 후보이며 dbt Read·Catalog 동기화

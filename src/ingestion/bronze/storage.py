@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -189,6 +190,7 @@ def _upload_new(
             Key=key,
             Body=body,
             Metadata={"sha256": content_sha256},
+            ChecksumSHA256=base64.b64encode(bytes.fromhex(content_sha256)).decode("ascii"),
             IfNoneMatch="*",
         )
     except ClientError as error:
