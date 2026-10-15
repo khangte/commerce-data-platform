@@ -255,6 +255,12 @@ Normal E2E Unknown Key = 0
 
 ## 파일·폴더별 변경 요약
 
+- [x] dbt 정리: 그룹화·`UNION`으로 보장되거나 Fact에서 같은 행·키를 검사하는 중복 SQL 테스트 7개를 제거하고 참조를 정리했다.
+- `dbt/tests/`: `rpt_customer_order_activity_daily_unique.sql`, `rpt_membership_tier_performance_unique.sql`, `rpt_subscription_payment_outcomes_daily_unique.sql`, `int_affected_order_keys_unique.sql`, `int_affected_subscription_payment_keys_unique.sql`, `stg_order_items_unique.sql`, `stg_payments_unique.sql`을 삭제했다. `dim_subscription_version_unique.sql`은 R-10 증적이며 속성 해시가 다른 동일 계약·시작 시각의 중복을 단독 검증하므로 유지한다.
+- `tests/test_warehouse_quality_contract.py`: 삭제한 파일 존재 단언을 제거하고 날짜·고객 구분 도메인 검증은 유지했다.
+- `docs/phases/phase-10-bi.md`: 과거 추가 이력을 보존하면서 고객 활동 Report의 중복 유일성 테스트 제거를 기록했다.
+- 검증: 최종 `dbt parse`, dbt 관련 Python·품질 계약 테스트 34건, 실제 dbt build 성공·품질 실패 차단·재게시 해시 보존 통합 테스트 1건이 통과했다. 세 통합 실행 플래그를 모두 활성화했으며 상세 명령은 Phase 6 변경 요약에 기록했다.
+
 | 경로 | 구분 | 변경 내용 |
 | ---- | ---- | --------- |
 | `src/warehouse/errors.py`, `src/ingestion/errors.py` | 생성·수정 | Warehouse 오류 분류와 기본 `UNKNOWN_ERROR`를 추가했다. |

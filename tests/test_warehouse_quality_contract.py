@@ -72,7 +72,7 @@ def test_mart_build_session_timezone_is_utc() -> None:
 
 
 def test_customer_order_activity_metric_contract_is_declared() -> None:
-    """신규·재구매 고객 Report는 일자·고객 구분 Grain과 복합 Unique Test를 가진다."""
+    """신규·재구매 고객 Report의 날짜와 고객 구분 도메인 검증을 유지한다."""
     schema = yaml.safe_load(METRIC_SCHEMA.read_text(encoding="utf-8"))
     model = next(
         item for item in schema["models"] if item["name"] == "rpt_customer_order_activity_daily"
@@ -83,4 +83,3 @@ def test_customer_order_activity_metric_contract_is_declared() -> None:
         "new",
         "repeat",
     ]
-    assert (DBT_DIR / "tests/rpt_customer_order_activity_daily_unique.sql").is_file()

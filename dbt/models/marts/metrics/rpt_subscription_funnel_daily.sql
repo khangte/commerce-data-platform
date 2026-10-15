@@ -35,7 +35,7 @@ select
     sum(
         case
             when previous_subscription_status = 'CHURNED'
-                and subscription_status in ('TRIAL', 'ACTIVE')
+                and subscription_status = 'ACTIVE'
             then 1 else 0
         end
     ) as rejoined_count

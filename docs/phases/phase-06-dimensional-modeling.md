@@ -100,6 +100,7 @@ Fact는 Intermediate가 준비한 행을 투영한다. Fact 안에서 집계하�
 
 - [x] `P6-19` BI가 소비할 Report Model 구현
 - [x] `P6-20` Report Model Grain/Unique Key 검증 Test
+- [x] dbt 정리: 주문 항목의 미사용 차원 결합과 재가입 계산의 도달 불가능한 `TRIAL` 분기를 제거했다. architect 판정에 따라 가산 측정값 `order_count`(주문 건수)는 유지했다. 운영·실패 보관 파일 4개의 신규 감사 스키마 확인에 따라 구 테이블 감지·삭제 분기도 제거했다.
 
 Report Model은 Mart 위에서 파생된다. BI가 Source·Bronze·Staging을 직접 조회하지 않도록 Mart만 읽는 소비 계층을 제공한다. 날짜 축은 필요한 가장 낮은 Grain으로 유지한다. 접힌 Grain은 되돌릴 수 없지만 펼쳐진 Grain은 BI가 roll-up할 수 있다.
 
@@ -184,6 +185,13 @@ Report Model은 Mart 위에서 파생된다. BI가 Source·Bronze·Staging을 �
 
 ## 파일·폴더별 변경 요약
 
+- `dbt/models/intermediate/int_order_items_enriched.sql`: 사용하지 않는 상품·판매자 차원 결합을 제거하고 주문 Staging 결합은 유지했다.
+- `dbt/models/marts/metrics/rpt_subscription_funnel_daily.sql`: 재가입을 이탈 후 활성 상태 전이로 한정했다.
+- `dbt/macros/record_affected_keys.sql`, `tests/test_dbt_affected_keys_macro.py`: architect가 운영 1개·실패 보관 3개 파일의 신규 스키마 적용을 확인하여 구 `order_id` 열 감지·테이블 삭제 분기와 전용 테스트를 제거했다. 신규 도메인 스키마 선언과 양쪽 도메인 기록 검증은 유지했다.
+- `tests/test_dbt_cleanup.py`: 차원 없이 다중 주문 항목·참조 주문 누락 행 보존, `TRIAL`의 NULL 처리와 재가입 계산을 검증한다.
+- `docs/reference/mart-grain.md`: 재가입 정의와 그룹화로 보장하는 Report 유일성 설명을 실제 구현에 맞췄다.
+- 검증: 변경 전 주문 항목 회귀 테스트에서 차원 의존성 실패를 확인했다. 최종 상태에서 `dbt parse`, `pytest -q tests/test_dbt_*.py tests/test_warehouse_quality_contract.py` 34건, 실제 PostgreSQL·SeaweedFS를 사용하는 `tests/integration/test_publish_gate_dbt_integration.py` 1건이 통과했다. 통합 테스트는 임시 Warehouse의 실제 dbt build 성공·Canary 실패 격리·재게시 성공과 해시 보존을 확인했다. Ruff와 `git diff --check`도 통과했다. 운영 Warehouse 파일은 변경하지 않았다.
+
 | 경로                                                                                                    | 변경 내용                                                                                                                                  |
 | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
 | `dbt/models/intermediate/int_customer_history.sql`                                                      | 고객 SCD2 입력을 거래 실적 등급 축만으로 축소했다.                                                                                         |
@@ -202,7 +210,7 @@ Report Model은 Mart 위에서 파생된다. BI가 Source·Bronze·Staging을 �
 | `README.md` | 056의 결제 구매일 FK를 ER 그림과 Fact 표에 반영했다. 작업 전부터 있던 트러블슈팅 표 변경은 보존했다. |
 | `docs/phases/phase-06-dimensional-modeling.md`, `docs/phases/phase-07-data-quality-publish.md` | 056 구현 체크리스트, 변경 파일·동작과 로컬 검증 결과를 기록했다. |
 | `data/warehouse/warehouse.duckdb`, `data/serving/mart.duckdb`, `data/serving/exports/` | 056 운영 승인 후 전체 새로고침으로 결제 Fact의 구매일 키를 반영했다. 이후 정기 DAG가 새 Serving 버전 파일을 만들고 Metabase 연결을 재지정했으며, 아래 운영 체크리스트에 Run·Export 식별자와 검증 결과를 기록했다. |
-| `dbt/tests/rpt_membership_tier_performance_unique.sql`, `dbt/models/marts/metrics/rpt_subscription_payment_outcomes_daily.sql` | 기존 SQL Test·Model의 Grain 설명만 실제 그룹화 기준으로 바로잡았다. |
+| `dbt/models/marts/metrics/rpt_subscription_payment_outcomes_daily.sql` | 기존 SQL Model의 Grain 설명을 실제 그룹화 기준으로 바로잡았다. 함께 설명을 고쳤던 등급 성과 유일성 테스트는 이후 dbt 정리에서 그룹화와 중복되어 제거했다. |
 | `docs/adr/009-use-observed-history-for-customer-scd2.md`, `docs/adr/011-late-arrival-reprocessing-strategy.md` | 관측 기반 고객 이력과 Late Arrival 재처리 결정을 ADR로 기록했다. |
 
 ### v1.12 구독 Mart 전환

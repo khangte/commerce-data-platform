@@ -428,7 +428,7 @@ Business Key가 계약이므로 해지 뒤 재가입한 사람은 `subscription_
 | `payment_failed_count` | HUGEINT | Additive Measure | N | `PAYMENT_FAILED` 상태 진입 건수. `SUM` 가능 |
 | `cancel_requested_count` | HUGEINT | Additive Measure | N | `CANCEL_REQUESTED` 상태 진입 건수. `SUM` 가능 |
 | `churned_count` | HUGEINT | Additive Measure | N | `CHURNED` 상태 진입 건수. `SUM` 가능 |
-| `rejoined_count` | HUGEINT | Additive Measure | N | `CHURNED` 뒤 `TRIAL` 또는 `ACTIVE`로 전이한 건수. `SUM` 가능 |
+| `rejoined_count` | HUGEINT | Additive Measure | N | `CHURNED` 뒤 `ACTIVE`로 전이한 건수. `TRIAL`은 상태 표준화에서 NULL로 처리한다. `SUM` 가능 |
 
 ### 4.1.2 `rpt_subscription_payment_outcomes_daily`
 
@@ -439,7 +439,7 @@ Business Key가 계약이므로 해지 뒤 재가입한 사람은 `subscription_
 
 | 컬럼 | 타입 | 종류 | Null | 정의 / Test |
 | ---- | ---- | ---- | ---- | ----------- |
-| `payment_date_key` | INTEGER | PK / FK | N | `payment_at`에서 파생한 결제일. `not_null`, `rpt_subscription_payment_outcomes_daily_unique.sql` |
+| `payment_date_key` | INTEGER | PK / FK | N | `payment_at`에서 파생한 결제일. `not_null`, `payment_date_key`, `payment_status` 기준 `GROUP BY`로 유일성 보장 |
 | `payment_status` | VARCHAR | PK / Attribute | N | `completed` 또는 `failed`. `not_null`, `accepted_values` |
 | `payment_count` | BIGINT | Additive Measure | N | 결제 시도 건수. `SUM` 가능 |
 | `paying_customer_count` | BIGINT | Non-additive Measure (접힘) | N | `count(distinct customer_key)`로 접은 고객 수. 날짜·상태를 넘겨 `SUM` 금지 |
@@ -454,7 +454,7 @@ Business Key가 계약이므로 해지 뒤 재가입한 사람은 `subscription_
 
 | 컬럼 | 타입 | 종류 | Null | 정의 / Test |
 | ---- | ---- | ---- | ---- | ----------- |
-| `membership_tier` | VARCHAR | PK / Attribute | N | 주문 시점 고객의 거래 실적 등급. `not_null`, `rpt_membership_tier_performance_unique.sql` |
+| `membership_tier` | VARCHAR | PK / Attribute | N | 주문 시점 고객의 거래 실적 등급. `not_null`, `membership_tier` 기준 `GROUP BY`로 유일성 보장 |
 | `customer_count` | BIGINT | Non-additive Measure (접힘) | N | `count(distinct dim_customer.customer_id)`로 접은 고객 수. 등급을 넘겨 `SUM` 금지 |
 | `order_count` | BIGINT | Additive Measure | N | 주문 건수. `SUM` 가능 |
 | `gross_order_value` | DECIMAL(38,2) | Additive Measure | N | 주문 금액 합계. `SUM` 가능 |
@@ -471,7 +471,7 @@ Business Key가 계약이므로 해지 뒤 재가입한 사람은 `subscription_
 
 | 컬럼 | 타입 | 종류 | Null | 정의 / Test |
 | ---- | ---- | ---- | ---- | ----------- |
-| `purchase_date_key` | INTEGER | PK / FK | N | UTC 주문일. `not_null`, `rpt_customer_order_activity_daily_unique.sql` |
+| `purchase_date_key` | INTEGER | PK / FK | N | UTC 주문일. `not_null`, `purchase_date_key`, `customer_kind` 기준 `GROUP BY`로 유일성 보장 |
 | `customer_kind` | VARCHAR | PK / Attribute | N | 고객의 첫 주문일이면 `new`, 이후 주문일이면 `repeat`. `not_null`, `accepted_values: new, repeat` |
 | `customer_count` | BIGINT | Non-additive Measure (접힘) | N | `count(distinct customer_id)`. 날짜·고객 구분을 넘어 `SUM` 금지 |
 | `order_count` | BIGINT | Additive Measure | N | 해당 일자·구분 주문의 `sum(fct_order.order_count)`. `SUM` 가능 |

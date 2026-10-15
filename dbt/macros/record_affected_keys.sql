@@ -2,17 +2,6 @@
     {#- 이번 Invocation이 재계산한 영향 Key를 도메인과 함께 감사 기록에 남긴다. -#}
     {%- if execute -%}
         {%- do run_query("CREATE SCHEMA IF NOT EXISTS control") -%}
-        {%- set legacy_columns = run_query("
-            select count(*) as legacy_count
-            from information_schema.columns
-            where table_schema = 'control'
-              and table_name = 'affected_keys'
-              and column_name = 'order_id'
-        ") -%}
-        {%- if legacy_columns and legacy_columns.rows | length > 0 and legacy_columns.rows[0][0] > 0 -%}
-            {%- do log("Dropping legacy control.affected_keys with order_id column", info=true) -%}
-            {%- do run_query("DROP TABLE control.affected_keys") -%}
-        {%- endif -%}
         {%- do run_query("
             CREATE TABLE IF NOT EXISTS control.affected_keys (
                 invocation_id VARCHAR NOT NULL,

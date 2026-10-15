@@ -10,5 +10,3 @@ select
     stg_order_items.created_at
 from {{ ref('stg_order_items') }}
 left join {{ ref('stg_orders') }} using (order_id)
-left join {{ ref('dim_product') }} using (product_id)
-left join {{ ref('dim_seller') }} using (seller_id)
