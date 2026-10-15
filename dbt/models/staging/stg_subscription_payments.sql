@@ -13,7 +13,7 @@ select
     subscriptions.customer_unique_id as customer_id,
     payments.billing_cycle_sequence,
     payments.attempt_sequence,
-    payments.payment_status,
+    {{ standardized_payment_status('payments.payment_status') }} as payment_status,
     payments.payment_at,
     payments.payment_value,
     payments.currency_code,

@@ -87,7 +87,7 @@ models:
           - not_null
           - accepted_values:
               arguments:
-                values: [completed, failed]
+                values: [COMPLETED, FAILED]
 
   - name: stg_customers_current
     description: 주문 결합용 불변 계정 주소 스냅샷을 노출한다.

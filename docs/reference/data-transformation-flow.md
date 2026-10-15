@@ -322,6 +322,8 @@ Staging은 원천 8개 주문 상태를 축약하지 않고, 대문자 `order_st
   | `failed`    | `FAILED`    |
   | `refunded`  | `REFUNDED`  |
 
+  구독 결제도 같은 `standardized_payment_status`를 사용해 원천의 `completed`·`failed`를 `COMPLETED`·`FAILED`로 변환한다. 구독 결제의 허용 상태는 이 두 값으로 제한한다.
+
 - subscription / tier
 
   `subscription_status`(`ACTIVE`/`PAYMENT_FAILED`/`CANCEL_REQUESTED`/`CHURNED`)와 `membership_tier`(`BRONZE`/`SILVER`/`GOLD`)는 원천 값 자체가 이미 대문자 표준 표기다. Staging Macro(`standardized_subscription_status`, `standardized_membership_tier`)는 값을 바꾸지 않고 허용 목록 검증만 수행한다. `order_status`/`payment_status`와 달리 소문자→대문자 변환 구간이 아니다.

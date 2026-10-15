@@ -177,7 +177,7 @@ def test_subscription_payment_uses_the_active_customer_version_at_billing_time(t
         assert fact_row[0] is not None
         assert fact_row == (
             fact_row[0],
-            payment.payment_status,
+            payment.payment_status.upper(),
             payment.payment_value,
             "ACTIVE",
             "BRONZE",

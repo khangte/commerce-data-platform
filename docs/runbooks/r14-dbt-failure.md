@@ -49,6 +49,20 @@ PostgreSQL `bronze_objects`를 DuckDB Build 파일에 **읽기 전용**으로 �
 Type별 원인·조치는 [Warehouse Publish Troubleshooting](../troubleshooting/warehouse-publish.md)을
 참고한다. 원인 제거 후 `dbt build`를 다시 실행하면 이전 성공 Run에 이어 새 Publish가 만들어진다.
 
+### 구독 결제 상태 대문자 전환 후 첫 게시
+
+구독 결제 상태 표준화 코드를 병합한 뒤 첫 게시에는 반드시 다음 명령을 사용한다.
+
+```bash
+python -m src.warehouse.publish --full-refresh
+```
+
+증분 게시를 실행하면 복사한 기존 Warehouse의 소문자 `completed`·`failed` 행이 남아
+`accepted_values_fct_subscription_payment_payment_status__COMPLETED__FAILED` 검증에 실패한다.
+품질 Gate가 게시를 차단하고 마지막 성공 Warehouse는 보존한다. 위 전체 새로고침 명령으로
+모든 결제 행을 `COMPLETED`·`FAILED`로 재계산한 뒤, 이후 게시부터 증분 실행을 사용한다.
+전환 검증 결과는 [Phase 7 검증 기록](../phases/phase-07-data-quality-publish.md)에 정리했다.
+
 ## 재검증 명령과 결과
 
 위 pytest 명령이 통과하는지 확인한다. `write_evidence("r14", ...)` 증적에서

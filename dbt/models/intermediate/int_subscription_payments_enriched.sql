@@ -17,7 +17,7 @@ select
     payments.billing_period_start_at,
     payments.billing_period_end_at,
     payments.payment_value,
-    case when payments.payment_status = 'completed' then payments.payment_value end as completed_payment_value,
+    case when payments.payment_status = 'COMPLETED' then payments.payment_value end as completed_payment_value,
     cast(1 as smallint) as attempt_count
 from {{ ref('stg_subscription_payments') }} as payments
 inner join {{ ref('dim_subscription') }} as subscription

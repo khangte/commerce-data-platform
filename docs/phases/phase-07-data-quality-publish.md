@@ -255,6 +255,17 @@ Normal E2E Unknown Key = 0
 
 ## 파일·폴더별 변경 요약
 
+- 최종 검증: `pytest -q tests/test_dbt_*.py` 30건, `tests/test_warehouse_quality_contract.py` 4건이 통과했다. `RUN_POSTGRES_INTEGRATION=1 RUN_SEAWEEDFS_INTEGRATION=1 RUN_DBT_PUBLISH_INTEGRATION=1`로 게시 차단 통합 테스트와 구독 결제 시점 결합 통합 테스트를 실행해 2건 통과했다. Ruff·`git diff --check`도 통과했다. 기존 매크로·관측 모델·원천 코드·BI 파일은 수정하지 않았다.
+
+- 전환 검증: 운영 Warehouse의 격리된 복사본에서 `dbt parse`가 통과했다. 증분 build는 `accepted_values_fct_subscription_payment_payment_status__COMPLETED__FAILED`만 실패했고 전체 새로고침 build는 통과했다. 기존 `completed` 2건·`failed` 3건이 `COMPLETED` 2건·`FAILED` 3건으로 바뀌었으며 5행·총액 149.50·성공 금액 59.80을 보존했다.
+
+- [x] 구독 결제 상태 표준화: 대문자 상태에 맞춰 성공 금액·실패 코드 검증과 Python 계약·시점 결합 기대값을 갱신했다. 리뷰 후 운영 복구 절차를 추가하고 검증 기록을 이 문서로 통합했다.
+- `README.md`, `docs/runbooks/r14-dbt-failure.md`: 첫 게시의 전체 새로고침 필수 명령, 기존 소문자 행으로 인한 허용값 실패와 게시 차단을 설명했다.
+- `docs/phases/phase-05-bronze-catalog-and-staging.md`, `docs/phases/phase-06-dimensional-modeling.md`: 중복 검증 문단을 이 문서 참조로 바꿨다. 전환 증적에서 임시 파일 경로를 제거했다.
+- `dbt/tests/fct_subscription_payment_completed_value_consistent.sql`, `dbt/tests/fct_subscription_payment_failure_code_consistent.sql`: `COMPLETED`·`FAILED` 조건으로 금액과 실패 코드의 정합성을 검사한다.
+- `tests/test_warehouse_quality_contract.py`: Staging·Fact·Report의 대문자 허용값과 NULL 금지를 확인한다.
+- `tests/integration/test_subscription_payment_temporal_join_integration.py`: 원천 소문자 상태에 대응하는 대문자 Fact 상태를 기대하도록 변경했다. 원천 생성·제약·생성기 테스트는 수정하지 않았다.
+
 - [x] dbt 정리: 그룹화·`UNION`으로 보장되거나 Fact에서 같은 행·키를 검사하는 중복 SQL 테스트 7개를 제거하고 참조를 정리했다.
 - `dbt/tests/`: `rpt_customer_order_activity_daily_unique.sql`, `rpt_membership_tier_performance_unique.sql`, `rpt_subscription_payment_outcomes_daily_unique.sql`, `int_affected_order_keys_unique.sql`, `int_affected_subscription_payment_keys_unique.sql`, `stg_order_items_unique.sql`, `stg_payments_unique.sql`을 삭제했다. `dim_subscription_version_unique.sql`은 R-10 증적이며 속성 해시가 다른 동일 계약·시작 시각의 중복을 단독 검증하므로 유지한다.
 - `tests/test_warehouse_quality_contract.py`: 삭제한 파일 존재 단언을 제거하고 날짜·고객 구분 도메인 검증은 유지했다.

@@ -185,6 +185,16 @@ Report Model은 Mart 위에서 파생된다. BI가 Source·Bronze·Staging을 �
 
 ## 파일·폴더별 변경 요약
 
+- 구독 결제 상태 전환과 최종 테스트 결과는 [Phase 7 검증 기록](phase-07-data-quality-publish.md)을 참조한다.
+
+
+
+- [x] 구독 결제 상태 표준화: Staging의 대문자 상태에 맞춰 성공 금액 계산과 Fact·Report 허용값을 변경했다.
+- `dbt/models/intermediate/int_subscription_payments_enriched.sql`: `COMPLETED`일 때만 성공 결제 금액을 계산한다.
+- `dbt/models/marts/facts/schema.yml`, `dbt/models/marts/metrics/schema.yml`: 구독 결제 Fact와 일별 결제 결과 Report의 허용값을 `COMPLETED`·`FAILED`로 변경했다.
+- `docs/reference/mart-grain.md`, `docs/architecture/03-subscription-lifecycle-requirements.md`: 분석 계층의 상태·성공 금액·실패율 정의를 대문자 기준으로 맞췄다. 원천 스키마의 소문자 계약은 유지했다.
+- 운영 반영: 코드 병합 뒤 첫 게시에는 반드시 `python -m src.warehouse.publish --full-refresh`를 사용한다. 게시 파일을 복사해 시작하는 증분 빌드는 기존 소문자 행을 보존하므로 허용값 검증에서 차단된다. 전체 새로고침은 모든 구독 결제 행과 Report를 재계산한다. `fct_subscription_payment` 해시는 한 번 바뀌며 변경 관계로 기록된다. 롤백 시에는 이전 코드로 복귀한 뒤 전체 새로고침으로 소문자 분석 데이터를 다시 만든다. 이 작업에서는 운영 게시를 수행하지 않는다.
+
 - `dbt/models/intermediate/int_order_items_enriched.sql`: 사용하지 않는 상품·판매자 차원 결합을 제거하고 주문 Staging 결합은 유지했다.
 - `dbt/models/marts/metrics/rpt_subscription_funnel_daily.sql`: 재가입을 이탈 후 활성 상태 전이로 한정했다.
 - `dbt/macros/record_affected_keys.sql`, `tests/test_dbt_affected_keys_macro.py`: architect가 운영 1개·실패 보관 3개 파일의 신규 스키마 적용을 확인하여 구 `order_id` 열 감지·테이블 삭제 분기와 전용 테스트를 제거했다. 신규 도메인 스키마 선언과 양쪽 도메인 기록 검증은 유지했다.

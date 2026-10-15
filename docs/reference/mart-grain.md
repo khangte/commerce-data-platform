@@ -390,10 +390,10 @@ Business Key가 계약이므로 해지 뒤 재가입한 사람은 `subscription_
 | `billing_cycle_sequence`     | INTEGER       | Degenerate Dimension               | N    | 계약 내 청구 회차 순번 / `not_null`, `>= 1`                                                              |
 | `attempt_sequence`           | INTEGER       | Degenerate Dimension               | N    | 동일 청구 회차 내 시도 순번 / `not_null`, `>= 1`                                                         |
 | `provider_payment_id`        | VARCHAR       | Degenerate Dimension               | Y    | 결제 대행사 거래 식별자. 정산 대조·분쟁 추적용                                                           |
-| `payment_status`             | VARCHAR       | Fact Attribute                     | N    | 결제 시도 결과 / `not_null`, `accepted_values: completed, failed`                                        |
+| `payment_status`             | VARCHAR       | Fact Attribute                     | N    | 결제 시도 결과 / `not_null`, `accepted_values: COMPLETED, FAILED`                                        |
 | `payment_method_type`        | VARCHAR       | Fact Attribute                     | Y    | 결제수단 유형                                                                                             |
 | `payment_provider`           | VARCHAR       | Fact Attribute                     | Y    | 결제 대행사                                                                                               |
-| `failure_code`                | VARCHAR       | Fact Attribute                     | Y    | 실패 원인 코드. `payment_status = 'completed'`이면 `NULL`                                                |
+| `failure_code`                | VARCHAR       | Fact Attribute                     | Y    | 실패 원인 코드. `payment_status = 'COMPLETED'`이면 `NULL`                                                |
 | `currency_code`               | VARCHAR       | Fact Attribute                     | N    | ISO 4217 통화 코드 / `not_null`, `accepted_values: BRL`                                                  |
 | `payment_at`                  | TIMESTAMPTZ   | Business Event Timestamp           | N    | 결제 시도와 결과가 확정된 시각 / `not_null`                                                              |
 | `billing_period_start_at`     | TIMESTAMPTZ   | Business Event Timestamp           | N    | 이 결제가 커버하는 혜택 기간 시작 / `not_null`                                                           |
@@ -440,7 +440,7 @@ Business Key가 계약이므로 해지 뒤 재가입한 사람은 `subscription_
 | 컬럼 | 타입 | 종류 | Null | 정의 / Test |
 | ---- | ---- | ---- | ---- | ----------- |
 | `payment_date_key` | INTEGER | PK / FK | N | `payment_at`에서 파생한 결제일. `not_null`, `payment_date_key`, `payment_status` 기준 `GROUP BY`로 유일성 보장 |
-| `payment_status` | VARCHAR | PK / Attribute | N | `completed` 또는 `failed`. `not_null`, `accepted_values` |
+| `payment_status` | VARCHAR | PK / Attribute | N | `COMPLETED` 또는 `FAILED`. `not_null`, `accepted_values` |
 | `payment_count` | BIGINT | Additive Measure | N | 결제 시도 건수. `SUM` 가능 |
 | `paying_customer_count` | BIGINT | Non-additive Measure (접힘) | N | `count(distinct customer_key)`로 접은 고객 수. 날짜·상태를 넘겨 `SUM` 금지 |
 | `completed_payment_value_total` | DECIMAL(38,2) | Additive Measure | Y | 성공 결제 금액 합계. 실패 상태에서는 `NULL`, `SUM` 가능 |
@@ -562,7 +562,7 @@ Grain 계약은 문서가 아니라 Test로 강제한다. 아래 표는 컬럼 �
 | 사람당 열린 계약 유일성   | `is_current`이면서 `subscription_status`가 `ACTIVE`·`PAYMENT_FAILED`·`CANCEL_REQUESTED`인 계약이 사람당 최대 1건인지 검증하는 `dbt/tests/dim_subscription_one_open_contract.sql` Singular Test. 원천 부분 Unique Index를 Mart에서 재확인한다 |
 | 청구 회차·시도 조합 Unique | `(subscription_id, billing_cycle_sequence, attempt_sequence)`를 검증하는 `dbt/tests/fct_subscription_payment_cycle_attempt_unique.sql` Singular Test |
 | 성공분리 Measure 정합성   | 성공 행은 `completed_payment_value = payment_value`, 실패 행은 `NULL`인지 검증하는 `dbt/tests/fct_subscription_payment_completed_value_consistent.sql` Singular Test |
-| 실패 코드 정합성          | `payment_status = 'completed'`이면 `failure_code`가 `NULL`인지 검증하는 `dbt/tests/fct_subscription_payment_failure_code_consistent.sql` Singular Test |
+| 실패 코드 정합성          | `payment_status = 'COMPLETED'`이면 `failure_code`가 `NULL`인지 검증하는 `dbt/tests/fct_subscription_payment_failure_code_consistent.sql` Singular Test |
 | 주문 구매일 Key 일치      | `fct_order_item`·`fct_order_payment`의 `purchase_date_key`가 같은 `order_id`의 `fct_order.purchase_date_key`와 같은지 검증하는 `dbt/tests/fct_order_item_date_matches_order.sql`, `dbt/tests/fct_order_payment_date_matches_order.sql` Singular Test |
 | 계층 책임 분리            | `tests/test_fact_layer_contract.py`                                                                                   |
 

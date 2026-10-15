@@ -267,9 +267,9 @@ Grain은 결제 1건이다. 결제 시각으로 `dim_customer`와 Temporal Join�
 
 | 지표             | 계산                                                    |
 | ---------------- | ------------------------------------------------------- |
-| 구독 MRR         | `fact_subscription_payments`의 월별 `completed` 합계    |
-| 결제 실패율      | `failed` / 전체 결제 건수                               |
-| 결제 실패 회수율 | `PAYMENT_FAILED` 진입 후 7일 내 `completed`가 있는 비율 |
+| 구독 MRR         | `fact_subscription_payments`의 월별 `COMPLETED` 합계    |
+| 결제 실패율      | `FAILED` / 전체 결제 건수                               |
+| 결제 실패 회수율 | `PAYMENT_FAILED` 진입 후 7일 내 `COMPLETED`가 있는 비율 |
 | 체험 전환율      | `TRIAL` 진입자 중 `billing_sequence = 1`이 성공한 비율  |
 | 재가입율         | `int_customer_history`의 `CHURNED → TRIAL/ACTIVE` 전이  |
 | 구독 상태 × 등급 | `dim_customer`의 `is_current` 교차 분포                 |

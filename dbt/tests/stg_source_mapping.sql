@@ -145,7 +145,7 @@ mapping_failures as (
     where
         stg_subscription_payments.customer_id is null
         or stg_subscription_payments.payment_status
-            is distinct from subscription_payments_source.payment_status
+            is distinct from {{ standardized_payment_status('subscription_payments_source.payment_status') }}
         or stg_subscription_payments.payment_value
             is distinct from subscription_payments_source.payment_value
         or stg_subscription_payments.subscription_id is distinct from subscription_payments_source.subscription_id

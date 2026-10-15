@@ -12,9 +12,9 @@ DBT_PROFILE = DBT_DIR / "profiles.yml"
 METRIC_SCHEMA = DBT_DIR / "models/marts/metrics/schema.yml"
 
 
-def _tests(model: str, column: str) -> list:
+def _tests(model: str, column: str, schema_path: Path = FACT_SCHEMA) -> list:
     """지정한 모델 Column의 data_tests를 반환한다."""
-    schema = yaml.safe_load(FACT_SCHEMA.read_text(encoding="utf-8"))
+    schema = yaml.safe_load(schema_path.read_text(encoding="utf-8"))
     entry = next(item for item in schema["models"] if item["name"] == model)
     return next(item for item in entry["columns"] if item["name"] == column).get("data_tests", [])
 
@@ -42,9 +42,16 @@ def test_status_domains_and_foreign_keys_are_declared() -> None:
     assert _named(_tests("fct_order_payment", "purchase_date_key"), "relationships")[
         "arguments"
     ] == {"to": "ref('dim_date')", "field": "date_key"}
-    assert _named(_tests("fct_subscription_payment", "payment_status"), "accepted_values")[
-        "arguments"
-    ]["values"] == ["completed", "failed"]
+    for model, schema_path in (
+        ("stg_subscription_payments", DBT_DIR / "models/staging/schema.yml"),
+        ("fct_subscription_payment", FACT_SCHEMA),
+        ("rpt_subscription_payment_outcomes_daily", METRIC_SCHEMA),
+    ):
+        status_tests = _tests(model, "payment_status", schema_path)
+        assert "not_null" in status_tests
+        assert _named(status_tests, "accepted_values")["arguments"]["values"] == [
+            "COMPLETED", "FAILED"
+        ]
 
 
 def test_non_negative_and_singular_gate_tests_exist() -> None:
