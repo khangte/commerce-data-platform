@@ -199,12 +199,18 @@ refunded  → REFUNDED
 
 ## 파일·폴더별 변경 요약
 
+- [x] 관측 정리 항목 2: 키·수정 시각·속성 해시별 중복 제거만 공통 매크로로 추출했다. 두 모델의 속성 해시 식은 각각 그대로 유지했다.
+- `dbt/macros/dedupe_observations.sql`: `_ingested_at`(수집 시각) 내림차순, `_batch_id`(배치 식별자) 내림차순으로 한 관측을 선택한다.
+- `dbt/models/staging/stg_customer_tier_observations.sql`, `dbt/models/staging/stg_customer_subscription_observations.sql`: 항목 2에서 공통 중복 제거를 각각 고객 키·구독 키로 호출한다.
+- `tests/test_dbt_observation_dedup.py`: 두 키 유형에서 수집 시각·배치 우선순위와 서로 다른 키·수정 시각·속성의 관측 보존을 검증한다.
+
 - [x] 관측 정리 항목 1: 정상 구독 상태·등급을 그대로 반환하던 매크로를 제거하고 원천 열을 직접 노출한다. 미허용값 동작 변경은 승인된 범위이며 Bronze·Staging 허용값 검증으로 차단한다.
 - `dbt/macros/status_standardization.sql`: 구독 상태·등급 매크로를 제거하고 주문·결제 표준화 매크로는 유지했다.
 - `dbt/models/staging/stg_customer_tier_observations.sql`, `dbt/models/staging/stg_customer_subscription_observations.sql`: 항목 1에서 등급·구독 상태 원천 열을 직접 사용한다. 속성 해시 식은 유지했다.
 - `dbt/tests/stg_source_mapping.sql`, `tests/test_dbt_cleanup.py`: 원천 대조를 직접 비교로 바꾸고 `TRIAL`의 NULL 매핑 단언을 허용값 목록의 `TRIAL` 제외·NULL 금지 검사로 대체했다.
 - `docs/reference/data-transformation-flow.md`: 상태·등급의 원천 열 직접 사용과 Bronze·Staging 검증 책임을 설명했다.
-- 항목 1 검증: 변경 전·후 Warehouse 복사본의 전체 새로고침이 통과했고 모든 Dimension·Fact의 논리 해시·행 수, 고객·구독 키 목록과 두 관측 모델의 속성 해시가 완전히 일치했다.
+- 최종 검증: `dbt parse`, `pytest -q tests/test_dbt_*.py` 32건, 세 통합 실행 플래그를 활성화한 `tests/integration/test_publish_gate_dbt_integration.py` 1건, Ruff·`git diff --check`가 통과했다. 운영 Warehouse 수정·게시·커밋은 수행하지 않았다.
+- 전후 비교: 변경 전·항목 1 적용 후·항목 2 적용 후 Warehouse 복사본의 전체 새로고침이 모두 통과했다. 모든 Dimension·Fact의 논리 해시·행 수, 고객 키 96,384개·구독 키 8개 목록과 두 관측 모델의 속성 해시가 완전히 일치했다. 중복 제거 회귀 테스트는 매크로 추가 전 실패 2건을 확인한 뒤 추가 후 모두 통과했다.
 
 - 구독 결제 상태 전환과 최종 테스트 결과는 [Phase 7 검증 기록](phase-07-data-quality-publish.md)을 참조한다.
 

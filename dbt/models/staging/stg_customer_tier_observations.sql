@@ -19,13 +19,7 @@ with_attribute_hash as (
     from tier_observations
 ),
 deduplicated as (
-    select
-        *,
-        row_number() over (
-            partition by customer_id, updated_at, attribute_hash
-            order by _ingested_at desc, _batch_id desc
-        ) as _observation_rank
-    from with_attribute_hash
+    {{ dedupe_observations('with_attribute_hash', 'customer_id') }}
 )
 select
     customer_id,
@@ -39,4 +33,3 @@ select
     _source_table,
     _schema_version
 from deduplicated
-where _observation_rank = 1

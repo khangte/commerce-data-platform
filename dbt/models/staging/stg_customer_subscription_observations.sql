@@ -37,13 +37,7 @@ with_attribute_hash as (
     from subscription_observations
 ),
 deduplicated as (
-    select
-        *,
-        row_number() over (
-            partition by subscription_id, updated_at, attribute_hash
-            order by _ingested_at desc, _batch_id desc
-        ) as _observation_rank
-    from with_attribute_hash
+    {{ dedupe_observations('with_attribute_hash', 'subscription_id') }}
 )
 select
     subscription_id,
@@ -68,4 +62,3 @@ select
     _source_table,
     _schema_version
 from deduplicated
-where _observation_rank = 1
