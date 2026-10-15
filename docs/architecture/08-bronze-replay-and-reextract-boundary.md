@@ -37,7 +37,7 @@ PRD 16장은 Backfill을 두 가지로 정의한다.
 
 `_batch_id`는 `{dag_id}__{UTC %Y%m%dT%H%M%SZ}` 형식이다. `P6-22`의 재계산 경계는 이 값을 사전순으로 비교하는데, 그 비교가 시간순인 것은 **같은 `dag_id` 안에서만** 참이다. Replay 경계는 그 전제를 쓸 수 없다. 재수집(`membership_grain_rebaseline`), 수동 실행, Re-extract가 각각 다른 `dag_id`를 쓰고, Catalog 안에 그 결과가 섞여 있기 때문이다. `dag_id` 접두사가 다르면 사전순 상한은 시간 상한이 아니다.
 
-`committed_at`은 `dag_id`와 무관하게 단조롭다. Metadata의 `bronze_objects.committed_at`에서 오고, Commit 이후 바뀌지 않으며, Catalog를 다시 동기화해도 같은 값이 다시 실린다(`src/ingestion/catalog.py:78` `_committed_entries`).
+`committed_at`은 `dag_id`와 무관하게 단조롭다. Metadata의 `bronze_objects.committed_at`에서 오고, Commit 이후 바뀌지 않으며, Catalog를 다시 동기화해도 같은 값이 다시 실린다(`src/ingestion/bronze/catalog.py:78` `_committed_entries`).
 
 ### 하한을 두지 않는 이유
 
@@ -112,7 +112,7 @@ python -m src.ingestion.reprocess --tables customers --reprocess-from 2026-09-10
 
 ### 되감기 대상 Cursor를 Source에서 읽는 이유
 
-저장 Cursor는 `(timestamp, 전체 PK)` Composite이고 하한 비교는 `>` 이다(`src/ingestion/extract.py:214`). `T`를 그대로 넣으면 `T` 시각의 행이 빠진다. Timestamp만 있고 Key가 없는 Cursor는 Metadata 제약(`watermarks_initial_cursor_check`)이 금지한다.
+저장 Cursor는 `(timestamp, 전체 PK)` Composite이고 하한 비교는 `>` 이다(`src/ingestion/extraction/extract.py:233`). `T`를 그대로 넣으면 `T` 시각의 행이 빠진다. Timestamp만 있고 Key가 없는 Cursor는 Metadata 제약(`watermarks_initial_cursor_check`)이 금지한다.
 
 그래서 되감기 값은 **Source에 실재하는 Cursor**로 정한다. `cursor_timestamp_column < T`인 행 중 Cursor 순서로 가장 큰 행의 `(timestamp, PK)`다. 그런 행이 없으면 초기 Cursor(`timestamp=None`)로 되감는다. 결과적으로 `>= T`인 모든 행이 재추출 범위에 들어가고, Metadata에는 가짜 Key가 아니라 실재하는 Cursor만 남는다.
 
@@ -120,7 +120,7 @@ python -m src.ingestion.reprocess --tables customers --reprocess-from 2026-09-10
 
 1. **Table Lease 아래에서만 수행한다.** Lease 없이 되감으면 수집 중인 Run이 자기 하한이 바뀐 줄 모르고 Commit한다.
 2. **과거 방향만 허용한다.** 현재 Cursor보다 크거나 같은 값으로의 되감기는 거부한다(`WatermarkRewindError`). 앞으로 감는 것은 되감기가 아니라 데이터 건너뛰기다.
-3. **CAS로 쓴다.** `version`과 현재 Cursor를 함께 조건에 넣고 `version + 1`로 올린다. `assert_table_lease()`가 `version`을 Fencing Token으로 쓰므로(`src/ingestion/lease.py:197`), 되감기는 진행 중인 다른 Run의 Lease를 자동으로 무효화한다. 이것은 의도한 동작이다.
+3. **CAS로 쓴다.** `version`과 현재 Cursor를 함께 조건에 넣고 `version + 1`로 올린다. `assert_table_lease()`가 `version`을 Fencing Token으로 쓰므로(`src/ingestion/control/lease.py:193`), 되감기는 진행 중인 다른 Run의 Lease를 자동으로 무효화한다. 이것은 의도한 동작이다.
 4. **되감기는 추출하지 않는다.** 되감기 CLI는 Metadata만 바꾼다. 재추출은 운영자가 별도 `dag_id`로 기존 수집 CLI를 실행해서 수행한다. 두 단계를 나누면 되감기만 하고 멈춘 상태를 점검할 수 있다.
 
 ### 재추출분이 Warehouse에 반영되는 경로

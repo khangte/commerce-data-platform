@@ -69,7 +69,7 @@ Model 하나의 Logical Hash를 다음으로 정의한다.
 3. 각 행의 JSON을 UTF-8로 SHA-256에 누적하고 행 사이에 `\n`을 넣는다.
 4. 최종 Hex Digest가 그 Model의 Logical Hash다.
 
-이 형태는 Bronze의 `table_logical_hash` (`src/ingestion/bronze.py:266`)와 같다. 같은 프로젝트 안에서 "Logical Hash"라는 말이 두 가지를 뜻하지 않게 하려는 것이다.
+이 형태는 Bronze의 `table_logical_hash` (`src/ingestion/bronze/bronze.py:136`)와 같다. 같은 프로젝트 안에서 "Logical Hash"라는 말이 두 가지를 뜻하지 않게 하려는 것이다.
 
 ### 값 표현 규칙
 

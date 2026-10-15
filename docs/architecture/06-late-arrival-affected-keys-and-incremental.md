@@ -78,7 +78,7 @@ Business Key 단위로 경계를 잡으면 이 경우가 함께 잡힌다. "이�
 
 1. `int_customer_history`는 등급 축만 만든다. 구독 관측은 이제 이 모델에 아무 Version도 만들지 않으므로, 구독 관측으로 고객 축 재계산을 유발하는 것은 근거가 없다. 구독 관측이 실제로 바꾸는 것은 `dim_subscription`과 `fact_subscription_payments`이고, 그 경로는 D-2가 담당한다.
 2. 경계가 전역 `min(updated_at)` 하나다. 한 고객의 3년 전 지연 관측 하나가 **모든 고객**의 그 이후 Version을 재계산 대상으로 만든다.
-3. `latest_batch`를 `stg_orders`에서만 뽑는다. `_batch_id`는 `{dag_id}__{logical_date}` 형식으로 Run 안의 모든 Table이 공유하지만(`src/ingestion/batch.py:32`), 주문 Table 추출이 실패하거나 건너뛴 Run에서는 이 값이 뒤처진다.
+3. `latest_batch`를 `stg_orders`에서만 뽑는다. `_batch_id`는 `{dag_id}__{logical_date}` 형식으로 Run 안의 모든 Table이 공유하지만(`src/ingestion/control/batch.py:32`), 주문 Table 추출이 실패하거나 건너뛴 Run에서는 이 값이 뒤처진다.
 
 ### 결정
 
