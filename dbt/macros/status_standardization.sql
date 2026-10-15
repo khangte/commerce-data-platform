@@ -21,22 +21,3 @@
         else null
     end
 {%- endmacro %}
-
-{% macro standardized_membership_tier(column_name) -%}
-    case {{ column_name }}
-        when 'BRONZE' then 'BRONZE'
-        when 'SILVER' then 'SILVER'
-        when 'GOLD' then 'GOLD'
-        else null
-    end
-{%- endmacro %}
-
-{% macro standardized_subscription_status(column_name) -%}
-    case {{ column_name }}
-        when 'ACTIVE' then 'ACTIVE'
-        when 'PAYMENT_FAILED' then 'PAYMENT_FAILED'
-        when 'CANCEL_REQUESTED' then 'CANCEL_REQUESTED'
-        when 'CHURNED' then 'CHURNED'
-        else null
-    end
-{%- endmacro %}

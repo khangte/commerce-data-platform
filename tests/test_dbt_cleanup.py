@@ -3,6 +3,7 @@
 from pathlib import Path
 
 import duckdb
+import yaml
 from jinja2 import Environment, StrictUndefined
 
 DBT_DIR = Path(__file__).resolve().parents[1] / "dbt"
@@ -42,14 +43,22 @@ def test_order_items_preserve_lines_without_dimensions() -> None:
 
 
 def test_rejoined_count_requires_active_after_churn() -> None:
-    """미허용 TRIAL은 NULL이며 이탈 후 활성 전이만 재가입으로 계산한다."""
-    macros = Environment(undefined=StrictUndefined).from_string(
-        (DBT_DIR / "macros/status_standardization.sql").read_text(encoding="utf-8")
-    ).module
+    """TRIAL 제외 계약을 확인하고 이탈 후 활성 전이만 재가입으로 계산한다."""
+    schema = yaml.safe_load((DBT_DIR / "models/staging/schema.yml").read_text(encoding="utf-8"))
+    model = next(
+        item for item in schema["models"]
+        if item["name"] == "stg_customer_subscription_observations"
+    )
+    status_tests = next(
+        column for column in model["columns"] if column["name"] == "subscription_status"
+    )["data_tests"]
+    assert "not_null" in status_tests
+    allowed = next(
+        test["accepted_values"]["arguments"]["values"] for test in status_tests
+        if isinstance(test, dict) and "accepted_values" in test
+    )
+    assert "TRIAL" not in allowed
     with duckdb.connect() as connection:
-        assert connection.execute(
-            "SELECT " + macros.standardized_subscription_status("'TRIAL'")
-        ).fetchone() == (None,)
         connection.execute("""
             CREATE TABLE dim_subscription (
                 customer_id VARCHAR, subscription_key VARCHAR,

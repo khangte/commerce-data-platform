@@ -2,7 +2,7 @@ with subscription_observations as (
     select
         subscription_id,
         customer_unique_id as customer_id,
-        {{ standardized_subscription_status('subscription_status') }} as subscription_status,
+        subscription_status,
         auto_renew_enabled,
         subscription_started_at,
         current_period_started_at,

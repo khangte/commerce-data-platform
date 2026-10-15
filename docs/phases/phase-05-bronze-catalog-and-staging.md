@@ -149,7 +149,7 @@ failed    → FAILED
 refunded  → REFUNDED
 ```
 
-`subscription_status`와 `membership_tier`는 원천 값 자체가 이미 대문자 표준 표기다. Staging Macro는 값을 바꾸지 않고 허용 목록 검증만 수행한다.
+`subscription_status`와 `membership_tier`는 원천 값 자체가 이미 대문자 표준 표기다. Staging은 원천 열을 그대로 노출하며 Bronze의 `status_domains`와 Staging의 `not_null`·`accepted_values`로 허용 목록을 검증한다.
 
 `stg_customers_current`의 출력 Grain은 주문 결합을 위한 `source_customer_id` 1행이다. 계정은
 불변이므로 `created_at`, `_ingested_at`, `_batch_id`로 같은 계정의 Current Bronze 행만 고르고,
@@ -198,6 +198,13 @@ refunded  → REFUNDED
 - Source→Staging Mapping 자동 검증 Test
 
 ## 파일·폴더별 변경 요약
+
+- [x] 관측 정리 항목 1: 정상 구독 상태·등급을 그대로 반환하던 매크로를 제거하고 원천 열을 직접 노출한다. 미허용값 동작 변경은 승인된 범위이며 Bronze·Staging 허용값 검증으로 차단한다.
+- `dbt/macros/status_standardization.sql`: 구독 상태·등급 매크로를 제거하고 주문·결제 표준화 매크로는 유지했다.
+- `dbt/models/staging/stg_customer_tier_observations.sql`, `dbt/models/staging/stg_customer_subscription_observations.sql`: 항목 1에서 등급·구독 상태 원천 열을 직접 사용한다. 속성 해시 식은 유지했다.
+- `dbt/tests/stg_source_mapping.sql`, `tests/test_dbt_cleanup.py`: 원천 대조를 직접 비교로 바꾸고 `TRIAL`의 NULL 매핑 단언을 허용값 목록의 `TRIAL` 제외·NULL 금지 검사로 대체했다.
+- `docs/reference/data-transformation-flow.md`: 상태·등급의 원천 열 직접 사용과 Bronze·Staging 검증 책임을 설명했다.
+- 항목 1 검증: 변경 전·후 Warehouse 복사본의 전체 새로고침이 통과했고 모든 Dimension·Fact의 논리 해시·행 수, 고객·구독 키 목록과 두 관측 모델의 속성 해시가 완전히 일치했다.
 
 - 구독 결제 상태 전환과 최종 테스트 결과는 [Phase 7 검증 기록](phase-07-data-quality-publish.md)을 참조한다.
 

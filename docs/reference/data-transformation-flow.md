@@ -326,7 +326,7 @@ Staging은 원천 8개 주문 상태를 축약하지 않고, 대문자 `order_st
 
 - subscription / tier
 
-  `subscription_status`(`ACTIVE`/`PAYMENT_FAILED`/`CANCEL_REQUESTED`/`CHURNED`)와 `membership_tier`(`BRONZE`/`SILVER`/`GOLD`)는 원천 값 자체가 이미 대문자 표준 표기다. Staging Macro(`standardized_subscription_status`, `standardized_membership_tier`)는 값을 바꾸지 않고 허용 목록 검증만 수행한다. `order_status`/`payment_status`와 달리 소문자→대문자 변환 구간이 아니다.
+  `subscription_status`(`ACTIVE`/`PAYMENT_FAILED`/`CANCEL_REQUESTED`/`CHURNED`)와 `membership_tier`(`BRONZE`/`SILVER`/`GOLD`)는 원천 값 자체가 이미 대문자 표준 표기다. Staging은 원천 열을 그대로 노출한다. Bronze의 `status_domains`(허용 상태 목록)와 Staging의 `not_null`·`accepted_values`가 미허용 상태를 차단한다. `order_status`/`payment_status`와 달리 소문자→대문자 변환 구간이 아니다.
 
 **왜 대문자인가**: 소문자는 원천 값, 대문자는 Staging 표준 상태다. Model에서 `= 'delivered'`를 보면 원천을 직접 참조하는 실수이고, `= 'DELIVERED'`면 Staging 이후다. 규칙이 눈에 보이므로 리뷰에서 잡을 수 있다.
 

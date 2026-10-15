@@ -108,7 +108,7 @@ mapping_failures as (
     where
         stg_subscription_obs.customer_id is null
         or stg_subscription_obs.subscription_status is distinct from
-            {{ standardized_subscription_status('subscriptions_source.subscription_status') }}
+            subscriptions_source.subscription_status
         or stg_subscription_obs.auto_renew_enabled is distinct from subscriptions_source.auto_renew_enabled
         or stg_subscription_obs.subscription_started_at is distinct from subscriptions_source.subscription_started_at
         or stg_subscription_obs.current_period_started_at is distinct from subscriptions_source.current_period_started_at
@@ -131,7 +131,7 @@ mapping_failures as (
     where
         stg_tier_obs.customer_id is null
         or stg_tier_obs.membership_tier is distinct from
-            {{ standardized_membership_tier('tiers_source.membership_tier') }}
+            tiers_source.membership_tier
         or stg_tier_obs.created_at is distinct from tiers_source.created_at
 
     union all

@@ -1,7 +1,7 @@
 with tier_observations as (
     select
         customer_unique_id as customer_id,
-        {{ standardized_membership_tier('membership_tier') }} as membership_tier,
+        membership_tier,
         created_at,
         updated_at,
         _batch_id,
