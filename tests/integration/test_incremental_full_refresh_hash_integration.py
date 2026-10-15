@@ -29,6 +29,7 @@ from src.generator.customers.subscription_payments import (
 from src.ingestion.bronze.storage import SeaweedFSSettings
 from src.ingestion.control.metadata import CursorPosition
 from src.ingestion.service import TableIngestionResult
+from src.warehouse.dbt_vars import dbt_vars_json
 from src.warehouse.mart_hash import describe_mart_difference, mart_logical_hashes, target_for
 from tests.integration.test_subscription_payment_temporal_join_integration import (
     FIXTURE_START,
@@ -196,6 +197,8 @@ def _run_full_refresh_build(
             "dbt",
             "--profiles-dir",
             "dbt",
+            "--vars",
+            dbt_vars_json(),
             "--target-path",
             str(tmp_path / "dbt-target-full-refresh"),
         ],

@@ -40,8 +40,8 @@ Model 간 참조는 `{{ ref('model_name') }}`으로 한다. 파일 경로나 실
 ```bash
 .venv/bin/dbt debug --project-dir dbt --profiles-dir dbt
 .venv/bin/dbt parse --project-dir dbt --profiles-dir dbt
-.venv/bin/dbt run-operation validate_bronze_catalog --project-dir dbt --profiles-dir dbt
-.venv/bin/dbt run-operation validate_bronze_catalog --args '{verify_read: true}' --project-dir dbt --profiles-dir dbt
+.venv/bin/dbt run-operation validate_bronze_catalog --vars "$(.venv/bin/python -m src.warehouse.dbt_vars)" --project-dir dbt --profiles-dir dbt
+.venv/bin/dbt run-operation validate_bronze_catalog --args '{verify_read: true}' --vars "$(.venv/bin/python -m src.warehouse.dbt_vars)" --project-dir dbt --profiles-dir dbt
 ```
 
 `bronze_source(source_table)` Macro만 Bronze Parquet을 읽는다. Macro는
@@ -52,3 +52,14 @@ Relation을 반환하므로 Staging Model은 안전하게 빈 결과를 만든�
 SeaweedFS 접속 정보는 실행 환경 변수에서 읽으며, Credential은 이 디렉터리에 기록하지
 않는다. 로컬 `.env`를 쓸 때에는 dbt 실행 전에 셸 또는 Orchestration 환경에 그 값을
 전달한다. `verify_read: true`는 Catalog 목록을 실제로 읽어 접근 가능한지까지 검사한다.
+
+Bronze 원천·기술 컬럼의 이름·순서·타입과 지원 스키마 버전은 Python 계약에서 생성한다.
+`src.warehouse.dbt_vars.dbt_vars_json`이 `bronze_schemas`·`bronze_schema_versions`와 호출자
+변수를 하나로 합친다. 직접 dbt를 실행할 때에는 위 명령처럼 이 모듈의 JSON을 한 번의
+`--vars`로 전달한다. `--vars`를 반복하면 마지막 값만 적용되므로 반복하지 않는다.
+게시 CLI의 `--dbt-vars`는 YAML 매핑으로 입력하며, 내부에서 생성된 Bronze 계약과 병합된다.
+두 Bronze 변수는 예약 키여서 호출자가 덮어쓸 수 없다.
+
+변수 없이 `dbt parse`를 실행할 수 있다. 실제 실행에서 변수가 빠지면 데이터 유무와 무관하게
+`SOURCE_CONTRACT_ERROR: missing bronze_schemas or bronze_schema_versions`로 즉시 실패한다.
+이 오류가 발생하면 스키마를 SQL에 복사하지 말고 위 Python 모듈로 변수를 생성해 다시 실행한다.

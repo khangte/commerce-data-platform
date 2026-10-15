@@ -97,6 +97,7 @@ def test_run_dbt_build_passes_build_path_and_target_path(tmp_path: Path) -> None
         "import json, os, pathlib, sys\n"
         "target = pathlib.Path(sys.argv[sys.argv.index('--target-path') + 1])\n"
         "target.mkdir(parents=True, exist_ok=True)\n"
+        "(target / 'argv.json').write_text(json.dumps(sys.argv))\n"
         "(target / 'run_results.json').write_text(json.dumps({\n"
         "    'metadata': {'invocation_id': os.environ['WAREHOUSE_PATH']},\n"
         "    'results': [{'unique_id': 'test.p.a', 'status': 'pass'}],\n"
@@ -105,7 +106,26 @@ def test_run_dbt_build_passes_build_path_and_target_path(tmp_path: Path) -> None
     )
     fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
     build_path = tmp_path / "build" / "run.duckdb"
-    result = run_dbt_build(build_path, tmp_path / "target", dbt_executable=str(fake))
+    result = run_dbt_build(
+        build_path, tmp_path / "target", dbt_executable=str(fake),
+        extra_args=("--full-refresh",),
+        dbt_vars={"publish_gate_canary": True, "bronze_as_of": "2026-10-01T00:00:00Z"},
+    )
     assert result.succeeded
     assert result.invocation_id == str(build_path)
     assert result.tests_passed == 1
+
+    arguments = json.loads((tmp_path / "target/argv.json").read_text())
+    assert arguments.count("--vars") == 1
+    variables = json.loads(arguments[arguments.index("--vars") + 1])
+    assert variables["bronze_schemas"]
+    assert variables["publish_gate_canary"] is True
+    assert variables["bronze_as_of"] == "2026-10-01T00:00:00Z"
+    assert "--full-refresh" in arguments
+
+
+@pytest.mark.parametrize("argument", ["--vars", "--vars={a: 1}"])
+def test_run_dbt_build_rejects_vars_in_extra_args(tmp_path: Path, argument: str) -> None:
+    """별도 --vars로 생성된 스키마나 호출자 변수가 사라지는 것을 막는다."""
+    with pytest.raises(ValueError, match="dbt_vars"):
+        run_dbt_build(tmp_path / "warehouse.duckdb", tmp_path / "target", extra_args=(argument,))

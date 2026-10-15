@@ -199,6 +199,14 @@ refunded  → REFUNDED
 
 ## 파일·폴더별 변경 요약
 
+- [x] Bronze 빈 스키마의 정의를 Python `TableConfig`(테이블 계약)로 통합했다. SQL의 컬럼·기술 컬럼·테이블 목록·지원 버전 복사본을 제거했다.
+- `src/warehouse/dbt_vars.py`: `TableConfig.bronze_schema`가 제공하는 원천·기술 컬럼과 `SUPPORTED_BRONZE_SCHEMA_VERSIONS`(읽기 지원 버전)로 dbt JSON 변수를 생성한다. 타입 매핑은 문자열·32비트 정수·불리언·UTC 마이크로초 시각·`decimal128(14,2)`만 허용하며, 미지원 타입과 예약 변수 덮어쓰기는 거절한다.
+- `dbt/macros/bronze_source.sql`: `bronze_schemas`(테이블별 컬럼·타입)와 `bronze_schema_versions`(지원 버전)만 사용한다. 파싱은 변수 없이 빈 SQL로 진행하고, 실행은 카탈로그 조회 전에 변수 누락을 차단한다.
+- `dbt/README.md`: 직접 dbt를 실행할 때 `python -m src.warehouse.dbt_vars`로 변수를 생성하고 `--vars` 한 번으로 전달하는 명령과 누락 오류 조치를 기록했다.
+- `tests/test_dbt_catalog_macro.py`, `tests/test_dbt_watermark_macro.py`, `tests/test_dbt_replay_boundary_macro.py`: 직접 실행도 같은 변수 생성 경로를 사용한다. 빈 카탈로그 전체 Build와 기존 버전·재처리 경계 검증을 유지한다.
+- `tests/test_dbt_vars.py`, `tests/test_dbt_bronze_source_vars.py`: 타입의 정밀도·시간 단위·시간대, 변수 병합·예약 키, 모듈 실행, 파싱·실행 경계와 동적 테이블·버전을 검증한다.
+- 삭제 전 동등성: 기존 SQL 사전의 9개 테이블 모두 원천·기술 컬럼의 이름·타입·순서가 생성된 목록과 완전히 같고 지원 테이블 집합도 일치함을 확인했다. 전체 검증 결과는 [Phase 7 검증 기록](phase-07-data-quality-publish.md)을 참조한다.
+
 - [x] 관측 정리 항목 2: 키·수정 시각·속성 해시별 중복 제거만 공통 매크로로 추출했다. 두 모델의 속성 해시 식은 각각 그대로 유지했다.
 - `dbt/macros/dedupe_observations.sql`: `_ingested_at`(수집 시각) 내림차순, `_batch_id`(배치 식별자) 내림차순으로 한 관측을 선택한다.
 - `dbt/models/staging/stg_customer_tier_observations.sql`, `dbt/models/staging/stg_customer_subscription_observations.sql`: 항목 2에서 공통 중복 제거를 각각 고객 키·구독 키로 호출한다.

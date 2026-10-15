@@ -10,8 +10,16 @@ Full Refresh와 값·Hash까지 똑같이 재현하는지 확인한다. 재현�
 `RUN_POSTGRES_INTEGRATION=1 RUN_SEAWEEDFS_INTEGRATION=1 RUN_DBT_PUBLISH_INTEGRATION=1 uv run pytest tests/reliability/test_r11_r15_reprocess_and_source.py -v`를 실행한다.
 첫 Batch를 수집하고 그 시점을 `--full-refresh`로 Build해 Control Hash를 남긴 뒤(`pipeline_name`은
 `test_r12_*`), 둘째(지연) Batch를 마저 수집한다. 첫 Build의 `control.bronze_files.committed_at`
-최댓값을 `bronze_as_of` 경계로 삼아 `--full-refresh --vars '{"bronze_as_of": ...}'`로 Replay Build를
-실행한다.
+최댓값을 `bronze_as_of` 경계로 삼아 Replay Build를 실행한다. 테스트의 직접 dbt 호출은
+`dbt_vars_json({"bronze_as_of": boundary})`로 경계와 Bronze 스키마·지원 버전을 병합한 JSON을
+만들고, `--full-refresh`와 한 번의 `--vars`로 전달한다.
+
+수동 실행은 재현용 Warehouse 경로를 지정한 게시 CLI를 사용한다. 아래 경계 시각은 선택한
+`committed_at` 값으로 바꾼다.
+
+```bash
+python -m src.warehouse.publish --warehouse-root "<재현용 Warehouse 경로>" --full-refresh --dbt-vars "{bronze_as_of: '<UTC 경계 시각>'}"
+```
 
 ## 기대/실제 관측
 

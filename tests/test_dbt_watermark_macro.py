@@ -9,6 +9,8 @@ from pathlib import Path
 
 import duckdb
 
+from src.warehouse.dbt_vars import dbt_vars_json
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -88,6 +90,8 @@ def _run_operation(warehouse_path: Path, operation: str) -> subprocess.Completed
             "dbt",
             "--profiles-dir",
             "dbt",
+            "--vars",
+            dbt_vars_json(),
         ],
         cwd=PROJECT_ROOT,
         env=environment,

@@ -255,6 +255,16 @@ Normal E2E Unknown Key = 0
 
 ## 파일·폴더별 변경 요약
 
+- [x] Bronze 스키마 통합: 게시·Airflow 경로와 직접 실행 테스트가 Python 계약 변수를 한 번의 `--vars`로 전달하도록 연결했다. Canary·재처리 변수는 같은 JSON에 병합한다. 리뷰 후 R-12 실행 안내도 같은 경로로 맞췄다.
+- `docs/runbooks/r12-backfill-replay.md`: 재현용 Warehouse 경로를 지정하는 게시 CLI의 `--full-refresh --dbt-vars` 명령과 테스트의 `dbt_vars_json` 병합 경로를 설명했다.
+- 전후 검증: 운영 Warehouse의 격리된 복사본에서 변경 전·후 전체 새로고침이 모두 통과했고 5개 Dimension·4개 Fact의 행 수·논리 해시, 고객·구독 키 목록과 관측 속성 해시가 완전히 일치했다. 운영 파일 수정·게시·커밋은 수행하지 않았다.
+- 최종 검증: `pytest -q tests/test_dbt_*.py tests/test_warehouse_publish_cli.py` 64건이 통과했다. 여기에는 빈 카탈로그의 전체 Build와 모든 Fact 0행 확인이 포함된다. 세 통합 실행 플래그를 활성화한 게시 차단·R-14 테스트 2건도 통과했다. 실제 dbt로 변수 없는 `parse` 성공, 파일이 있는 카탈로그에서도 변수 없는 Source·카탈로그 검증 실행의 명확한 계약 오류를 확인했다. 직접 명령 생성부 8개의 단일 병합 변수 전달, Ruff·`git diff --check`도 통과했다.
+- `src/warehouse/dbt_runner.py`: `dbt_vars` 매핑을 생성된 Bronze 계약과 병합하고 `--vars`를 정확히 한 번 전달한다. `extra_args`로 별도 `--vars`를 넘기면 실행 전에 거절한다.
+- `src/warehouse/publish.py`: `--dbt-vars`의 YAML 매핑을 해석하고 잘못된 입력·예약 키를 게시 시작 전에 차단한다. 전체 새로고침 인자는 유지한다.
+- `tests/test_dbt_runner.py`, `tests/test_warehouse_publish_cli.py`: Canary·재처리·스키마의 동시 전달과 단일 `--vars`, CLI 입력 오류를 검증한다.
+- `tests/integration/test_publish_gate_dbt_integration.py`: Canary 설정을 별도 인자 대신 병합할 매핑으로 전달한다. R-14도 이 Runner를 재사용한다.
+- `tests/integration/test_replay_boundary_hash_integration.py`, `tests/integration/test_incremental_full_refresh_hash_integration.py`, `tests/integration/test_order_e2e_and_late_order_mart_integration.py`, `tests/integration/test_subscription_payment_temporal_join_integration.py`: 직접 dbt 호출의 변수를 공통 헬퍼로 생성하고 재처리 경계와 병합한다. 이 헬퍼를 공유하는 이력·재수집 신뢰성 테스트도 같은 경로를 사용한다.
+
 - 최종 검증: `pytest -q tests/test_dbt_*.py` 30건, `tests/test_warehouse_quality_contract.py` 4건이 통과했다. `RUN_POSTGRES_INTEGRATION=1 RUN_SEAWEEDFS_INTEGRATION=1 RUN_DBT_PUBLISH_INTEGRATION=1`로 게시 차단 통합 테스트와 구독 결제 시점 결합 통합 테스트를 실행해 2건 통과했다. Ruff·`git diff --check`도 통과했다. 기존 매크로·관측 모델·원천 코드·BI 파일은 수정하지 않았다.
 
 - 전환 검증: 운영 Warehouse의 격리된 복사본에서 `dbt parse`가 통과했다. 증분 build는 `accepted_values_fct_subscription_payment_payment_status__COMPLETED__FAILED`만 실패했고 전체 새로고침 build는 통과했다. 기존 `completed` 2건·`failed` 3건이 `COMPLETED` 2건·`FAILED` 3건으로 바뀌었으며 5행·총액 149.50·성공 금액 59.80을 보존했다.

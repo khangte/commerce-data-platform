@@ -15,11 +15,13 @@ from functools import partial
 from pathlib import Path
 
 import duckdb
+import yaml
 
 from src.common.database import PROJECT_ROOT, PostgresSettings
 from src.ingestion.bronze.catalog import sync_bronze_catalog
 from src.ingestion.errors import classify_error
 from src.warehouse.dbt_runner import DbtRunResult, run_dbt_build
+from src.warehouse.dbt_vars import dbt_vars_json
 from src.warehouse.errors import (
     DBT_BUILD_ERROR,
     UNKNOWN_ERROR,
@@ -331,6 +333,15 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--recover-only", action="store_true")
     args = parser.parse_args(argv)
+    variables = None
+    if args.dbt_vars is not None:
+        try:
+            variables = yaml.safe_load(args.dbt_vars)
+            if not isinstance(variables, dict) or any(not isinstance(key, str) for key in variables):
+                raise ValueError("--dbt-vars must be a YAML mapping with string keys")
+            dbt_vars_json(variables)
+        except (yaml.YAMLError, ValueError, TypeError) as error:
+            parser.error(str(error))
 
     settings = PostgresSettings.from_environment()
     paths = WarehousePaths.under(args.warehouse_root)
@@ -343,11 +354,9 @@ def main(argv: list[str] | None = None) -> int:
     extra_args: list[str] = []
     if args.full_refresh:
         extra_args.append("--full-refresh")
-    if args.dbt_vars is not None:
-        extra_args.extend(("--vars", args.dbt_vars))
     runner: DbtRunner = run_dbt_build
-    if extra_args:
-        runner = partial(run_dbt_build, extra_args=tuple(extra_args))
+    if extra_args or variables is not None:
+        runner = partial(run_dbt_build, extra_args=tuple(extra_args), dbt_vars=variables)
     run = PublishRun(uuid.uuid4(), args.pipeline_name)
     try:
         outcome = publish_warehouse(settings, paths, run, dbt_runner=runner)

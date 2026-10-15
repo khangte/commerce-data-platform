@@ -5,10 +5,12 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
 from src.common.database import PROJECT_ROOT, environment_values
+from src.warehouse.dbt_vars import dbt_vars_json
 from src.warehouse.errors import DBT_BUILD_ERROR, DBT_TEST_ERROR
 
 DBT_PROJECT_DIR = PROJECT_ROOT / "dbt"
@@ -43,8 +45,12 @@ def run_dbt_build(
     dbt_executable: str | None = None,
     project_dir: Path = DBT_PROJECT_DIR,
     extra_args: tuple[str, ...] = (),
+    dbt_vars: Mapping[str, object] | None = None,
 ) -> DbtRunResult:
     """WAREHOUSE_PATH를 Build 파일로 지정해 dbt build를 실행하고 결과를 해석한다."""
+    if any(arg == "--vars" or arg.startswith("--vars=") for arg in extra_args):
+        raise ValueError("Pass variables through dbt_vars, not extra_args --vars")
+    variables = dbt_vars_json(dbt_vars)
     environment = {**environment_values(), "WAREHOUSE_PATH": str(build_path)}
     process = subprocess.run(
         [
@@ -57,6 +63,8 @@ def run_dbt_build(
             "--target-path",
             str(target_path),
             *extra_args,
+            "--vars",
+            variables,
         ],
         cwd=PROJECT_ROOT,
         env=environment,

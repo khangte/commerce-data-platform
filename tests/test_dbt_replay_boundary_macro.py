@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-import json
 import os
 import subprocess
 import sys
 from pathlib import Path
 
 import duckdb
+
+from src.warehouse.dbt_vars import dbt_vars_json
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -160,8 +161,10 @@ def _run_validate_catalog(
         "--profiles-dir",
         "dbt",
     ]
-    if bronze_as_of is not None:
-        command += ["--vars", json.dumps({"bronze_as_of": bronze_as_of})]
+    command += [
+        "--vars",
+        dbt_vars_json({"bronze_as_of": bronze_as_of} if bronze_as_of is not None else None),
+    ]
     return subprocess.run(
         command,
         cwd=PROJECT_ROOT,
@@ -192,8 +195,10 @@ def _run_operation(
         "--profiles-dir",
         "dbt",
     ]
-    if bronze_as_of is not None:
-        command += ["--vars", json.dumps({"bronze_as_of": bronze_as_of})]
+    command += [
+        "--vars",
+        dbt_vars_json({"bronze_as_of": bronze_as_of} if bronze_as_of is not None else None),
+    ]
     return subprocess.run(
         command,
         cwd=PROJECT_ROOT,

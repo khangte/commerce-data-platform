@@ -39,7 +39,7 @@ pytestmark = [
     ),
 ]
 
-CANARY_RUNNER = partial(run_dbt_build, extra_args=("--vars", "{publish_gate_canary: true}"))
+CANARY_RUNNER = partial(run_dbt_build, dbt_vars={"publish_gate_canary": True})
 
 
 @pytest.fixture

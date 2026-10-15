@@ -1,13 +1,17 @@
 {% macro bronze_source(source_table) -%}
-    {%- set supported_tables = [
-        'customers', 'customer_subscriptions', 'customer_membership_tiers', 'subscription_payments',
-        'products', 'sellers', 'orders', 'order_items', 'order_payments'
-    ] -%}
-    {%- if source_table not in supported_tables -%}
-        {{ exceptions.raise_compiler_error('SOURCE_CONTRACT_ERROR: unsupported source_table=' ~ source_table) }}
-    {%- endif -%}
-
+    {#- Python 계약을 확인한 뒤 확정된 Bronze 파일 또는 빈 관계를 노출한다. -#}
     {%- if execute -%}
+        {%- set schemas = var('bronze_schemas', none) -%}
+        {%- set versions = var('bronze_schema_versions', none) -%}
+        {%- if schemas is none or versions is none -%}
+            {{ exceptions.raise_compiler_error(
+                'SOURCE_CONTRACT_ERROR: missing bronze_schemas or bronze_schema_versions; '
+                ~ 'pass --vars from python -m src.warehouse.dbt_vars'
+            ) }}
+        {%- endif -%}
+        {%- if source_table not in schemas -%}
+            {{ exceptions.raise_compiler_error('SOURCE_CONTRACT_ERROR: unsupported source_table=' ~ source_table) }}
+        {%- endif -%}
         {%- set catalog_query -%}
             select object_key, schema_version
             from control.bronze_files
@@ -18,7 +22,7 @@
         {%- set catalog_rows = run_query(catalog_query) -%}
         {%- set object_keys = [] -%}
         {%- for row in catalog_rows.rows -%}
-            {%- if row[1] != 3 -%}
+            {%- if row[1] not in versions -%}
                 {{ exceptions.raise_compiler_error(
                     'SOURCE_CONTRACT_ERROR: unsupported schema_version=' ~ row[1]
                     ~ ' for source_table=' ~ source_table
@@ -40,91 +44,45 @@
             ({{ bronze_empty_relation(source_table) }})
         {%- endif -%}
     {%- else -%}
-        ({{ bronze_empty_relation(source_table) }})
+        (select 1 where false)
     {%- endif -%}
 {%- endmacro %}
 
 {% macro bronze_empty_relation(source_table) -%}
-    {%- set schemas = {
-        'customers': [
-            ('customer_id', 'varchar'), ('customer_unique_id', 'varchar'),
-            ('customer_city', 'varchar'), ('customer_state', 'varchar'),
-            ('created_at', 'timestamptz')
-        ],
-        'customer_subscriptions': [
-            ('subscription_id', 'varchar'), ('customer_unique_id', 'varchar'),
-            ('subscription_status', 'varchar'), ('auto_renew_enabled', 'boolean'),
-            ('subscription_started_at', 'timestamptz'), ('current_period_started_at', 'timestamptz'),
-            ('current_period_ends_at', 'timestamptz'), ('billing_due_at', 'timestamptz'),
-            ('next_payment_attempt_at', 'timestamptz'), ('payment_failed_at', 'timestamptz'),
-            ('cancel_requested_at', 'timestamptz'), ('ended_at', 'timestamptz'),
-            ('status_changed_at', 'timestamptz'), ('created_at', 'timestamptz'),
-            ('updated_at', 'timestamptz')
-        ],
-        'customer_membership_tiers': [
-            ('customer_unique_id', 'varchar'), ('membership_tier', 'varchar'),
-            ('created_at', 'timestamptz'), ('updated_at', 'timestamptz')
-        ],
-        'subscription_payments': [
-            ('payment_id', 'varchar'), ('subscription_id', 'varchar'),
-            ('billing_cycle_sequence', 'integer'), ('attempt_sequence', 'integer'),
-            ('payment_status', 'varchar'), ('payment_at', 'timestamptz'),
-            ('payment_value', 'decimal(14, 2)'), ('currency_code', 'varchar'),
-            ('billing_period_start_at', 'timestamptz'), ('billing_period_end_at', 'timestamptz'),
-            ('payment_method_type', 'varchar'), ('payment_provider', 'varchar'),
-            ('provider_payment_id', 'varchar'), ('failure_code', 'varchar'),
-            ('created_at', 'timestamptz'), ('updated_at', 'timestamptz')
-        ],
-        'products': [
-            ('product_id', 'varchar'), ('product_category_name', 'varchar'),
-            ('product_weight_g', 'integer'), ('product_length_cm', 'integer'),
-            ('product_height_cm', 'integer'), ('product_width_cm', 'integer'),
-            ('created_at', 'timestamptz'), ('updated_at', 'timestamptz')
-        ],
-        'sellers': [
-            ('seller_id', 'varchar'), ('seller_city', 'varchar'), ('seller_state', 'varchar'),
-            ('created_at', 'timestamptz'), ('updated_at', 'timestamptz')
-        ],
-        'orders': [
-            ('order_id', 'varchar'), ('customer_id', 'varchar'), ('order_status', 'varchar'),
-            ('order_purchase_timestamp', 'timestamptz'), ('order_approved_at', 'timestamptz'),
-            ('order_delivered_carrier_date', 'timestamptz'),
-            ('order_delivered_customer_date', 'timestamptz'),
-            ('order_estimated_delivery_date', 'timestamptz'), ('created_at', 'timestamptz'),
-            ('updated_at', 'timestamptz')
-        ],
-        'order_items': [
-            ('order_id', 'varchar'), ('order_item_id', 'integer'), ('product_id', 'varchar'),
-            ('seller_id', 'varchar'), ('shipping_limit_date', 'timestamptz'),
-            ('price', 'decimal(14, 2)'),
-            ('freight_value', 'decimal(14, 2)'), ('created_at', 'timestamptz')
-        ],
-        'order_payments': [
-            ('order_id', 'varchar'), ('payment_sequential', 'integer'), ('payment_type', 'varchar'),
-            ('payment_installments', 'integer'), ('payment_value', 'decimal(14, 2)'),
-            ('payment_status', 'varchar'), ('payment_initiated_at', 'timestamptz'),
-            ('payment_completed_at', 'timestamptz'), ('payment_failed_at', 'timestamptz'),
-            ('payment_refunded_at', 'timestamptz'), ('created_at', 'timestamptz'),
-            ('updated_at', 'timestamptz')
-        ]
-    } -%}
-    {%- set technical_columns = [
-        ('_batch_id', 'varchar'), ('_run_id', 'varchar'), ('_ingested_at', 'timestamptz'),
-        ('_source_table', 'varchar'), ('_schema_version', 'integer')
-    ] -%}
-    select
-        {%- for column_name, column_type in schemas[source_table] + technical_columns %}
-        cast(null as {{ column_type }}) as {{ column_name }}{{ ', ' if not loop.last }}
-        {%- endfor %}
-    where false
+    {#- 원천·기술 컬럼을 Python 계약에서 받은 순서와 타입 그대로 노출한다. -#}
+    {%- if execute -%}
+        {%- set schemas = var('bronze_schemas', none) -%}
+        {%- if schemas is none -%}
+            {{ exceptions.raise_compiler_error(
+                'SOURCE_CONTRACT_ERROR: missing bronze_schemas; '
+                ~ 'pass --vars from python -m src.warehouse.dbt_vars'
+            ) }}
+        {%- endif -%}
+        select
+            {%- for column_name, column_type in schemas[source_table] %}
+            cast(null as {{ column_type }}) as {{ column_name }}{{ ', ' if not loop.last }}
+            {%- endfor %}
+        where false
+    {%- else -%}
+        select 1 where false
+    {%- endif -%}
 {%- endmacro %}
 
 {% macro validate_bronze_catalog(verify_read=false) -%}
+    {#- 지원 테이블·버전으로 카탈로그를 검증하고 필요하면 실제 읽기를 확인한다. -#}
     {%- if execute -%}
+        {%- set schemas = var('bronze_schemas', none) -%}
+        {%- set versions = var('bronze_schema_versions', none) -%}
+        {%- if schemas is none or versions is none -%}
+            {{ exceptions.raise_compiler_error(
+                'SOURCE_CONTRACT_ERROR: missing bronze_schemas or bronze_schema_versions; '
+                ~ 'pass --vars from python -m src.warehouse.dbt_vars'
+            ) }}
+        {%- endif -%}
         {%- set invalid_versions_query -%}
             select distinct schema_version
             from control.bronze_files
-            where schema_version != 3
+            where schema_version not in ({{ versions | join(', ') }})
             {{ replay_boundary_predicate() }}
             order by schema_version
         {%- endset -%}
@@ -135,10 +93,7 @@
                 ~ invalid_versions.columns[0].values() | join(', ')
             ) }}
         {%- endif -%}
-        {%- for source_table in [
-            'customers', 'customer_subscriptions', 'customer_membership_tiers', 'subscription_payments',
-            'products', 'sellers', 'orders', 'order_items', 'order_payments'
-        ] -%}
+        {%- for source_table in schemas -%}
             {%- set relation = bronze_source(source_table) -%}
             {%- do log('Validated Bronze catalog relation for ' ~ source_table ~ ': ' ~ relation, info=True) -%}
             {%- if verify_read -%}

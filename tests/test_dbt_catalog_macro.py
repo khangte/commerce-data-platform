@@ -9,7 +9,22 @@ from pathlib import Path
 
 import duckdb
 
+from src.warehouse.dbt_runner import run_dbt_build
+from src.warehouse.dbt_vars import dbt_vars_json
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_empty_catalog_builds_with_generated_schemas(tmp_path: Path) -> None:
+    """수집 파일이 없는 9개 원천도 Python 계약의 빈 Relation으로 전체 Build한다."""
+    warehouse_path = tmp_path / "empty.duckdb"
+    _create_catalog(warehouse_path)
+    result = run_dbt_build(warehouse_path, tmp_path / "dbt-target")
+    assert result.succeeded, result.output
+    assert result.tests_passed > 0
+    with duckdb.connect(str(warehouse_path), read_only=True) as connection:
+        for table in ("fct_order", "fct_order_item", "fct_order_payment", "fct_subscription_payment"):
+            assert connection.execute(f"SELECT count(*) FROM facts.{table}").fetchone() == (0,)
 
 
 def test_catalog_macro_handles_empty_catalog_and_rejects_unsupported_version(tmp_path) -> None:
@@ -103,6 +118,8 @@ def _run_validate_catalog(warehouse_path: Path) -> subprocess.CompletedProcess[s
             "dbt",
             "--profiles-dir",
             "dbt",
+            "--vars",
+            dbt_vars_json(),
         ],
         cwd=PROJECT_ROOT,
         env=environment,

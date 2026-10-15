@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import os
 import shutil
 import subprocess
@@ -31,6 +30,7 @@ from src.generator.customers.subscription_payments import (
 from src.ingestion.bronze.storage import SeaweedFSSettings
 from src.ingestion.control.metadata import CursorPosition
 from src.ingestion.service import TableIngestionResult
+from src.warehouse.dbt_vars import dbt_vars_json
 from src.warehouse.mart_hash import describe_mart_difference, mart_logical_hashes, target_for
 from tests.integration.test_subscription_payment_temporal_join_integration import (
     FIXTURE_START,
@@ -278,8 +278,10 @@ def _run_build(
     ]
     if full_refresh:
         command.insert(2, "--full-refresh")
-    if bronze_as_of is not None:
-        command += ["--vars", json.dumps({"bronze_as_of": bronze_as_of})]
+    command += [
+        "--vars",
+        dbt_vars_json({"bronze_as_of": bronze_as_of} if bronze_as_of is not None else None),
+    ]
     return subprocess.run(
         command,
         cwd=PROJECT_ROOT,
