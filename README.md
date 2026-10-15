@@ -198,7 +198,7 @@ erDiagram
 
 ### 1. 수집 범위 고정과 Source 동시성 제어
 
-- Warehouse Extract가 **Source Snapshot Lease**(수집 중 원천 변경을 막는 임대 잠금)를 보유하는 동안 Generator는 Source를 변경하지 않는다 (`src/generator/lease.py`, `src/ingestion/lease.py`).
+- Warehouse Extract가 **Source Snapshot Lease**(수집 중 원천 변경을 막는 임대 잠금)를 보유하는 동안 Generator는 Source를 변경하지 않는다 (`src/generator/core/lease.py`, `src/ingestion/control/lease.py`).
 - Lease는 Version 기반 CAS로 소유권을 검증한다. 만료·탈취 시 `LeaseOwnershipLostError`로 작업을 중단해 Parent/Child 관측 불일치를 막는다.
 
 ### 2. 멱등성(Idempotency)과 정합성
