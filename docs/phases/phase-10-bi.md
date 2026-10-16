@@ -142,6 +142,7 @@ card 58은 `rpt_membership_tier_performance`와 같은 주문 Fact·주문 시�
 ### 10-2-5. 재현성과 검증
 
 - [x] `P10-20` Dashboard Export 또는 재생성 가능한 설정 보존
+- [x] 2026-10-16 기존 카드 쿼리 가져오기 도구를 추가했다. 기본 GET 모의 실행, 명시적 반영 때 `dataset_query`만 PUT, 전체 대상 식별자 사전 검사, 인증·오류·무변경 경로를 오프라인 HTTP 모킹으로 검증했다. 운영 카드 49·50·51의 GET 모의 실행에서 모두 `where 1 = 1`을 `where fct_order_item.order_status = 'DELIVERED'`로 바꾸는 차이만 확인했다. 실제 반영·Snapshot 실행은 수행하지 않았다. 오프라인 389개 통과·4개 건너뜀, Ruff 통과; reviewer 독립 전체 테스트 390개 통과·106개 건너뜀, 가져오기 테스트 13개 통과 및 지적 0건으로 승인받았다.
 - [x] `P10-21` Dashboard별 Source Model/Query/Filter 문서화
 - [x] `P10-22` dbt 기준 Query와 Dashboard Total 대조
 - [x] `P10-23` Screenshot과 Dataset/Run/Commit 식별자 기록
@@ -157,8 +158,11 @@ card 58은 `rpt_membership_tier_performance`와 같은 주문 Fact·주문 시�
 도달하면 증가할 수 있음."을 추가했다. 기존 GMV·AOV 설명을 유지했으며 JSON 파싱과 수정 전후
 비교로 두 파일 모두 `description`만 변경됐음을 확인했다. `scripts/metabase_snapshot.sh`는
 운영 설정을 조회해 저장하는 스크립트이고, `docs/bi/dashboards.md`는 빈 앱 DB에서 Snapshot을
-기준으로 재생성하는 안내다. 저장소에 Export를 기존 운영 카드에 반영하는 절차나 스크립트가
-없으므로 사용자 지정 조건에 따라 운영 반영과 반영 후 API 확인은 수행하지 않았다.
+기준으로 재생성하는 안내다. 당시에는 저장소에 Export를 기존 운영 카드에 반영하는 절차나 스크립트가
+없어 사용자 지정 조건에 따라 운영 반영과 반영 후 API 확인을 수행하지 않았다.
+2026-10-16에 `scripts/metabase_import.py`와 [기존 카드 쿼리 반영 안내](../bi/dashboards.md)를
+추가해 기존 카드에 대한 반영 절차를 마련했다. 기본은 GET만 수행하는 모의 실행이고,
+명시적인 `--apply`에서만 `dataset_query`를 PUT한다. 설명 등 다른 필드는 반영 범위에 포함하지 않는다.
 
 `P10-23`은 [Dashboard 증적](../bi/evidence.md)의 Dataset/Run/Export/Commit 식별자와 연결된 실제
 화면 PNG를 남겼다. `scripts/capture_metabase_dashboards.py`는 `METABASE_API_KEY`를 URL이 아닌
@@ -238,6 +242,7 @@ Phase 10에는 별도 AC 번호가 없으므로 ROADMAP의 Connection/Dashboard 
 
 | 경로 | 변경 내용 |
 | ---- | --------- |
+| `scripts/metabase_import.py`, `tests/test_metabase_import.py`, `docs/bi/dashboards.md`, `docs/phases/phase-10-bi.md` | 카드 ID 목록으로 저장된 쿼리를 운영 카드와 비교하고, 기본 GET 모의 실행 및 명시적 `--apply`의 `dataset_query` 전용 PUT을 제공한다. 전체 대상 카드·데이터베이스 식별자 검사, 루트 `.env` 인증 키 대체, 오류·무변경 경로를 HTTP 모킹으로 검증했다. 사용 명령·권한·반영 범위·부분 반영 시 복원 한계를 문서화했다. 운영 GET 모의 실행에서 카드 49·50·51 모두 배송 완료 필터 추가만 차이로 확인했고, 저장된 JSON 체크섬을 보존했다. `metabase_snapshot.sh`와 실제 반영은 실행하지 않았다. |
 | `dbt/models/intermediate/int_order_items_enriched.sql`, `dbt/models/marts/facts/fct_order_item.sql`, `dbt/models/marts/facts/schema.yml`, `dbt/tests/fct_order_item_status_matches_order.sql` | 기존 `stg_orders` 조인에서 표준 주문 상태를 상속해 항목 Fact에 투영했다. 주문 단위 `unique_key='order_id'`, `delete+insert`, 영향 주문 필터를 유지하고, 상태 필수값·8개 허용값·주문 Fact 일치 검증 및 원본에 항목별 상태가 없다는 설명을 추가했다. |
 | `tests/test_warehouse_quality_contract.py`, `tests/test_dbt_cleanup.py`, `tests/integration/test_order_items_reextract_integration.py`, `tests/serving/test_product_status_metrics.py` | 실패를 먼저 확인하고 상태 계약·차원 없이 항목 보존·주문 상태만 변경할 때 항목 교체·재수집 중복 방지·전체 재계산 해시 일치를 검증했다. 취소·진행 항목을 섞은 데이터로 배송 완료 상품 지표와 주문·카테고리 GMV 일치를 검증했다. |
 | `metabase/queries/dashboard_product.sql`, `metabase/queries/semantic_category_product_customer.sql`, `metabase/export/card-{49,50,51}.json` | Category GMV·Top Products·Sales Volume을 `DELIVERED` 주문 항목으로 한정하고 카드 설명을 맞췄다. 기존 날짜 필터·차원 조인을 보존했다. |

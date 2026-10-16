@@ -10,6 +10,38 @@ Metabase Collection `Commerce Mart 대시보드`의 Dashboard ID는 Sales `2`, P
 
 Query 원본은 `metabase/queries/dashboard_*.sql`과 API Snapshot의 `dataset_query`에 보존한다. 빈 Metabase 앱 DB에서 Connection을 만든 뒤 `METABASE_API_KEY`를 설정하고 `scripts/metabase_snapshot.sh`의 JSON을 카드·Dashboard API payload의 기준으로 사용해 재생성한다. OSS에는 별도 직렬화 Export가 없으므로 PostgreSQL 앱 DB와 이 JSON Snapshot을 함께 보관한다.
 
+
+## 기존 카드의 쿼리 반영
+
+`scripts/metabase_import.py`는 `metabase/export/card-<id>.json`의 `dataset_query`(카드 쿼리 설정)를
+실행 중인 Metabase의 같은 카드에 반영한다. 작업 디렉터리는 프로젝트 루트
+`/home/kang/projects/commerce-data-platform`이며, 하나 이상의 카드 ID를 지정한다.
+
+```bash
+# 기본 모의 실행: GET만 보내고 반영할 dataset_query 차이를 출력한다.
+uv run python scripts/metabase_import.py 49 50 51
+
+# 차이를 확인한 뒤 운영자가 명시적으로 반영할 때만 사용한다.
+uv run python scripts/metabase_import.py 49 50 51 --apply
+```
+
+`METABASE_API_KEY`는 환경 변수에서 읽고, 비어 있으면 프로젝트 루트 `.env`에서 읽는다.
+키는 `X-API-Key` 헤더로 전달하며 대상 카드를 읽을 권한이 필요하다. 실제 반영에는 카드 수정 권한도 필요하다.
+`METABASE_URL` 환경 변수가 없으면 `http://localhost:3000`을 사용한다. `.env`의 URL은 자동으로 읽지
+않으므로 다른 주소를 쓸 때는 환경 변수로 지정한다. Metabase가 실행 중이어야 한다.
+
+별도 모의 실행 플래그 없이 기본 동작이 읽기 전용이다. 모든 대상 카드에 대해 저장 파일·운영 카드의
+카드 ID와 데이터베이스 ID를 먼저 대조한다. 불일치·인증 오류·파일 누락이면 0이 아닌 종료 코드로 중단한다.
+`--apply`를 명시한 경우에만 차이가 있는 기존 카드에 `PUT /api/card/<id>`를 보낸다.
+요청 본문은 `dataset_query`만 포함하므로 설명·이름·표시 설정·Dashboard 배치는 변경하지 않는다.
+여러 카드의 PUT 중 오류가 나면 이미 반영된 카드까지 되돌리지는 않는다.
+카드 생성·삭제, Dashboard 수정, 저장된 Export 파일 덮어쓰기는 수행하지 않는다.
+
+`scripts/metabase_snapshot.sh`는 운영 설정을 **조회해 로컬 JSON을 덮어쓰는 내보내기** 도구다.
+가져오기 명령으로 실행하면 안 된다. 가져오기 전에 저장된 카드 변경을 이 스크립트로 덮어쓰지 않는다.
+
+## 화면 증적
+
 화면 증적은 headless Chromium으로 재캡처한다. `docker compose --profile bi up -d metabase` 뒤
 `uv run playwright install chromium`(최초 1회)과 `uv run python scripts/capture_metabase_dashboards.py`를
 실행하면 Dashboard 2·3·4가 각각 `docs/bi/screenshots/dashboard-{2,3,4}.png`로 저장된다. 스크립트는
