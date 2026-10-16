@@ -87,8 +87,8 @@ def has_uncommitted_changes(path: Path) -> bool:
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     """출력 경로와 강제 덮어쓰기 옵션을 해석한다."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--force", action="store_true")
-    parser.add_argument("--output-dir", type=Path, default=EXPORT_DIR)
+    parser.add_argument("--force", action="store_true", help="커밋하지 않은 변경이 있어도 출력 디렉터리를 덮어쓴다")
+    parser.add_argument("--output-dir", type=Path, default=EXPORT_DIR, help="JSON 저장 디렉터리 (기본값: metabase/export)")
     return parser.parse_args(argv)
 
 

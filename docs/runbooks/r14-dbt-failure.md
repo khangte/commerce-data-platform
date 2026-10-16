@@ -54,8 +54,10 @@ Type별 원인·조치는 [Warehouse Publish Troubleshooting](../troubleshooting
 구독 결제 상태 표준화 코드를 병합한 뒤 첫 게시에는 반드시 다음 명령을 사용한다.
 
 ```bash
-python -m src.warehouse.publish --full-refresh
+airflow dags trigger warehouse_pipeline_dag --conf '{"full_refresh": true}'
 ```
+
+호스트 CLI로 게시했다면(`uv run python -m src.warehouse.publish --full-refresh`) 바로 `uv run python -m src.serving export`를 실행한다. 실행하지 않으면 Metabase가 이전 Export를 계속 읽는다(059).
 
 증분 게시를 실행하면 복사한 기존 Warehouse의 소문자 `completed`·`failed` 행이 남아
 `accepted_values_fct_subscription_payment_payment_status__COMPLETED__FAILED` 검증에 실패한다.
