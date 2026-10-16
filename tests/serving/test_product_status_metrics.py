@@ -55,3 +55,38 @@ def test_product_metrics_count_only_delivered_items(source: str | int) -> None:
                 assert connection.execute(queries[2]).fetchall() == [("p1", 2)]
             else:
                 assert connection.execute(queries[1]).fetchall() == [("p1", 2)]
+
+
+@pytest.mark.parametrize("source", [49, "dashboard_product"])
+def test_category_metrics_label_null_category_and_preserve_delivered_total(
+    source: str | int,
+) -> None:
+    """미분류 상품도 배송 완료 카테고리 합계에 포함하고 항목 금액을 보존한다."""
+    if isinstance(source, int):
+        card = json.loads((ROOT / f"metabase/export/card-{source}.json").read_text())
+        sql = re.sub(r"\[\[.*?\]\]", "", card["dataset_query"]["stages"][0]["native"])
+    else:
+        sql = (ROOT / f"metabase/queries/{source}.sql").read_text()
+    with duckdb.connect() as connection:
+        connection.execute("CREATE SCHEMA facts; CREATE SCHEMA dimensions")
+        connection.execute("""
+            CREATE TABLE facts.fct_order_item AS
+            SELECT * FROM (VALUES
+                ('p1', 20261001, 'DELIVERED', 10.00),
+                ('p1', 20261001, 'DELIVERED', 20.00),
+                ('p1', 20261001, 'CANCELED', 100.00),
+                ('p2', 20261001, 'PROCESSING', 200.00),
+                ('p3', 20261001, 'DELIVERED', 15.50)
+            ) AS t(product_id, purchase_date_key, order_status, line_gross_value);
+            CREATE TABLE dimensions.dim_product AS
+                SELECT * FROM (VALUES ('p1', 'category1'), ('p2', 'category2'), ('p3', NULL))
+                AS t(product_id, category_name);
+            CREATE TABLE dimensions.dim_date AS SELECT 20261001 AS date_key;
+        """)
+        rows = connection.execute(sql.split(";")[0]).fetchall()
+        delivered_total = connection.execute(
+            "SELECT sum(line_gross_value) FROM facts.fct_order_item "
+            "WHERE order_status = 'DELIVERED'"
+        ).fetchone()[0]
+    assert ("미분류", Decimal("15.50")) in rows
+    assert sum(row[1] for row in rows) == delivered_total == Decimal("45.50")
