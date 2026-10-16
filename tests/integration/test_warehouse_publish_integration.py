@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 import os
+import signal
+import subprocess
+import sys
+import time
 import uuid
 from collections.abc import Callable, Iterator
 from datetime import UTC, datetime, timedelta
@@ -13,12 +17,15 @@ import pytest
 
 from src.common.database import PostgresSettings
 from src.ingestion.control.metadata import ensure_ingestion_metadata
+from src.warehouse import publish as publisher
+from src.warehouse import publish_metadata as metadata
 from src.warehouse.dbt_runner import DbtRunResult
 from src.warehouse.duckdb_files import FileIdentity, file_identity
 from src.warehouse.errors import (
     DBT_TEST_ERROR,
     PublishedWalError,
     PublishInProgressError,
+    PublishStateError,
     WarehouseBuildError,
 )
 from src.warehouse.mart_hash import MartTarget, mart_logical_hashes, mart_row_counts
@@ -153,7 +160,7 @@ def test_published_wal_stops_the_build_as_configuration_error(
 
 
 def test_fresh_active_run_blocks_a_new_build(settings: PostgresSettings, tmp_path: Path) -> None:
-    """1시간이 지나지 않은 활성 Run이 있으면 새 Build를 시작하지 않는다."""
+    """Lease가 지나지 않은 활성 Run이 있으면 새 Build를 시작하지 않는다."""
     paths = WarehousePaths.under(tmp_path)
     active = start_publish_run(settings, _run(), now=datetime.now(UTC))
     blocked = _run()
@@ -248,3 +255,110 @@ def test_recovery_fails_a_publishing_run_with_unusable_file_identity(
     record = get_publish_run(settings, stuck.publish_run_id)
     assert record is not None
     assert (record.status, record.error_type) == (FAILED, "UNKNOWN_ERROR")
+
+
+def test_live_old_run_is_not_recovered(settings, tmp_path):
+    """오래된 실행도 최신 생존 신호가 있으면 파일과 활성 상태를 보존한다."""
+    paths = WarehousePaths.under(tmp_path)
+    now = datetime.now(UTC)
+    active = start_publish_run(settings, _run(), now=now - timedelta(hours=2))
+    paths.build_dir.mkdir(parents=True)
+    paths.build_file(active.publish_run_id).write_bytes(b"live")
+    metadata.touch_publish_run(settings, active.publish_run_id, now=now)
+    assert recover_incomplete_publishes(settings, paths, now=now) == ()
+    assert get_publish_run(settings, active.publish_run_id).status == "BUILDING"
+    assert paths.build_file(active.publish_run_id).read_bytes() == b"live"
+
+
+@pytest.mark.parametrize("publishing", [False, True])
+def test_recovery_skips_run_refreshed_after_lookup(settings, tmp_path, monkeypatch, publishing):
+    """후보 조회 직후 소유자가 갱신하면 두 복구 경로 모두 파일을 보존한다."""
+    paths = WarehousePaths.under(tmp_path)
+    now = datetime.now(UTC)
+    stuck = start_publish_run(settings, _run(), now=now - timedelta(hours=2))
+    paths.build_dir.mkdir(parents=True)
+    paths.build_file(stuck.publish_run_id).write_bytes(b"live")
+    target = paths.target_dir(stuck.publish_run_id)
+    target.mkdir()
+    (target / "keep").write_text("keep")
+    if publishing:
+        paths.published.write_bytes(b"published")
+        mark_publishing(settings, stuck.publish_run_id, mart_hashes={}, mart_row_counts={}, published_identity=file_identity(paths.published))
+    lookup = publisher.stale_active_runs
+    def refresh_after_lookup(*args, **kwargs):
+        """복구 판단과 UPDATE 사이의 생존 신호 갱신을 재현한다."""
+        records = lookup(*args, **kwargs)
+        assert records
+        metadata.touch_publish_run(settings, stuck.publish_run_id, now=now)
+        return records
+    monkeypatch.setattr(publisher, "stale_active_runs", refresh_after_lookup)
+    assert recover_incomplete_publishes(settings, paths, now=now) == ()
+    assert paths.build_file(stuck.publish_run_id).read_bytes() == b"live"
+    assert (target / "keep").is_file()
+    assert not paths.failed_file(stuck.publish_run_id).exists()
+    assert get_publish_run(settings, stuck.publish_run_id).status == ("PUBLISHING" if publishing else "BUILDING")
+
+
+def test_zombie_cannot_publish_after_takeover(settings, tmp_path):
+    """인수된 소유자의 기록·교체 전이는 거부되고 게시 파일은 그대로다."""
+    paths = WarehousePaths.under(tmp_path)
+    publish_warehouse(settings, paths, _run(), dbt_runner=_dbt_writing(3), targets=TARGETS)
+    before = paths.published.read_bytes(), file_identity(paths.published)
+    now = datetime.now(UTC)
+    stuck = start_publish_run(settings, _run(), now=now - timedelta(hours=2))
+    paths.build_file(stuck.publish_run_id).write_bytes(b"zombie")
+    assert recover_incomplete_publishes(settings, paths, now=now) == (stuck.publish_run_id,)
+    with pytest.raises(PublishStateError):
+        metadata.record_dbt_result(settings, stuck.publish_run_id, invocation_id="zombie", tests_passed=1, tests_failed=0)
+    with pytest.raises(PublishStateError):
+        mark_publishing(settings, stuck.publish_run_id, mart_hashes={}, mart_row_counts={}, published_identity=FileIdentity(1, 2))
+    assert (paths.published.read_bytes(), file_identity(paths.published)) == before
+
+
+def test_sigkilled_owner_is_taken_over_after_lease(settings, tmp_path, monkeypatch):
+    """실제 자식의 주기 갱신·SIGKILL·만료 전 차단·만료 뒤 인수를 검증한다."""
+    monkeypatch.setattr(publisher, "PUBLISH_LEASE", timedelta(seconds=2))
+    paths = WarehousePaths.under(tmp_path)
+    owner = _run()
+    child_code = """
+import sys, time, uuid
+from datetime import timedelta
+from pathlib import Path
+from src.common.database import PostgresSettings
+from src.warehouse.publish import WarehousePaths, prepare_warehouse_build
+from src.warehouse.publish_metadata import PublishRun
+from src.warehouse.publish_heartbeat import publish_heartbeat
+settings = PostgresSettings.from_environment()
+run = PublishRun(uuid.UUID(sys.argv[2]), sys.argv[3])
+prepare_warehouse_build(settings, WarehousePaths.under(Path(sys.argv[1])), run)
+with publish_heartbeat(settings, run.publish_run_id, interval=timedelta(seconds=0.2)):
+    time.sleep(60)
+"""
+    child = subprocess.Popen([sys.executable, "-c", child_code, str(tmp_path), str(owner.publish_run_id), owner.pipeline_name], cwd=Path(__file__).resolve().parents[2], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        seen = set()
+        deadline = time.monotonic() + 15
+        while len(seen) < 3 and time.monotonic() < deadline:
+            assert child.poll() is None, "자식 실행이 생존 신호 관측 전에 종료됨"
+            with settings.pipeline_connection() as connection:
+                row = connection.execute("SELECT heartbeat_at FROM mart_publish_runs WHERE publish_run_id = %s", (owner.publish_run_id,)).fetchone()
+            if row:
+                seen.add(row[0])
+            time.sleep(0.05)
+        assert len(seen) >= 3
+        os.kill(child.pid, signal.SIGKILL)
+        assert child.wait(timeout=5) == -signal.SIGKILL
+        new = _run()
+        with pytest.raises(PublishInProgressError):
+            prepare_warehouse_build(settings, paths, new)
+        time.sleep(3)
+        prepare_warehouse_build(settings, paths, new)
+        assert get_publish_run(settings, new.publish_run_id).status == "BUILDING"
+        assert paths.failed_file(owner.publish_run_id).is_file()
+        with settings.pipeline_connection() as connection:
+            row = connection.execute("SELECT status, error_type, error_message FROM mart_publish_runs WHERE publish_run_id = %s", (owner.publish_run_id,)).fetchone()
+        assert row == (FAILED, "UNKNOWN_ERROR", "abandoned")
+    finally:
+        if child.poll() is None:
+            child.kill()
+        child.wait(timeout=5)

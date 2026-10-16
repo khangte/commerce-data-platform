@@ -14,7 +14,7 @@ Published Warehouse에 직접 dbt build를 실행하면 Test 실패 후에도 �
 - 성공한 Build만 CHECKPOINT, Hash·행 수 기록, `os.replace`, Directory fsync 순서로 Published 파일로 교체한다.
 - 실패 Build는 `failed/`에 격리하고 최신 3개만 보존한다.
 - PostgreSQL `mart_publish_runs`와 부분 Unique Index `mart_publish_runs_single_active_idx`로 실행 상태와 활성 Publish Mutex를 관리한다.
-- 1시간 이상 활성 상태인 Run은 다음 실행에서 Hash 비교로 확정하거나 `UNKNOWN_ERROR`의 abandoned 실패로 종료한다.
+- 1시간 이상 활성 상태인 Run은 다음 실행에서 Hash 비교로 확정하거나 `UNKNOWN_ERROR`의 abandoned 실패로 종료한다. (061에서 `heartbeat_at` 5분 Lease로 대체)
 
 ## Alternatives
 

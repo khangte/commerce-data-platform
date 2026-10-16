@@ -278,7 +278,24 @@ Normal E2E Unknown Key = 0
 
 최종 검증: 전체 테스트 437건 통과·109건 생략·실패 0건, Ruff·공백 검사 통과. 마커별 통과/실패/생략은 미지정 436/0/4, integration 1/0/100, reliability 0/0/18, airflow 0/0/5, benchmark 0/0/0이다. 복수 마커는 중복 집계되며 외부 연동 실행 플래그가 없는 테스트는 생략됐다. 인프라 관련 실패는 없었다. 실제 `uv run python -m src.serving export` 한 번으로 내보내기 `a3b6b240-e08c-4fcf-9c60-3e41c1247747`와 `metabase_repoint=SUCCESS`를 확인했고 새 파일 포함 3개만 남았다. Metabase DB 2의 `details.database_file`이 `/serving/exports/a3b6b240-e08c-4fcf-9c60-3e41c1247747.duckdb`와 일치했다. `status`는 종료 0·`fresh=true`이며 실제 실행과 최신 게시 실행 `539746b5-32f5-4df4-a57e-dbf442db18f8`가 같았다. 카드 49·50·51을 각각 1회 실행해 오류 없이 74·10·10행을 확인했다. `uv run python scripts/metabase_import.py 49 50 51 --apply`는 최신 여부 검사를 통과했고 쿼리 변경 0건으로 종료 0이었다. 기존 PRD 보관본과 매니페스트 기록·인증 전송·재지정·DAG 서빙 두 작업의 원문 또는 AST 보존도 검증했다. 원시 결과는 `/tmp/serving-refresh-dev/`에 보관하며 커밋하지 않았다.
 
+## 게시 실행 생존 신호와 안전한 인수 (061, 2026-10-16)
+
+- [x] `heartbeat_at` nullable 컬럼을 멱등적으로 추가하고 새 실행은 시작 시각으로 초기화한다. 기존 NULL 행은 시작 시각으로 만료를 판단한다.
+- [x] 준비·dbt 실행·게시 단계에서 30초 daemon 갱신과 정상 종료 갱신을 적용한다. DB 오류는 예외 종류만 경고하고 재시도하며, 주기 갱신의 소유권 상실 시 갱신을 멈춘다. 061 §2.1.1에 따라 정상 종료 시 마지막 갱신의 False는 경고 없이 무시하고, 마지막 갱신 DB 예외는 경고한다.
+- [x] 마지막 생존 신호 뒤 5분이 지난 후보를 상태·시각 조건부 UPDATE로 먼저 종료한다. 갱신 경합 시 파일을 보존하고, 인수 성공 후에만 정리·격리·실패 경로 기록을 수행한다.
+- [x] 이전 버전 PRD를 원문 보관하고 v1.27·복구 절차를 동기화한다.
+- [x] 전체 테스트 464개 통과·121개 건너뜀·실패 0개(91.00초), 대상 단위·PostgreSQL 통합 31개 통과(12.97초), Ruff·diff 검사를 통과했다. 마커별 통과/실패/건너뜀은 미지정 463/0/4, integration 1/0/112, reliability 0/0/18, airflow 0/0/5, benchmark 0/0/0이며 마커 중복을 포함한다.
+- [x] 운영 활성 게시·실행 중인 Warehouse DagRun 0건과 빈 build/를 확인한 뒤, dbt 진입 후 setsid 프로세스 그룹 전체를 SIGKILL했다. 이전 실행 `5d25b265-ef74-4c0c-8274-af1697c609f7`의 마지막 생존 신호는 12:59:57.527017 UTC, 종료 시각은 13:00:01.547073 UTC였다. 즉시 재시도는 PublishInProgressError로 차단됐고 기존 게시 식별값을 보존했다.
+- [x] 실제 5분 뒤 13:04:59.302316 UTC에 인수했다(마지막 신호 뒤 301.775299초). 이전 행은 FAILED·UNKNOWN_ERROR·abandoned이고 격리 파일은 `data/warehouse/failed/5d25b265-ef74-4c0c-8274-af1697c609f7.duckdb`다. 새 실행 `f9960f3b-f5ac-40e2-bb8a-14cb0891ce00`은 PUBLISHED·품질 테스트 143개 통과·실패 0개·해시 변경 없음이다. Export `7e0deae2-ce49-41cf-ab65-445dcbdabe8e`의 재지정 SUCCESS·status 종료 0·fresh=true와 build/ 잔여 0개를 확인했다. 실환경 로그에 키·DB 비밀번호는 없으며 증적은 `.team/developer/061-review.md`와 `061-live-result.json`에 남겼다.
+
+- [x] 061 reviewer 후속(§2.1.1): 마지막 갱신 False의 불필요한 경고를 제거하고 주기 갱신 False 경고·중단 및 마지막 DB 예외 경고를 유지했다. 실패 테스트 확인 후 수정했으며 대상 단위·PostgreSQL 통합 32개 통과(12.92초), 전체 465개 통과·121개 건너뜀·실패 0개(91.29초), Ruff·diff 검사를 통과했다. 기존 실환경 검증 기록을 재사용하고 추가 운영 실행은 하지 않았다.
+
 ## 파일·폴더별 변경 요약
+
+- `sql/metadata/005_create_mart_publish_runs.sql`, `src/warehouse/publish_metadata.py`, `tests/integration/test_publish_metadata_integration.py`: 생존 신호 컬럼·활성 갱신·COALESCE 만료 판정·조건부 종료·실패 경로 기록을 추가했다. NULL 호환·멱등 적용·종료 후 갱신 거부·조회 후 갱신 경합을 실제 PostgreSQL로 검증했다.
+- `src/warehouse/publish_heartbeat.py`, `src/warehouse/publish.py`, `tests/test_publish_heartbeat.py`, `tests/integration/test_warehouse_publish_integration.py`: daemon 갱신·안전한 경고·단계 종료 갱신과 인수 후 파일 처리를 구현했다. reviewer 후속 판정으로 주기 갱신 False만 경고·중단하고 종료 갱신 False는 무시하며, 종료 DB 예외 경고는 유지한다. 두 False 경로를 별도 단위 테스트로 검증했다. 오래된 정상 실행 보존·두 복구 분기의 갱신 경합·인수된 소유자의 전이 거부·실제 SIGKILL 후 만료 전 차단과 만료 뒤 인수를 검증했다.
+- `PRD.bak/PRD_v1.26.md`, `PRD_v1.27.md`, `docs/adr/016-publish-mart-via-warehouse-file-swap.md`, `docs/troubleshooting/warehouse-publish.md`, `docs/troubleshooting/README.md`, `docs/phases/phase-07-data-quality-publish.md`: 생존 신호 시각·5분 소유 유지 기간·행 종료 후 파일 처리 계약과 진행 기록을 동기화했다.
+
 
 - [x] Bronze 스키마 통합: 게시·Airflow 경로와 직접 실행 테스트가 Python 계약 변수를 한 번의 `--vars`로 전달하도록 연결했다. Canary·재처리 변수는 같은 JSON에 병합한다. 리뷰 후 R-12 실행 안내도 같은 경로로 맞췄다.
 - `docs/runbooks/r12-backfill-replay.md`: 재현용 Warehouse 경로를 지정하는 게시 CLI의 `--full-refresh --dbt-vars` 명령과 테스트의 `dbt_vars_json` 병합 경로를 설명했다.

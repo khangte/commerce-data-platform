@@ -15,7 +15,7 @@
 | `SOURCE_CONTRACT_ERROR` | R-07 | Manifest의 `schema_version`이 Table 계약이 지원하지 않는 값으로 변조됨 | 재시도 불가능. Schema Version 계약 위반을 고친 뒤 재실행 | [깨진 Manifest](../runbooks/r07-broken-manifest.md), [Commit과 Lease](commit-and-lease.md) |
 | `DBT_TEST_ERROR` | R-14 | Singular/Generic Test 실패 | Upstream Model/Source 수정, Published Mart는 불변 | [dbt 실패](../runbooks/r14-dbt-failure.md), [Warehouse Publish](warehouse-publish.md) |
 | `DBT_BUILD_ERROR` | —(문서 근거) | Model/Seed/Snapshot Node Error | 실패 Node SQL/의존성 수정 후 재Build | [dbt 실패](../runbooks/r14-dbt-failure.md), [Warehouse Publish](warehouse-publish.md) |
-| `UNKNOWN_ERROR` (Abandoned Run) | —(문서 근거) | `PUBLISH_STALE_AFTER` 경과한 Building/Publishing Run | 다음 실행이 자동 회수, Published 파일 일치만 확인 | [Warehouse Publish](warehouse-publish.md) |
+| `UNKNOWN_ERROR` (Abandoned Run) | —(문서 근거) | `PUBLISH_LEASE`(마지막 Heartbeat 뒤 5분)가 경과한 Building/Publishing Run | 다음 실행이 자동 회수, Published 파일 일치만 확인 | [Warehouse Publish](warehouse-publish.md) |
 | `PublishInProgressError` | —(문서 근거) | 다른 활성 Publish Run 존재 | 종료 대기 또는 자동 Abandoned 회수 대기 | [Warehouse Publish](warehouse-publish.md) |
 | `PublishedWalError` | —(문서 근거) | Published 파일 옆 WAL 잔존 | CHECKPOINT 상태 확인 후 WAL 제거 | [Warehouse Publish](warehouse-publish.md) |
 | `SOURCE_CONNECTION_ERROR` | R-15 | `psycopg.OperationalError`(Snapshot 연결 열기 실패) | 재시도 가능. Object/Watermark 불변이므로 같은 `batch_id`로 즉시 재시도 | [Source 연결 실패](../runbooks/r15-source-connection-failure.md), [Ingestion 오류](ingestion-errors.md) |

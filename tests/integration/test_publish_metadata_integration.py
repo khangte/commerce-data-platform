@@ -11,6 +11,7 @@ import psycopg
 import pytest
 
 from src.common.database import PostgresSettings
+from src.warehouse import publish_metadata as metadata
 from src.warehouse.duckdb_files import FileIdentity
 from src.warehouse.errors import PublishInProgressError, PublishStateError
 from src.warehouse.publish_metadata import (
@@ -160,9 +161,9 @@ def test_publishing_requires_hash_object(settings: PostgresSettings) -> None:
 def test_stale_active_runs_returns_only_old_active_rows(settings: PostgresSettings) -> None:
     """기준 시각보다 먼저 시작한 활성 Run만 Stale로 반환한다."""
     old = start_publish_run(settings, _run(), now=NOW - timedelta(hours=2))
-    stale = stale_active_runs(settings, older_than=NOW - timedelta(hours=1))
+    stale = stale_active_runs(settings, stale_before=NOW - timedelta(hours=1))
     assert [record.publish_run_id for record in stale] == [old.publish_run_id]
-    assert stale_active_runs(settings, older_than=NOW - timedelta(hours=3)) == ()
+    assert stale_active_runs(settings, stale_before=NOW - timedelta(hours=3)) == ()
     mark_failed(
         settings,
         old.publish_run_id,
@@ -180,7 +181,74 @@ def test_publish_metadata_migration_is_idempotent(settings: PostgresSettings) ->
     with settings.pipeline_connection() as connection:
         columns = connection.execute(
             "SELECT column_name FROM information_schema.columns "
-            "WHERE table_name = 'mart_publish_runs' AND column_name LIKE 'published_%' "
+            "WHERE table_name = 'mart_publish_runs' AND column_name IN ('published_inode', 'published_mtime_ns', 'heartbeat_at') "
             "ORDER BY column_name"
         ).fetchall()
-    assert [row[0] for row in columns] == ["published_inode", "published_mtime_ns"]
+    assert [row[0] for row in columns] == ["heartbeat_at", "published_inode", "published_mtime_ns"]
+
+
+def _heartbeat(settings, run_id):
+    """저장된 생존 신호 시각을 직접 조회한다."""
+    with settings.pipeline_connection() as connection:
+        return connection.execute(
+            "SELECT heartbeat_at FROM mart_publish_runs WHERE publish_run_id = %s", (run_id,),
+        ).fetchone()[0]
+
+
+def test_start_sets_heartbeat_to_start_time(settings):
+    """새 실행의 시작 시각과 생존 신호는 같다."""
+    record = start_publish_run(settings, _run(), now=NOW)
+    assert _heartbeat(settings, record.publish_run_id) == record.started_at
+
+
+def test_touch_updates_only_active_runs(settings):
+    """활성 실행만 생존 신호를 갱신한다."""
+    record = start_publish_run(settings, _run(), now=NOW)
+    later = NOW + timedelta(seconds=30)
+    assert metadata.touch_publish_run(settings, record.publish_run_id, now=later)
+    assert _heartbeat(settings, record.publish_run_id) == later
+    mark_publishing(settings, record.publish_run_id, mart_hashes={}, mart_row_counts={}, published_identity=FileIdentity(1, 2))
+    assert metadata.touch_publish_run(settings, record.publish_run_id, now=later)
+    mark_failed(settings, record.publish_run_id, error_type="UNKNOWN_ERROR", error_message="cleanup", failed_path=None, now=later)
+    assert not metadata.touch_publish_run(settings, record.publish_run_id, now=later + timedelta(seconds=30))
+    assert _heartbeat(settings, record.publish_run_id) == later
+
+
+def test_stale_uses_heartbeat_not_start(settings):
+    """오래 실행 중이어도 생존 신호가 최신이면 복구하지 않는다."""
+    record = start_publish_run(settings, _run(), now=NOW - timedelta(hours=2))
+    metadata.touch_publish_run(settings, record.publish_run_id, now=NOW)
+    assert stale_active_runs(settings, stale_before=NOW - timedelta(minutes=5)) == ()
+
+
+def test_stale_falls_back_to_started_at_when_heartbeat_null(settings):
+    """이전 버전 행은 시작 시각으로 만료를 판단한다."""
+    record = start_publish_run(settings, _run(), now=NOW - timedelta(hours=2))
+    with settings.pipeline_connection() as connection:
+        connection.execute("UPDATE mart_publish_runs SET heartbeat_at = NULL WHERE publish_run_id = %s", (record.publish_run_id,))
+    assert [row.publish_run_id for row in stale_active_runs(settings, stale_before=NOW - timedelta(minutes=5))] == [record.publish_run_id]
+
+
+def test_close_stale_run_skips_refreshed_heartbeat(settings):
+    """후보 조회 후 갱신된 생존 신호가 조건부 종료를 막는다."""
+    record = start_publish_run(settings, _run(), now=NOW - timedelta(hours=2))
+    metadata.touch_publish_run(settings, record.publish_run_id, now=NOW)
+    assert not metadata.close_stale_run(settings, record.publish_run_id, status=FAILED, stale_before=NOW - timedelta(minutes=5), now=NOW)
+    assert get_publish_run(settings, record.publish_run_id).status == BUILDING
+
+
+def test_close_stale_run_failed_sets_abandoned(settings):
+    """만료된 행을 먼저 닫고 격리 경로는 실패 행에만 기록한다."""
+    record = start_publish_run(settings, _run(), now=NOW - timedelta(hours=2))
+    assert metadata.close_stale_run(settings, record.publish_run_id, status=FAILED, stale_before=NOW - timedelta(minutes=5), now=NOW)
+    metadata.record_failed_path(settings, record.publish_run_id, "failed/test.duckdb")
+    with settings.pipeline_connection() as connection:
+        row = connection.execute("SELECT status, error_type, error_message, finished_at, failed_path FROM mart_publish_runs WHERE publish_run_id = %s", (record.publish_run_id,)).fetchone()
+    assert row == (FAILED, "UNKNOWN_ERROR", "abandoned", NOW, "failed/test.duckdb")
+    assert not metadata.close_stale_run(settings, record.publish_run_id, status=FAILED, stale_before=NOW, now=NOW)
+
+
+def test_close_stale_run_rejects_other_status(settings):
+    """활성 상태로의 조건부 종료는 허용하지 않는다."""
+    with pytest.raises(ValueError):
+        metadata.close_stale_run(settings, uuid.uuid4(), status=BUILDING, stale_before=NOW, now=NOW)

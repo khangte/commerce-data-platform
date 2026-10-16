@@ -31,7 +31,6 @@ from src.warehouse.duckdb_files import (
 )
 from src.warehouse.errors import (
     DBT_BUILD_ERROR,
-    UNKNOWN_ERROR,
     PublishedWalError,
     PublishStateError,
     WarehouseBuildError,
@@ -42,23 +41,29 @@ from src.warehouse.mart_hash import (
     mart_hashes_and_row_counts,
     mismatched_relations,
 )
+from src.warehouse.publish_heartbeat import publish_heartbeat
 from src.warehouse.publish_metadata import (
+    FAILED,
+    PUBLISHED,
     PUBLISHING,
     PublishRecord,
     PublishRun,
+    close_stale_run,
     ensure_publish_metadata,
     get_publish_run,
     mark_failed,
     mark_published,
     mark_publishing,
     record_dbt_result,
+    record_failed_path,
     stale_active_runs,
     start_publish_run,
 )
 
 PUBLISHED_FILE_NAME = "warehouse.duckdb"
 FAILED_BUILD_RETENTION = 3
-PUBLISH_STALE_AFTER = timedelta(hours=1)
+PUBLISH_LEASE = timedelta(minutes=5)
+PUBLISH_HEARTBEAT_INTERVAL = timedelta(seconds=30)
 ABANDONED_MESSAGE = "abandoned"
 FAILED_NODE_LIMIT = 20
 
@@ -111,17 +116,26 @@ class PublishOutcome:
 def recover_incomplete_publishes(
     settings: PostgresSettings, paths: WarehousePaths, *, now: datetime
 ) -> tuple[uuid.UUID, ...]:
-    """1시간 넘게 활성 상태인 Run을 PUBLISHED 확정 또는 abandoned FAILED로 닫는다."""
+    """생존 신호가 만료된 행을 먼저 닫고 인수에 성공한 파일만 정리한다."""
     recovered: list[uuid.UUID] = []
-    for record in stale_active_runs(settings, older_than=now - PUBLISH_STALE_AFTER):
-        if record.status == PUBLISHING and _published_identity_matches(
+    stale_before = now - PUBLISH_LEASE
+    for record in stale_active_runs(settings, stale_before=stale_before):
+        published = record.status == PUBLISHING and _published_identity_matches(
             paths.published, record.published_identity
+        )
+        if not close_stale_run(
+            settings, record.publish_run_id, status=PUBLISHED if published else FAILED,
+            stale_before=stale_before, now=now,
         ):
-            mark_published(settings, record.publish_run_id, now=now)
+            continue
+        if published:
             paths.build_file(record.publish_run_id).unlink(missing_ok=True)
-            shutil.rmtree(paths.target_dir(record.publish_run_id), ignore_errors=True)
         else:
-            _fail(settings, paths, record.publish_run_id, UNKNOWN_ERROR, ABANDONED_MESSAGE, now)
+            failed_path = _isolate_build(paths, record.publish_run_id, now=now)
+            if failed_path is not None:
+                record_failed_path(settings, record.publish_run_id, str(failed_path))
+            _prune_failed_builds(paths.failed_dir)
+        shutil.rmtree(paths.target_dir(record.publish_run_id), ignore_errors=True)
         recovered.append(record.publish_run_id)
     return tuple(recovered)
 
@@ -138,18 +152,19 @@ def prepare_warehouse_build(
     ensure_publish_metadata(settings)
     recover_incomplete_publishes(settings, paths, now=now)
     start_publish_run(settings, run, now=now)
-    build_path = paths.build_file(run.publish_run_id)
-    try:
-        if paths.published_wal.exists():
-            raise PublishedWalError(f"Published warehouse has a WAL: {paths.published_wal}")
-        paths.build_dir.mkdir(parents=True, exist_ok=True)
-        if paths.published.is_file():
-            shutil.copyfile(paths.published, build_path)
-        sync_bronze_catalog(settings, build_path)
-    except Exception as error:
-        _fail(settings, paths, run.publish_run_id, classify_error(error), str(error))
-        raise
-    return build_path
+    with publish_heartbeat(settings, run.publish_run_id, interval=PUBLISH_HEARTBEAT_INTERVAL):
+        build_path = paths.build_file(run.publish_run_id)
+        try:
+            if paths.published_wal.exists():
+                raise PublishedWalError(f"Published warehouse has a WAL: {paths.published_wal}")
+            paths.build_dir.mkdir(parents=True, exist_ok=True)
+            if paths.published.is_file():
+                shutil.copyfile(paths.published, build_path)
+            sync_bronze_catalog(settings, build_path)
+        except Exception as error:
+            _fail(settings, paths, run.publish_run_id, classify_error(error), str(error))
+            raise
+        return build_path
 
 
 def build_warehouse(
@@ -161,14 +176,15 @@ def build_warehouse(
 ) -> DbtRunResult:
     """Build 파일에 dbt build를 실행하고 실패하면 격리 후 WarehouseBuildError를 낸다."""
     try:
-        result = dbt_runner(paths.build_file(publish_run_id), paths.target_dir(publish_run_id))
-        record_dbt_result(
-            settings,
-            publish_run_id,
-            invocation_id=result.invocation_id,
-            tests_passed=result.tests_passed,
-            tests_failed=result.tests_failed,
-        )
+        with publish_heartbeat(settings, publish_run_id, interval=PUBLISH_HEARTBEAT_INTERVAL):
+            result = dbt_runner(paths.build_file(publish_run_id), paths.target_dir(publish_run_id))
+            record_dbt_result(
+                settings,
+                publish_run_id,
+                invocation_id=result.invocation_id,
+                tests_passed=result.tests_passed,
+                tests_failed=result.tests_failed,
+            )
     except Exception as error:
         _fail(settings, paths, publish_run_id, classify_error(error), str(error))
         raise
@@ -194,18 +210,19 @@ def publish_build(
         raise PublishStateError(f"Publish run {publish_run_id} does not exist")
     build_path = paths.build_file(publish_run_id)
     try:
-        checkpoint(build_path)
-        if wal_path(build_path).exists():
-            raise PublishedWalError(f"Build warehouse still has a WAL: {build_path}")
-        hashes, counts = mart_hashes_and_row_counts(build_path, targets)
-        identity = file_identity(build_path)
-        mark_publishing(
-            settings, publish_run_id, mart_hashes=hashes, mart_row_counts=counts,
-            published_identity=identity,
-        )
-        os.replace(build_path, paths.published)
-        fsync_directory(paths.published.parent)
-        mark_published(settings, publish_run_id, now=now or datetime.now(UTC))
+        with publish_heartbeat(settings, publish_run_id, interval=PUBLISH_HEARTBEAT_INTERVAL):
+            checkpoint(build_path)
+            if wal_path(build_path).exists():
+                raise PublishedWalError(f"Build warehouse still has a WAL: {build_path}")
+            hashes, counts = mart_hashes_and_row_counts(build_path, targets)
+            identity = file_identity(build_path)
+            mark_publishing(
+                settings, publish_run_id, mart_hashes=hashes, mart_row_counts=counts,
+                published_identity=identity,
+            )
+            os.replace(build_path, paths.published)
+            fsync_directory(paths.published.parent)
+            mark_published(settings, publish_run_id, now=now or datetime.now(UTC))
     except Exception as error:
         if build_path.exists():
             _fail(settings, paths, publish_run_id, classify_error(error), str(error))

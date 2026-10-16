@@ -66,17 +66,17 @@ def start_publish_run(
                 f"""
                 INSERT INTO mart_publish_runs (
                     publish_run_id, pipeline_name, batch_id, dag_run_id, status,
-                    previous_publish_run_id, started_at
+                    previous_publish_run_id, started_at, heartbeat_at
                 )
                 SELECT %s, %s, %s, %s, 'BUILDING', (
                     SELECT publish_run_id FROM mart_publish_runs
                     WHERE status = 'PUBLISHED'
                     ORDER BY finished_at DESC, started_at DESC
                     LIMIT 1
-                ), %s
+                ), %s, %s
                 RETURNING {_RECORD_COLUMNS}
                 """,
-                (run.publish_run_id, run.pipeline_name, run.batch_id, run.dag_run_id, now),
+                (run.publish_run_id, run.pipeline_name, run.batch_id, run.dag_run_id, now, now),
             ).fetchone()
     except psycopg.errors.UniqueViolation as error:
         if error.diag.constraint_name == ACTIVE_PUBLISH_INDEX:
@@ -175,19 +175,55 @@ def get_latest_publish_run(settings: PostgresSettings) -> PublishRecord | None:
 
 
 def stale_active_runs(
-    settings: PostgresSettings, *, older_than: datetime
+    settings: PostgresSettings, *, stale_before: datetime
 ) -> tuple[PublishRecord, ...]:
-    """기준 시각 이전에 시작해 아직 활성 상태인 Run을 반환한다."""
+    """마지막 생존 신호가 기준 시각보다 오래된 활성 Run을 반환한다."""
     with settings.pipeline_connection() as connection:
         rows = connection.execute(
             f"""
             SELECT {_RECORD_COLUMNS} FROM mart_publish_runs
-            WHERE status IN ('BUILDING', 'PUBLISHING') AND started_at < %s
+            WHERE status IN ('BUILDING', 'PUBLISHING') AND COALESCE(heartbeat_at, started_at) < %s
             ORDER BY started_at
             """,
-            (older_than,),
+            (stale_before,),
         ).fetchall()
     return tuple(_record(row) for row in rows)
+
+
+def touch_publish_run(settings: PostgresSettings, publish_run_id: uuid.UUID, *, now: datetime) -> bool:
+    """활성 실행의 생존 신호를 갱신하고 소유권 유지 여부를 반환한다."""
+    with settings.pipeline_connection() as connection:
+        cursor = connection.execute(
+            "UPDATE mart_publish_runs SET heartbeat_at = %s WHERE publish_run_id = %s "
+            "AND status IN ('BUILDING', 'PUBLISHING')",
+            (now, publish_run_id),
+        )
+        return cursor.rowcount == 1
+
+
+def close_stale_run(
+    settings: PostgresSettings, publish_run_id: uuid.UUID, *, status: str,
+    stale_before: datetime, now: datetime,
+) -> bool:
+    """여전히 만료된 활성 행만 조건부로 종료해 파일 처리 권한을 확보한다."""
+    if status not in (PUBLISHED, FAILED):
+        raise ValueError("만료 실행의 종료 상태는 PUBLISHED 또는 FAILED여야 합니다.")
+    error_type = "UNKNOWN_ERROR" if status == FAILED else None
+    error_message = "abandoned" if status == FAILED else None
+    with settings.pipeline_connection() as connection:
+        cursor = connection.execute(
+            "UPDATE mart_publish_runs SET status = %s, finished_at = %s, "
+            "error_type = %s, error_message = %s WHERE publish_run_id = %s "
+            "AND status IN ('BUILDING', 'PUBLISHING') "
+            "AND COALESCE(heartbeat_at, started_at) < %s",
+            (status, now, error_type, error_message, publish_run_id, stale_before),
+        )
+        return cursor.rowcount == 1
+
+
+def record_failed_path(settings: PostgresSettings, publish_run_id: uuid.UUID, failed_path: str) -> None:
+    """종료된 실패 행에 격리 경로만 기록한다."""
+    _transition(settings, publish_run_id, (FAILED,), "failed_path = %s", (failed_path,))
 
 
 def assert_no_active_publish(settings: PostgresSettings) -> None:
