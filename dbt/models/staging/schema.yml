@@ -14,7 +14,7 @@ models:
         data_tests: [not_null, unique]
 
   - name: stg_order_items
-    description: 주문 Line Grain Bronze를 보존하고 배송 기한을 `shipping_limit_at`으로 표준화한다.
+    description: 주문 항목 단위에서 키별 가장 최근 수집 관측 하나만 남기고 배송 기한을 `shipping_limit_at`으로 표준화한다.
     columns:
       - name: order_id
         data_tests: [not_null]

@@ -12,4 +12,4 @@ select
     _ingested_at,
     _source_table,
     _schema_version
-from {{ bronze_source('order_items') }}
+from {{ current_bronze_records('order_items', ['order_id', 'order_item_id'], updated_at_column='created_at') }}

@@ -199,6 +199,15 @@ refunded  → REFUNDED
 
 ## 파일·폴더별 변경 요약
 
+- [x] 주문 변경 이력 계획 Task 4: 주문 항목 재추출 중복을 Staging에서 제거한다. Task 1~3은 착수하지 않았다.
+- `dbt/models/staging/stg_order_items.sql`: `current_bronze_records`(최신 관측 선택)를 재사용해 `(order_id, order_item_id)`별 `created_at`, `_ingested_at`, `_batch_id` 내림차순으로 한 행을 선택한다. 컬럼 이름·순서와 기존 Fact 설정은 유지한다.
+- `dbt/models/staging/schema.yml`: 주문 항목의 최신 수집 관측 선택 규칙을 설명한다.
+- `tests/test_dbt_cleanup.py`: 재추출 중복 제거와 기존 13개 출력 컬럼 계약을 검증한다. 변경 전 중복 4행으로 실패함을 확인했다.
+- `tests/integration/test_order_items_reextract_integration.py`: 두 항목을 두 배치로 수집한 Bronze 4행, Fact 2행, 주문 금액 보존과 증분·전체 새로고침 Mart 해시 동등성을 검증한다. 변경 전 두 번째 Build의 `fct_order_item_unique` 실패를 확인했다.
+- [x] 실제 Bronze 복사본 A·B의 전체 새로고침 성공: 각각 dbt 테스트 140건 통과, 실패 0건. Mart 9개 모두 논리 해시·행 수가 같다(`mismatched_relations == ()`). 주문 항목 113,215행, 주문 결제 104,174행을 유지했다. Published 파일 SHA-256도 불변이다. 기존 소문자 구독 결제 상태 때문에 증분 기준 빌드가 실패하여 architect 승인으로 양쪽 모두 전체 새로고침했다. 기존 상태 데이터 수정은 범위 밖이다. 근거: `/tmp/order-items-t45/{baseline,after}.json`, `baseline-full-build.json`, `after-build.json`.
+- [x] 집중 테스트 7건, 오프라인 회귀 371건 통과(9건 생략, 통합 97건 제외), 실제 PostgreSQL·SeaweedFS 통합 테스트 2건 통과(재추출·기존 증분/전체 새로고침 비교). Ruff와 `git diff --check` 통과. 로그: `/tmp/order-items-t45/`.
+- [x] Task 4 reviewer 승인: 지적 0건. reviewer가 Ruff, 오프라인 371건 통과·9건 생략, 집중 테스트 7건 통과와 재추출 통합 테스트 통과를 독립 확인했다. 커밋은 lead가 수행한다.
+
 - [x] Bronze 빈 스키마의 정의를 Python `TableConfig`(테이블 계약)로 통합했다. SQL의 컬럼·기술 컬럼·테이블 목록·지원 버전 복사본을 제거했다.
 - `src/warehouse/dbt_vars.py`: `TableConfig.bronze_schema`가 제공하는 원천·기술 컬럼과 `SUPPORTED_BRONZE_SCHEMA_VERSIONS`(읽기 지원 버전)로 dbt JSON 변수를 생성한다. 타입 매핑은 문자열·32비트 정수·불리언·UTC 마이크로초 시각·`decimal128(14,2)`만 허용하며, 미지원 타입과 예약 변수 덮어쓰기는 거절한다.
 - `dbt/macros/bronze_source.sql`: `bronze_schemas`(테이블별 컬럼·타입)와 `bronze_schema_versions`(지원 버전)만 사용한다. 파싱은 변수 없이 빈 SQL로 진행하고, 실행은 카탈로그 조회 전에 변수 누락을 차단한다.
