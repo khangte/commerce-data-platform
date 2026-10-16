@@ -48,7 +48,9 @@ from src.warehouse.publish_metadata import (
     PUBLISHING,
     PublishRecord,
     PublishRun,
+    close_dag_run_building,
     close_stale_run,
+    dag_run_building_runs,
     ensure_publish_metadata,
     get_publish_run,
     mark_failed,
@@ -65,6 +67,7 @@ FAILED_BUILD_RETENTION = 3
 PUBLISH_LEASE = timedelta(minutes=5)
 PUBLISH_HEARTBEAT_INTERVAL = timedelta(seconds=30)
 ABANDONED_MESSAGE = "abandoned"
+RECLAIMED_MESSAGE = "abandoned: reclaimed by same DAG run retry"
 FAILED_NODE_LIMIT = 20
 
 DbtRunner = Callable[[Path, Path], DbtRunResult]
@@ -114,10 +117,21 @@ class PublishOutcome:
 
 
 def recover_incomplete_publishes(
-    settings: PostgresSettings, paths: WarehousePaths, *, now: datetime
+    settings: PostgresSettings, paths: WarehousePaths, *, now: datetime,
+    reclaim: PublishRun | None = None,
 ) -> tuple[uuid.UUID, ...]:
-    """생존 신호가 만료된 행을 먼저 닫고 인수에 성공한 파일만 정리한다."""
+    """같은 DagRun 잔재와 만료 행을 먼저 닫고 인수한 파일만 정리한다."""
     recovered: list[uuid.UUID] = []
+    if reclaim is not None and reclaim.dag_run_id is not None:
+        for record in dag_run_building_runs(
+            settings, pipeline_name=reclaim.pipeline_name, dag_run_id=reclaim.dag_run_id,
+        ):
+            if close_dag_run_building(
+                settings, record.publish_run_id, pipeline_name=reclaim.pipeline_name,
+                dag_run_id=reclaim.dag_run_id, message=RECLAIMED_MESSAGE, now=now,
+            ):
+                _clean_failed_recovery(settings, paths, record.publish_run_id, now=now)
+                recovered.append(record.publish_run_id)
     stale_before = now - PUBLISH_LEASE
     for record in stale_active_runs(settings, stale_before=stale_before):
         published = record.status == PUBLISHING and _published_identity_matches(
@@ -130,12 +144,9 @@ def recover_incomplete_publishes(
             continue
         if published:
             paths.build_file(record.publish_run_id).unlink(missing_ok=True)
+            shutil.rmtree(paths.target_dir(record.publish_run_id), ignore_errors=True)
         else:
-            failed_path = _isolate_build(paths, record.publish_run_id, now=now)
-            if failed_path is not None:
-                record_failed_path(settings, record.publish_run_id, str(failed_path))
-            _prune_failed_builds(paths.failed_dir)
-        shutil.rmtree(paths.target_dir(record.publish_run_id), ignore_errors=True)
+            _clean_failed_recovery(settings, paths, record.publish_run_id, now=now)
         recovered.append(record.publish_run_id)
     return tuple(recovered)
 
@@ -150,7 +161,7 @@ def prepare_warehouse_build(
     """활성 Run을 잡고 Published 파일을 복사한 Build 파일에 Catalog를 동기화한다."""
     now = now or datetime.now(UTC)
     ensure_publish_metadata(settings)
-    recover_incomplete_publishes(settings, paths, now=now)
+    recover_incomplete_publishes(settings, paths, now=now, reclaim=run)
     start_publish_run(settings, run, now=now)
     with publish_heartbeat(settings, run.publish_run_id, interval=PUBLISH_HEARTBEAT_INTERVAL):
         build_path = paths.build_file(run.publish_run_id)
@@ -263,6 +274,17 @@ def _previous_hashes(settings: PostgresSettings, record: PublishRecord) -> dict[
 def _published_identity_matches(published: Path, recorded: FileIdentity | None) -> bool:
     """게시 파일과 기록된 inode·수정 시각이 모두 같을 때만 참이다."""
     return recorded is not None and published.is_file() and file_identity(published) == recorded
+
+
+def _clean_failed_recovery(
+    settings: PostgresSettings, paths: WarehousePaths, publish_run_id: uuid.UUID, *, now: datetime,
+) -> None:
+    """행 종료가 확정된 회수 실행의 파일을 격리하고 잔여물을 정리한다."""
+    failed_path = _isolate_build(paths, publish_run_id, now=now)
+    if failed_path is not None:
+        record_failed_path(settings, publish_run_id, str(failed_path))
+    _prune_failed_builds(paths.failed_dir)
+    shutil.rmtree(paths.target_dir(publish_run_id), ignore_errors=True)
 
 
 def _fail(

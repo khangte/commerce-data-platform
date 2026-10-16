@@ -221,6 +221,35 @@ def close_stale_run(
         return cursor.rowcount == 1
 
 
+def dag_run_building_runs(
+    settings: PostgresSettings, *, pipeline_name: str, dag_run_id: str,
+) -> tuple[PublishRecord, ...]:
+    """같은 Pipeline과 DagRun에 남은 준비·빌드 상태 행을 조회한다."""
+    with settings.pipeline_connection() as connection:
+        rows = connection.execute(
+            f"SELECT {_RECORD_COLUMNS} FROM mart_publish_runs "
+            "WHERE status = 'BUILDING' AND pipeline_name = %s AND dag_run_id = %s "
+            "ORDER BY started_at",
+            (pipeline_name, dag_run_id),
+        ).fetchall()
+    return tuple(_record(row) for row in rows)
+
+
+def close_dag_run_building(
+    settings: PostgresSettings, publish_run_id: uuid.UUID, *, pipeline_name: str,
+    dag_run_id: str, message: str, now: datetime,
+) -> bool:
+    """같은 DagRun의 이전 준비 실행만 조건부로 종료해 회수 권한을 확보한다."""
+    with settings.pipeline_connection() as connection:
+        cursor = connection.execute(
+            "UPDATE mart_publish_runs SET status = 'FAILED', error_type = 'UNKNOWN_ERROR', "
+            "error_message = %s, finished_at = %s WHERE publish_run_id = %s "
+            "AND status = 'BUILDING' AND pipeline_name = %s AND dag_run_id = %s",
+            (message, now, publish_run_id, pipeline_name, dag_run_id),
+        )
+        return cursor.rowcount == 1
+
+
 def record_failed_path(settings: PostgresSettings, publish_run_id: uuid.UUID, failed_path: str) -> None:
     """종료된 실패 행에 격리 경로만 기록한다."""
     _transition(settings, publish_run_id, (FAILED,), "failed_path = %s", (failed_path,))

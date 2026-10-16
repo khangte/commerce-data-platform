@@ -9,6 +9,7 @@ import sys
 import time
 import uuid
 from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -315,11 +316,9 @@ def test_zombie_cannot_publish_after_takeover(settings, tmp_path):
     assert (paths.published.read_bytes(), file_identity(paths.published)) == before
 
 
-def test_sigkilled_owner_is_taken_over_after_lease(settings, tmp_path, monkeypatch):
-    """실제 자식의 주기 갱신·SIGKILL·만료 전 차단·만료 뒤 인수를 검증한다."""
-    monkeypatch.setattr(publisher, "PUBLISH_LEASE", timedelta(seconds=2))
-    paths = WarehousePaths.under(tmp_path)
-    owner = _run()
+@contextmanager
+def _running_heartbeat_owner(settings, tmp_path, owner):
+    """준비를 마친 자식의 생존 신호를 관측하고 종료를 보장한다."""
     child_code = """
 import sys, time, uuid
 from datetime import timedelta
@@ -329,12 +328,12 @@ from src.warehouse.publish import WarehousePaths, prepare_warehouse_build
 from src.warehouse.publish_metadata import PublishRun
 from src.warehouse.publish_heartbeat import publish_heartbeat
 settings = PostgresSettings.from_environment()
-run = PublishRun(uuid.UUID(sys.argv[2]), sys.argv[3])
+run = PublishRun(uuid.UUID(sys.argv[2]), sys.argv[3], dag_run_id=sys.argv[4] or None)
 prepare_warehouse_build(settings, WarehousePaths.under(Path(sys.argv[1])), run)
 with publish_heartbeat(settings, run.publish_run_id, interval=timedelta(seconds=0.2)):
     time.sleep(60)
 """
-    child = subprocess.Popen([sys.executable, "-c", child_code, str(tmp_path), str(owner.publish_run_id), owner.pipeline_name], cwd=Path(__file__).resolve().parents[2], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    child = subprocess.Popen([sys.executable, "-c", child_code, str(tmp_path), str(owner.publish_run_id), owner.pipeline_name, owner.dag_run_id or ""], cwd=Path(__file__).resolve().parents[2], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
         seen = set()
         deadline = time.monotonic() + 15
@@ -346,6 +345,19 @@ with publish_heartbeat(settings, run.publish_run_id, interval=timedelta(seconds=
                 seen.add(row[0])
             time.sleep(0.05)
         assert len(seen) >= 3
+        yield child
+    finally:
+        if child.poll() is None:
+            child.kill()
+        child.wait(timeout=5)
+
+
+def test_sigkilled_owner_is_taken_over_after_lease(settings, tmp_path, monkeypatch):
+    """실제 자식의 주기 갱신·SIGKILL·만료 전 차단·만료 뒤 인수를 검증한다."""
+    monkeypatch.setattr(publisher, "PUBLISH_LEASE", timedelta(seconds=2))
+    paths = WarehousePaths.under(tmp_path)
+    owner = _run()
+    with _running_heartbeat_owner(settings, tmp_path, owner) as child:
         os.kill(child.pid, signal.SIGKILL)
         assert child.wait(timeout=5) == -signal.SIGKILL
         new = _run()
@@ -358,7 +370,90 @@ with publish_heartbeat(settings, run.publish_run_id, interval=timedelta(seconds=
         with settings.pipeline_connection() as connection:
             row = connection.execute("SELECT status, error_type, error_message FROM mart_publish_runs WHERE publish_run_id = %s", (owner.publish_run_id,)).fetchone()
         assert row == (FAILED, "UNKNOWN_ERROR", "abandoned")
-    finally:
-        if child.poll() is None:
-            child.kill()
-        child.wait(timeout=5)
+
+
+@pytest.mark.parametrize("sigkill", [False, True])
+def test_retry_reclaims_own_dag_run_building_row(settings, tmp_path, sigkill):
+    """같은 DagRun의 재시도는 생존 신호가 신선한 이전 시도를 즉시 회수한다."""
+    paths = WarehousePaths.under(tmp_path)
+    owner = PublishRun(uuid.uuid4(), "test_publish_reclaim", dag_run_id="dr1")
+    if sigkill:
+        with _running_heartbeat_owner(settings, tmp_path, owner) as child:
+            os.kill(child.pid, signal.SIGKILL)
+            assert child.wait(timeout=5) == -signal.SIGKILL
+    else:
+        start_publish_run(settings, owner, now=datetime.now(UTC))
+        metadata.touch_publish_run(settings, owner.publish_run_id, now=datetime.now(UTC))
+        paths.build_dir.mkdir(parents=True)
+        paths.build_file(owner.publish_run_id).write_bytes(b"partial")
+    target = paths.target_dir(owner.publish_run_id)
+    target.mkdir()
+    (target / "leftover").write_text("leftover")
+    new = PublishRun(uuid.uuid4(), owner.pipeline_name, dag_run_id=owner.dag_run_id)
+    prepare_warehouse_build(settings, paths, new)
+    assert get_publish_run(settings, new.publish_run_id).status == "BUILDING"
+    assert paths.failed_file(owner.publish_run_id).is_file()
+    assert not target.exists()
+    with settings.pipeline_connection() as connection:
+        row = connection.execute("SELECT status,error_type,error_message,failed_path FROM mart_publish_runs WHERE publish_run_id=%s", (owner.publish_run_id,)).fetchone()
+    assert row == (FAILED, "UNKNOWN_ERROR", publisher.RECLAIMED_MESSAGE, str(paths.failed_file(owner.publish_run_id)))
+
+
+@pytest.mark.parametrize("old_pipeline,old_dag,new_pipeline,new_dag,publishing", [
+    ("test_publish_reclaim", "dr1", "test_publish_reclaim", "dr2", False),
+    ("test_publish_reclaim", None, "test_publish_reclaim", None, False),
+    ("test_publish_other", "dr1", "test_publish_reclaim", "dr1", False),
+    ("test_publish_reclaim", "dr1", "test_publish_reclaim", "dr1", True),
+])
+def test_retry_does_not_reclaim_unrelated_or_publishing_rows(settings, tmp_path, old_pipeline, old_dag, new_pipeline, new_dag, publishing):
+    """다른 실행·Pipeline·CLI·교체 중 행에는 기존 Lease 차단을 유지한다."""
+    paths = WarehousePaths.under(tmp_path)
+    owner = PublishRun(uuid.uuid4(), old_pipeline, dag_run_id=old_dag)
+    start_publish_run(settings, owner, now=datetime.now(UTC))
+    paths.build_dir.mkdir(parents=True)
+    paths.build_file(owner.publish_run_id).write_bytes(b"keep")
+    if publishing:
+        mark_publishing(settings, owner.publish_run_id, mart_hashes={}, mart_row_counts={}, published_identity=FileIdentity(1, 2))
+    with pytest.raises(PublishInProgressError):
+        prepare_warehouse_build(settings, paths, PublishRun(uuid.uuid4(), new_pipeline, dag_run_id=new_dag))
+    assert get_publish_run(settings, owner.publish_run_id).status == ("PUBLISHING" if publishing else "BUILDING")
+    assert paths.build_file(owner.publish_run_id).read_bytes() == b"keep"
+    assert not paths.failed_file(owner.publish_run_id).exists()
+
+
+def test_reclaimed_zombie_cannot_publish(settings, tmp_path):
+    """같은 실행에 회수된 이전 소유자도 게시 파일을 변경하지 못한다."""
+    paths = WarehousePaths.under(tmp_path)
+    publish_warehouse(settings, paths, _run(), dbt_runner=_dbt_writing(3), targets=TARGETS)
+    before = paths.published.read_bytes(), file_identity(paths.published)
+    owner = PublishRun(uuid.uuid4(), "test_publish_reclaim", dag_run_id="dr1")
+    start_publish_run(settings, owner, now=datetime.now(UTC))
+    paths.build_file(owner.publish_run_id).write_bytes(b"zombie")
+    prepare_warehouse_build(settings, paths, PublishRun(uuid.uuid4(), owner.pipeline_name, dag_run_id=owner.dag_run_id))
+    with pytest.raises(PublishStateError):
+        metadata.record_dbt_result(settings, owner.publish_run_id, invocation_id="zombie", tests_passed=1, tests_failed=0)
+    with pytest.raises(PublishStateError):
+        mark_publishing(settings, owner.publish_run_id, mart_hashes={}, mart_row_counts={}, published_identity=FileIdentity(1, 2))
+    assert (paths.published.read_bytes(), file_identity(paths.published)) == before
+
+
+def test_reclaim_skips_files_when_candidate_becomes_publishing(settings, tmp_path, monkeypatch):
+    """조회 뒤 상태가 변해 회수 UPDATE가 0행이면 파일·결과를 보존한다."""
+    paths = WarehousePaths.under(tmp_path)
+    owner = PublishRun(uuid.uuid4(), "test_publish_reclaim", dag_run_id="dr1")
+    start_publish_run(settings, owner, now=datetime.now(UTC))
+    paths.build_dir.mkdir(parents=True)
+    paths.build_file(owner.publish_run_id).write_bytes(b"keep")
+    target = paths.target_dir(owner.publish_run_id)
+    target.mkdir()
+    lookup = publisher.dag_run_building_runs
+    def transition_after_lookup(*args, **kwargs):
+        """후보 조회 뒤 교체 시작 상태 전이를 끼워 넣는다."""
+        records = lookup(*args, **kwargs)
+        mark_publishing(settings, owner.publish_run_id, mart_hashes={}, mart_row_counts={}, published_identity=FileIdentity(1, 2))
+        return records
+    monkeypatch.setattr(publisher, "dag_run_building_runs", transition_after_lookup)
+    assert recover_incomplete_publishes(settings, paths, now=datetime.now(UTC), reclaim=owner) == ()
+    assert paths.build_file(owner.publish_run_id).read_bytes() == b"keep"
+    assert target.is_dir()
+    assert not paths.failed_file(owner.publish_run_id).exists()
