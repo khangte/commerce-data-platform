@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 
+import psycopg
 import pytest
 
 from src.serving import cli, metabase_settings
@@ -163,3 +164,26 @@ def test_cli_rejects_a_legacy_publish_without_file_identity(
     assert not root.exists()
 
 
+
+
+def test_status_database_connect_failure_is_one_line(monkeypatch, capsys) -> None:
+    """DB 연결 실패는 상세 오류나 traceback 없이 한 줄과 종료 1로 전달한다."""
+    monkeypatch.setenv("METABASE_API_KEY", "cli-test-api-secret")
+    monkeypatch.setenv("METABASE_SERVING_DATABASE_ID", "2")
+    settings = cli.PostgresSettings(
+        host="db.test", port=5432, admin_user="admin", admin_password="unused",
+        source_database="source", source_user="source", source_password="unused",
+        pipeline_database="metadata", pipeline_user="pipeline", pipeline_password="unused",
+    )
+    monkeypatch.setattr(cli.PostgresSettings, "from_environment", lambda: settings)
+
+    def fail_connection(*args, **kwargs):
+        """실제 메타데이터 조회가 DB 연결을 여는 경계에서 실패를 재현한다."""
+        raise psycopg.OperationalError("sensitive database connection detail\nsecond line")
+
+    monkeypatch.setattr(psycopg, "connect", fail_connection)
+    assert cli.main(["status"]) == 1
+    output = capsys.readouterr()
+    assert output.out == ""
+    assert output.err.splitlines() == ["Serving 상태 확인 실패: OperationalError"]
+    assert "cli-test-api-secret" not in output.err

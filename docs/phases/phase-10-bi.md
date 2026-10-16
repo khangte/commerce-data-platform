@@ -259,10 +259,16 @@ Phase 10에는 별도 AC 번호가 없으므로 ROADMAP의 Connection/Dashboard 
 
 최종 검증: 전체 테스트 437건 통과·109건 생략·실패 0건, Ruff·공백 검사 통과. 마커별 통과/실패/생략은 미지정 436/0/4, integration 1/0/100, reliability 0/0/18, airflow 0/0/5, benchmark 0/0/0이다. 복수 마커는 중복 집계되며 외부 연동 실행 플래그가 없는 테스트는 생략됐다. 인프라 관련 실패는 없었다. 실제 `uv run python -m src.serving export` 한 번으로 내보내기 `a3b6b240-e08c-4fcf-9c60-3e41c1247747`와 `metabase_repoint=SUCCESS`를 확인했고 새 파일 포함 3개만 남았다. Metabase DB 2의 `details.database_file`이 `/serving/exports/a3b6b240-e08c-4fcf-9c60-3e41c1247747.duckdb`와 일치했다. `status`는 종료 0·`fresh=true`이며 실제 실행과 최신 게시 실행 `539746b5-32f5-4df4-a57e-dbf442db18f8`가 같았다. 카드 49·50·51을 각각 1회 실행해 오류 없이 74·10·10행을 확인했다. `uv run python scripts/metabase_import.py 49 50 51 --apply`는 최신 여부 검사를 통과했고 쿼리 변경 0건으로 종료 0이었다. 기존 PRD 보관본과 매니페스트 기록·인증 전송·재지정·DAG 서빙 두 작업의 원문 또는 AST 보존도 검증했다. 원시 결과는 `/tmp/serving-refresh-dev/`에 보관하며 커밋하지 않았다.
 
+## 서빙 상태 확인의 DB 연결 실패 처리 (2026-10-16)
+
+- [x] `status`에서 `psycopg.Error`(PostgreSQL 드라이버 오류)를 잡아 예외 종류만 한 줄로 출력하고 종료 1을 반환한다.
+- [x] 실제 메타데이터 조회의 연결 경계에서 실패를 주입해 stdout 없음·stderr 한 줄·상세 및 인증값 비노출을 검증한다. serving 테스트 54건, Ruff와 공백 검사를 통과했다.
+
 ## 파일·폴더별 변경 요약
 
 | 경로 | 변경 내용 |
 | ---- | --------- |
+| `src/serving/cli.py`, `tests/serving/test_cli.py`, `docs/phases/phase-10-bi.md` | DB 연결 실패의 traceback을 한 줄 오류로 대체한다. 실제 `get_latest_publish_run` → `pipeline_connection` → `psycopg.connect` 경로의 실패 테스트를 먼저 확인한 뒤 최소 예외 처리를 추가했다. |
 | `src/serving/metabase_settings.py`, `tests/serving/test_metabase_settings.py` | 호스트 URL의 컨테이너 주소 격리와 키·DB ID의 환경 변수 우선·빈 값 대체·필수값 오류를 공통화하고 검증했다. |
 | `scripts/metabase_import.py`, `scripts/capture_metabase_dashboards.py`, `tests/test_metabase_import.py` | 루트 기준 공통 설정을 사용한다. 카드 반영은 모든 GET·DB 식별자 검사 뒤, 첫 PUT 전에 DB별 실제 매니페스트의 최신 여부를 검사한다. 변경 0건·오름차순 중복 제거·HTTP/URL 오류의 쓰기 차단·기본 모의 실행의 검사 생략을 검증했다. 기존 캡처 테스트도 통과했다. |
 | `src/serving/metabase_repoint.py`, `src/serving/freshness.py`, `tests/serving/test_freshness.py` | 버전 정리 함수를 재지정 모듈로 이동해 역방향 의존을 없앴다. 헤더 인증으로 읽은 실제 매니페스트와 최신 게시 실행을 비교하며 실패 응답·잘못된 행 구조를 거부하고 민감한 응답 상세를 숨긴다. |

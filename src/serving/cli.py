@@ -9,6 +9,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 
+import psycopg
+
 from src.common.database import PROJECT_ROOT, PostgresSettings
 from src.serving.export import ServingPaths, export_serving_mart
 from src.serving.freshness import check_serving_freshness
@@ -85,7 +87,7 @@ def _status() -> int:
         )
         print(json.dumps(asdict(result) | {"fresh": result.fresh}, ensure_ascii=False, sort_keys=True))
         return 0 if result.fresh else 1
-    except (RuntimeError, ValueError, HTTPError, URLError, OSError, KeyError) as error:
+    except (RuntimeError, ValueError, HTTPError, URLError, OSError, KeyError, psycopg.Error) as error:
         if isinstance(error, HTTPError):
             detail = f"HTTP {error.code}"
         elif isinstance(error, RuntimeError):
