@@ -8,7 +8,11 @@ from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from src.serving.export import prune_serving_exports
+from src.warehouse.duckdb_files import fsync_directory
+
+LIVE_MANIFEST_QUERY = (
+    "SELECT CAST(export_id AS VARCHAR), CAST(publish_run_id AS VARCHAR) FROM serving_manifest"
+)
 
 _API_ERRORS = (HTTPError, URLError, OSError, HTTPException, ValueError, TypeError, KeyError)
 
@@ -91,3 +95,32 @@ def metabase_repoint_summary_status(serving_export: dict | None, status: str | N
     if serving_export is None:
         return "NOT_REQUESTED"
     return status or "FAILED"
+
+
+def prune_serving_exports(versions_dir: Path, keep: int = 3) -> None:
+    """재지정 결과를 확인한 뒤 오래된 Export 버전 파일을 정리한다."""
+    versions = sorted(
+        versions_dir.glob("*.duckdb"), key=lambda path: path.stat().st_mtime_ns, reverse=True
+    )
+    for old_version in versions[keep:]:
+        old_version.unlink()
+    fsync_directory(versions_dir)
+
+
+def read_live_serving_manifest(
+    metabase_url: str, api_key: str, database_id: int
+) -> tuple[str, str]:
+    """Metabase가 실제 읽는 서빙 매니페스트의 두 식별자를 조회한다."""
+    result = _request_json(
+        f"{metabase_url.rstrip('/')}/api/dataset", api_key, "POST",
+        {"database": database_id, "type": "native", "native": {"query": LIVE_MANIFEST_QUERY}},
+    )
+    if result.get("status") == "failed":
+        raise ValueError("Metabase serving manifest query failed")
+    rows = result["data"]["rows"]
+    if (
+        not isinstance(rows, list) or len(rows) != 1
+        or not isinstance(rows[0], list) or len(rows[0]) != 2
+    ):
+        raise ValueError("Serving manifest must have exactly one row")
+    return rows[0][0], rows[0][1]

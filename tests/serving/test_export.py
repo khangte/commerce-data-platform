@@ -164,22 +164,6 @@ def test_export_rejects_a_published_file_replaced_during_copy(
     assert not list((paths.serving.parent / "exports").glob("*.duckdb"))
 
 
-def test_cli_rejects_a_legacy_publish_without_file_identity(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """기존 게시 기록에 식별값이 없으면 새 게시를 요구하고 파일을 만들지 않는다."""
-    from src.serving import export
-    from src.warehouse.publish_metadata import PUBLISHED, PublishRecord
-
-    record = PublishRecord(uuid.uuid4(), PUBLISHED, datetime.now(UTC), None, {}, None, None)
-    monkeypatch.setattr(export.PostgresSettings, "from_environment", lambda: object())
-    monkeypatch.setattr(export, "get_latest_publish_run", lambda _: record)
-    root = tmp_path / "serving"
-    with pytest.raises(ValueError, match="no recorded file identity; run a new publish"):
-        export.main(["export", "--serving-root", str(root)])
-    assert not root.exists()
-
-
 def test_export_keeps_all_versions_until_repoint_succeeds(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

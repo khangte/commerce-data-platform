@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import difflib
 import json
-import os
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -13,24 +12,14 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from src.common.database import PostgresSettings
+from src.serving.freshness import check_serving_freshness
+from src.serving.metabase_settings import host_metabase_url, require_metabase_setting
+
 EXPORT_DIR = PROJECT_ROOT / "metabase/export"
-DEFAULT_METABASE_URL = "http://localhost:3000"
-
-
-def load_api_key() -> str:
-    """환경 변수 또는 프로젝트 루트 .env에서 API Key를 읽는다."""
-    key = os.environ.get("METABASE_API_KEY", "").strip()
-    if key:
-        return key
-    env_path = PROJECT_ROOT / ".env"
-    if env_path.is_file():
-        for line in env_path.read_text(encoding="utf-8").splitlines():
-            if line.startswith("METABASE_API_KEY="):
-                key = line.partition("=")[2].strip()
-                if key:
-                    return key
-                break
-    raise RuntimeError("METABASE_API_KEY가 필요합니다.")
 
 
 def request_card(url: str, api_key: str, payload: dict | None = None) -> dict:
@@ -88,9 +77,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     """모든 카드의 식별자와 차이를 확인한 뒤 요청한 경우에만 쿼리를 반영한다."""
     args = parse_args(argv)
     try:
-        api_key = load_api_key()
-        base = os.environ.get("METABASE_URL", DEFAULT_METABASE_URL).rstrip("/")
+        api_key = require_metabase_setting("METABASE_API_KEY", PROJECT_ROOT / ".env")
+        base = host_metabase_url()
         changes = []
+        database_ids = set()
         for card_id in dict.fromkeys(args.card_ids):
             exported = json.loads((EXPORT_DIR / f"card-{card_id}.json").read_text(encoding="utf-8"))
             export_database = validate_card(exported, card_id)
@@ -98,6 +88,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             live = request_card(url, api_key)
             if validate_card(live, card_id) != export_database:
                 raise ValueError(f"카드 {card_id}: 운영·Export database id 불일치")
+            database_ids.add(export_database)
             diff = query_diff(card_id, live["dataset_query"], exported["dataset_query"])
             if diff:
                 print(diff)
@@ -105,6 +96,21 @@ def main(argv: Sequence[str] | None = None) -> int:
             else:
                 print(f"카드 {card_id}: dataset_query 변경 없음")
         if args.apply:
+            settings = PostgresSettings.from_environment()
+            for database_id in sorted(database_ids):
+                try:
+                    freshness = check_serving_freshness(settings, base, api_key, database_id)
+                except HTTPError as error:
+                    raise RuntimeError(f"Metabase 서빙 상태 요청 실패: HTTP {error.code}") from None
+                except URLError:
+                    raise RuntimeError("Metabase 서버에 연결할 수 없습니다.") from None
+                if not freshness.fresh:
+                    raise RuntimeError(
+                        f"Serving 지연: database {database_id}는 publish "
+                        f"{freshness.live_publish_run_id}를 읽지만 최신 PUBLISHED는 "
+                        f"{freshness.latest_publish_run_id}다. "
+                        "uv run python -m src.serving export 실행 후 다시 시도한다."
+                    )
             for card_id, url, payload in changes:
                 request_card(url, api_key, payload)
                 print(f"카드 {card_id}: dataset_query 반영 완료")

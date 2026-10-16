@@ -10,6 +10,8 @@ import ast
 import os
 import re
 import subprocess
+import uuid
+from functools import partial
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -423,3 +425,58 @@ def test_repoint_task_fails_when_repoint_result_is_failed(tmp_path: Path) -> Non
     with pytest.raises(StubAirflowException, match="METABASE_REPOINT_FAILED") as error:
         namespace["repoint_metabase_serving_task"]({"export_id": "x"})
     assert type(error.value) is StubAirflowException
+
+
+def _warehouse_dbt_runner(full_refresh: bool):
+    """Airflow 없이 실제 dbt 작업 본문을 실행하고 선택된 실행기를 반환한다."""
+    source = (PROJECT_ROOT / "airflow/dags/warehouse_pipeline_dag.py").read_text()
+    block = next(node for node in ast.parse(source).body if isinstance(node, ast.With))
+    node = next(
+        node for node in block.body
+        if isinstance(node, ast.FunctionDef) and node.name == "dbt_build_task"
+    )
+    node.decorator_list = []
+    captured = {}
+
+    def runner(*args, **kwargs):
+        """선택 여부를 비교할 dbt 실행기 대역이다."""
+        raise AssertionError("dbt must not run in this boundary test")
+
+    def build(*args, **kwargs):
+        """실제 작업이 전달한 실행기를 기록한다."""
+        captured["runner"] = kwargs.get("dbt_runner")
+        return SimpleNamespace(tests_passed=1, tests_failed=0)
+
+    namespace = {
+        "get_current_context": lambda: {"params": {"full_refresh": full_refresh}},
+        "PostgresSettings": SimpleNamespace(from_environment=lambda: object()),
+        "WAREHOUSE_PATHS": object(), "uuid": uuid, "partial": partial,
+        "run_dbt_build": runner, "build_warehouse": build,
+        "_reraise_classified": lambda error: None,
+    }
+    module = ast.fix_missing_locations(ast.Module(body=[node], type_ignores=[]))
+    exec(compile(module, "warehouse_pipeline_dag.py", "exec"), namespace)  # noqa: S102
+    assert namespace["dbt_build_task"]({"publish_run_id": str(uuid.uuid4())}) == {
+        "tests_passed": 1, "tests_failed": 0,
+    }
+    return captured["runner"], runner
+
+
+def test_dbt_build_passes_full_refresh_when_param_is_true() -> None:
+    """명시적 전체 새로고침 매개변수만 dbt 추가 인자로 전달한다."""
+    selected, plain = _warehouse_dbt_runner(True)
+    assert isinstance(selected, partial)
+    assert selected.func is plain
+    assert selected.keywords == {"extra_args": ("--full-refresh",)}
+
+
+def test_dbt_build_uses_plain_runner_by_default() -> None:
+    """기본값에서는 부분 실행기나 전체 새로고침 인자를 사용하지 않는다."""
+    selected, plain = _warehouse_dbt_runner(False)
+    assert selected is plain
+
+
+def test_warehouse_full_refresh_param_defaults_to_false() -> None:
+    """conf가 없는 원천 DAG 트리거에서도 전체 새로고침 기본값은 거짓이다."""
+    source = (PROJECT_ROOT / "airflow/dags/warehouse_pipeline_dag.py").read_text()
+    assert '\"full_refresh\": Param(False, type=\"boolean\"' in source

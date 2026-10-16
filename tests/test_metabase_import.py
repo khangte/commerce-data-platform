@@ -5,10 +5,13 @@ import json
 from copy import deepcopy
 from io import BytesIO
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import Mock
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 
 import pytest
+
+from src.serving.freshness import ServingFreshness
 
 SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts/metabase_import.py"
 
@@ -24,6 +27,12 @@ def importer(tmp_path, monkeypatch):
     module.EXPORT_DIR.mkdir()
     monkeypatch.setenv("METABASE_API_KEY", "test-secret")
     monkeypatch.setenv("METABASE_URL", "http://metabase.test:3000/")
+    monkeypatch.setattr(module, "PostgresSettings", SimpleNamespace(
+        from_environment=Mock(return_value=object()),
+    ), raising=False)
+    monkeypatch.setattr(module, "check_serving_freshness", Mock(
+        return_value=ServingFreshness(2, "e1", "p1", "p1"),
+    ), raising=False)
     return module
 
 
@@ -145,3 +154,77 @@ def test_http_error_is_clear_and_hides_credentials(importer, monkeypatch, capsys
     output = capsys.readouterr()
     assert "403" in output.err
     assert "test-secret" not in output.err + output.out
+
+
+def test_apply_aborts_before_put_when_serving_is_stale(importer, monkeypatch, capsys):
+    """모든 카드를 조회한 뒤 실제 연결이 오래됐으면 첫 쓰기 전에 중단한다."""
+    _, _, transport = prepare_cards(importer, monkeypatch, (49, 50))
+    importer.check_serving_freshness.return_value = ServingFreshness(
+        2, "old-export", "old-published", "latest-published",
+    )
+    assert importer.main(["49", "50", "--apply"]) == 1
+    assert [call.args[0].get_method() for call in transport.call_args_list] == ["GET", "GET"]
+    error = capsys.readouterr().err
+    assert "old-published" in error and "latest-published" in error and "src.serving export" in error
+
+
+def test_apply_with_no_changes_still_aborts_when_serving_is_stale(importer, monkeypatch):
+    """쿼리 차이가 없어도 오래된 서빙 파일을 성공으로 오인하지 않는다."""
+    exports, live, transport = prepare_cards(importer, monkeypatch)
+    live[49]["dataset_query"] = exports[49]["dataset_query"]
+    importer.check_serving_freshness.return_value = ServingFreshness(2, "e0", "p0", "p1")
+    assert importer.main(["49", "--apply"]) == 1
+    importer.check_serving_freshness.assert_called_once()
+    assert [call.args[0].get_method() for call in transport.call_args_list] == ["GET"]
+
+
+def test_apply_checks_each_database_once(importer, monkeypatch):
+    """같은 DB의 여러 카드와 중복 카드 인자도 검사 한 번으로 처리한다."""
+    prepare_cards(importer, monkeypatch, (49, 50))
+    assert importer.main(["50", "49", "49", "--apply"]) == 0
+    importer.check_serving_freshness.assert_called_once_with(
+        importer.PostgresSettings.from_environment.return_value,
+        "http://metabase.test:3000", "test-secret", 2,
+    )
+
+
+def test_dry_run_skips_freshness_check(importer, monkeypatch):
+    """기본 모의 실행은 카드 조회만 수행하고 게시 메타데이터를 요구하지 않는다."""
+    prepare_cards(importer, monkeypatch)
+    assert importer.main(["49"]) == 0
+    importer.check_serving_freshness.assert_not_called()
+    importer.PostgresSettings.from_environment.assert_not_called()
+
+
+@pytest.mark.parametrize("error,expected", [
+    (HTTPError("http://mb.test", 403, "test-secret", {}, None), "403"),
+    (URLError("test-secret"), "연결할 수 없습니다"),
+])
+def test_freshness_http_failure_aborts_and_hides_credentials(
+    importer, monkeypatch, capsys, error, expected,
+):
+    """상태 조회의 HTTP·연결 오류도 쓰기를 막고 비밀값을 출력하지 않는다."""
+    _, _, transport = prepare_cards(importer, monkeypatch)
+    importer.check_serving_freshness.side_effect = error
+    assert importer.main(["49", "--apply"]) == 1
+    assert [call.args[0].get_method() for call in transport.call_args_list] == ["GET"]
+    output = capsys.readouterr()
+    assert expected in output.err and "test-secret" not in output.out + output.err
+
+
+def test_apply_checks_databases_in_order_before_any_put(importer, monkeypatch):
+    """모든 DB를 오름차순으로 검사한 뒤에만 카드 쓰기를 시작한다."""
+    exports, live, transport = prepare_cards(importer, monkeypatch, (49, 50, 51))
+    for card_id in (49, 51):
+        for card in (exports[card_id], live[card_id]):
+            card["database_id"] = card["dataset_query"]["database"] = 3
+        (importer.EXPORT_DIR / f"card-{card_id}.json").write_text(json.dumps(exports[card_id]))
+
+    def check(settings, base, key, database_id):
+        """각 DB 검사 시점에도 모든 전송이 조회뿐인지 확인한다."""
+        assert [call.args[0].get_method() for call in transport.call_args_list] == ["GET"] * 3
+        return ServingFreshness(database_id, "e1", "p1", "p1")
+
+    importer.check_serving_freshness.side_effect = check
+    assert importer.main(["49", "50", "51", "--apply"]) == 0
+    assert [call.args[3] for call in importer.check_serving_freshness.call_args_list] == [2, 3]

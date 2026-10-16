@@ -3,7 +3,7 @@
 > 상태: Done — `P10-01`~`P10-23` 완료 (2026-09-28)
 > Milestone: 3 — Portfolio Evidence  
 > 선행 Phase: [Phase 9. Benchmark](phase-09-benchmark.md)  
-> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.24](../../PRD_v1.24.md)
+> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.25](../../PRD_v1.25.md)
 
 ## 목표
 
@@ -248,10 +248,26 @@ Phase 10에는 별도 AC 번호가 없으므로 ROADMAP의 Connection/Dashboard 
 
 최종 검증: 전체 테스트 396건 통과·109건 생략, `RUN_POSTGRES_INTEGRATION=1` 통합 테스트 54건 통과·29건 생략, `ruff check .`와 공백 검사를 통과했다. 외부 연동별 실행 플래그가 없는 테스트는 생략됐다. 검증 시작 전과 실제 게시 직전 `mart_publish_runs`의 `BUILDING`·`PUBLISHING`은 각각 0건이었다. 정상 명령 `uv run python -m src.warehouse.publish --pipeline-name manual_run`으로 실행 `539746b5-32f5-4df4-a57e-dbf442db18f8`를 게시했고 dbt 테스트 143건 통과·0건 실패, 9개 해시 대상의 변경 없음과 기록 식별값 `(1020866, 1792141253195265434)`의 실제 파일 일치를 확인했다. `uv run python -m src.serving`은 1.67초에 내보내기 `85ecffe0-9401-497d-be6b-11f9c39c1a1b`를 만들었고 Manifest의 게시 실행이 일치했다. 기존 `repoint_and_prune_serving`으로 Metabase DB 2번을 `/serving/exports/85ecffe0-9401-497d-be6b-11f9c39c1a1b.duckdb`로 재연결해 Manifest를 검증했다. 카드 49·50·51을 각각 1회 실행해 오류 없이 74·10·10행을 확인했고 저장된 쿼리를 보존했다. 원시 로그·응답은 `/tmp/publish-identity-dev/`에 남겼다. 5.3초는 architect의 기존 해시 재계산 기준값이며 동일 환경의 전후 전체 시간을 이번에 다시 측정한 값은 아니다.
 
+## 서빙 갱신 절차 통합 (2026-10-16)
+
+- [x] 호스트 주소는 프로세스 설정만 사용하고 키·DB ID는 빈 값을 제외한 프로세스 설정과 루트 `.env` 순서로 읽는다.
+- [x] CLI 내보내기를 재지정·조건부 정리까지 연결하고 최신 상태 확인 명령을 추가한다.
+- [x] 카드 `--apply`는 변경 0건이어도 모든 GET 뒤 첫 PUT 전에 DB마다 실제 매니페스트를 검사한다.
+- [x] DAG 전체 새로고침 기본값은 거짓으로 두고 기존 서빙 작업·재시도·매니페스트 구조를 유지한다.
+- [x] 운영 절차와 PRD v1.25를 동기화하고 기존 PRD를 원문 그대로 보관한다.
+- [x] 전체 테스트·마커별 결과와 실제 CLI 내보내기·정리·상태·카드 49–51·반영 사전검사를 검증한다.
+
+최종 검증: 전체 테스트 437건 통과·109건 생략·실패 0건, Ruff·공백 검사 통과. 마커별 통과/실패/생략은 미지정 436/0/4, integration 1/0/100, reliability 0/0/18, airflow 0/0/5, benchmark 0/0/0이다. 복수 마커는 중복 집계되며 외부 연동 실행 플래그가 없는 테스트는 생략됐다. 인프라 관련 실패는 없었다. 실제 `uv run python -m src.serving export` 한 번으로 내보내기 `a3b6b240-e08c-4fcf-9c60-3e41c1247747`와 `metabase_repoint=SUCCESS`를 확인했고 새 파일 포함 3개만 남았다. Metabase DB 2의 `details.database_file`이 `/serving/exports/a3b6b240-e08c-4fcf-9c60-3e41c1247747.duckdb`와 일치했다. `status`는 종료 0·`fresh=true`이며 실제 실행과 최신 게시 실행 `539746b5-32f5-4df4-a57e-dbf442db18f8`가 같았다. 카드 49·50·51을 각각 1회 실행해 오류 없이 74·10·10행을 확인했다. `uv run python scripts/metabase_import.py 49 50 51 --apply`는 최신 여부 검사를 통과했고 쿼리 변경 0건으로 종료 0이었다. 기존 PRD 보관본과 매니페스트 기록·인증 전송·재지정·DAG 서빙 두 작업의 원문 또는 AST 보존도 검증했다. 원시 결과는 `/tmp/serving-refresh-dev/`에 보관하며 커밋하지 않았다.
+
 ## 파일·폴더별 변경 요약
 
 | 경로 | 변경 내용 |
 | ---- | --------- |
+| `src/serving/metabase_settings.py`, `tests/serving/test_metabase_settings.py` | 호스트 URL의 컨테이너 주소 격리와 키·DB ID의 환경 변수 우선·빈 값 대체·필수값 오류를 공통화하고 검증했다. |
+| `scripts/metabase_import.py`, `scripts/capture_metabase_dashboards.py`, `tests/test_metabase_import.py` | 루트 기준 공통 설정을 사용한다. 카드 반영은 모든 GET·DB 식별자 검사 뒤, 첫 PUT 전에 DB별 실제 매니페스트의 최신 여부를 검사한다. 변경 0건·오름차순 중복 제거·HTTP/URL 오류의 쓰기 차단·기본 모의 실행의 검사 생략을 검증했다. 기존 캡처 테스트도 통과했다. |
+| `src/serving/metabase_repoint.py`, `src/serving/freshness.py`, `tests/serving/test_freshness.py` | 버전 정리 함수를 재지정 모듈로 이동해 역방향 의존을 없앴다. 헤더 인증으로 읽은 실제 매니페스트와 최신 게시 실행을 비교하며 실패 응답·잘못된 행 구조를 거부하고 민감한 응답 상세를 숨긴다. |
+| `src/serving/cli.py`, `src/serving/__main__.py`, `src/serving/export.py`, `tests/serving/test_cli.py`, `tests/serving/test_export.py` | CLI를 파일 내보내기 구현에서 분리했다. 필수 `export`·`status` 명령, 재지정 성공·실패·설정 누락별 종료·정리·보존·경고, 기존 식별값 누락 거부와 상태 오류의 비밀값 비노출을 검증했다. 매니페스트 구조는 보존했다. |
+| `metabase/README.md`, `.env.example`, `PRD.bak/PRD_v1.24.md`, `PRD_v1.25.md`, `docs/phases/phase-10-bi.md` | 정상 DAG·스키마 변경·CLI 게시 후 내보내기·상태 확인·재지정 해제 순서를 문서화하고 끊어진 링크를 제거했다. 호스트/컨테이너 주소와 PRD 계약·진행 체크리스트를 동기화했다. |
 | `PRD.bak/PRD_v1.23.md`, `PRD_v1.24.md`, `docs/phases/phase-10-bi.md` | PRD v1.24의 파일 식별값 계약과 서빙 검증 체크리스트를 동기화했다. |
 | `src/serving/export.py`, `src/warehouse/duckdb_files.py`, `airflow/dags/warehouse_pipeline_dag.py` | 게시된 파일의 inode·나노초 수정 시각을 DAG 또는 메타데이터에서 전달해 복사 전·교체 전에 검사한다. 해시는 Manifest 증적에만 보존한다. 파일 식별값이 없는 기존 실행은 CLI 내보내기를 거부하고 새 게시를 요구한다. |
 | `tests/serving/test_export.py` | 식별값 일치의 정상 내보내기, 다른 파일·수정 시각·복사 중 원자 교체 거부, 기존 NULL 기록의 명확한 오류와 실패 후 파일 정리를 검증한다. |

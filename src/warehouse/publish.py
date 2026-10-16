@@ -371,6 +371,10 @@ def main(argv: list[str] | None = None) -> int:
             }
         )
     )
+    print(
+        "Serving은 갱신되지 않았다. uv run python -m src.serving export로 "
+        "Export와 Metabase 재지정을 실행한다.", file=sys.stderr,
+    )
     return 0
 
 

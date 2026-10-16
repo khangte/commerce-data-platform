@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import argparse
 import json
 import os
 import uuid
@@ -13,16 +12,13 @@ from pathlib import Path
 
 import duckdb
 
-from src.common.database import PROJECT_ROOT, PostgresSettings
 from src.warehouse.duckdb_files import (
-    DEFAULT_WAREHOUSE_ROOT,
     FileIdentity,
     checkpoint,
     file_identity,
     fsync_directory,
     wal_path,
 )
-from src.warehouse.publish_metadata import PUBLISHED, get_latest_publish_run, get_publish_run
 
 SERVING_FILE_NAME = "mart.duckdb"
 SERVING_SCHEMAS = ("dimensions", "facts", "metrics")
@@ -115,16 +111,6 @@ def _require_identity(published: Path, expected: FileIdentity, publish_run_id: u
             f"Published warehouse identity {actual} does not match publish run "
             f"{publish_run_id} ({expected})"
         )
-
-
-def prune_serving_exports(versions_dir: Path, keep: int = 3) -> None:
-    """재지정 결과를 확인한 뒤 오래된 Export 버전 파일을 정리한다."""
-    versions = sorted(
-        versions_dir.glob("*.duckdb"), key=lambda path: path.stat().st_mtime_ns, reverse=True
-    )
-    for old_version in versions[keep:]:
-        old_version.unlink()
-    fsync_directory(versions_dir)
 
 
 def _copy_mart_objects(published: Path, build_path: Path, storage_version: str) -> dict[str, int]:
@@ -233,51 +219,3 @@ def _identifier(value: str) -> str:
 def _sql_string(path_or_value: Path | str) -> str:
     """파일 경로 또는 값을 DuckDB 문자열 Literal로 안전하게 넣는다."""
     return "'" + str(path_or_value).replace("'", "''") + "'"
-
-
-def _parse_arguments(argv: list[str] | None) -> argparse.Namespace:
-    """Serving Export CLI 인자를 파싱한다."""
-    parser = argparse.ArgumentParser(description="Export the published Mart as a serving DuckDB file")
-    parser.add_argument("export", nargs="?", default="export")
-    parser.add_argument("--published", type=Path, default=DEFAULT_WAREHOUSE_ROOT / "warehouse.duckdb")
-    parser.add_argument("--serving-root", type=Path, default=PROJECT_ROOT / "data" / "serving")
-    parser.add_argument("--publish-run-id", type=uuid.UUID)
-    return parser.parse_args(argv)
-
-
-def main(argv: list[str] | None = None) -> int:
-    """CLI로 최신 Published Run의 Mart를 Serving 파일로 내보낸다."""
-    arguments = _parse_arguments(argv)
-    settings = PostgresSettings.from_environment()
-    record = (
-        get_publish_run(settings, arguments.publish_run_id)
-        if arguments.publish_run_id is not None
-        else get_latest_publish_run(settings)
-    )
-    if record is None or record.status != PUBLISHED or record.mart_hashes is None:
-        raise ValueError("No published mart run with recorded hashes exists")
-    if record.published_identity is None:
-        raise ValueError(
-            f"Publish run {record.publish_run_id} has no recorded file identity; run a new publish"
-        )
-    result = export_serving_mart(
-        arguments.published,
-        ServingPaths.under(arguments.serving_root),
-        publish_run_id=record.publish_run_id,
-        mart_hashes=record.mart_hashes,
-        published_identity=record.published_identity,
-        now=datetime.now(UTC),
-    )
-    print(
-        json.dumps(
-            {
-                "export_id": str(result.export_id),
-                "publish_run_id": str(record.publish_run_id),
-                "row_counts": result.row_counts,
-                "serving_path": str(result.serving_path),
-            },
-            ensure_ascii=False,
-            sort_keys=True,
-        )
-    )
-    return 0

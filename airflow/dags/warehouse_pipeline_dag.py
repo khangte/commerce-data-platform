@@ -6,9 +6,11 @@ import os
 import tempfile
 import uuid
 from datetime import UTC, datetime, timedelta
+from functools import partial
 from pathlib import Path
 
 from airflow.sdk import DAG, get_current_context, task
+from airflow.sdk.definitions.param import Param
 from airflow.sdk.exceptions import AirflowException, AirflowFailException
 
 from src.common.database import PROJECT_ROOT, PostgresSettings
@@ -30,6 +32,7 @@ from src.serving.metabase_repoint import (
     metabase_repoint_summary_status,
     repoint_and_prune_serving,
 )
+from src.warehouse.dbt_runner import run_dbt_build
 from src.warehouse.duckdb_files import FileIdentity
 from src.warehouse.publish import (
     DEFAULT_WAREHOUSE_ROOT,
@@ -100,6 +103,9 @@ with DAG(
     catchup=False,
     max_active_runs=1,
     default_args=DEFAULT_TASK_ARGS,
+    params={
+        "full_refresh": Param(False, type="boolean", description="dbt build에 --full-refresh를 전달한다."),
+    },
 ) as dag:
 
     @task
@@ -198,7 +204,14 @@ with DAG(
         """Build 파일에만 dbt build를 실행한다. 실패 Build는 격리되고 Published 파일은 그대로다."""
         settings = PostgresSettings.from_environment()
         try:
-            result = build_warehouse(settings, WAREHOUSE_PATHS, uuid.UUID(build["publish_run_id"]))
+            full_refresh = get_current_context()["params"]["full_refresh"]
+            runner = (
+                partial(run_dbt_build, extra_args=("--full-refresh",))
+                if full_refresh else run_dbt_build
+            )
+            result = build_warehouse(
+                settings, WAREHOUSE_PATHS, uuid.UUID(build["publish_run_id"]), dbt_runner=runner,
+            )
         except Exception as error:
             _reraise_classified(error)
             raise

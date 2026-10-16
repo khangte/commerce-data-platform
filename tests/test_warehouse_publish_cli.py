@@ -11,7 +11,7 @@ from src.warehouse.dbt_runner import DbtRunResult
 from src.warehouse.duckdb_files import FileIdentity
 
 
-def test_main_passes_full_refresh_and_dbt_vars_to_build_runner(monkeypatch, tmp_path: Path) -> None:
+def test_main_passes_full_refresh_and_dbt_vars_to_build_runner(monkeypatch, tmp_path: Path, capsys) -> None:
     """전체 새로고침과 dbt 변수는 같은 build 실행에 순서대로 전달한다."""
     captured: dict[str, object] = {}
 
@@ -53,6 +53,7 @@ def test_main_passes_full_refresh_and_dbt_vars_to_build_runner(monkeypatch, tmp_
         )
         == 0
     )
+    assert "python -m src.serving export" in capsys.readouterr().err
     assert captured["extra_args"] == ("--full-refresh",)
     assert captured["dbt_vars"] == {"bronze_as_of": "2026-09-23T00:00:00Z"}
 
@@ -68,3 +69,25 @@ def test_invalid_dbt_vars_are_rejected_before_publish(monkeypatch, value: str) -
     with pytest.raises(SystemExit) as raised:
         publish.main(["--dbt-vars", value])
     assert raised.value.code == 2
+
+
+def test_failed_publish_does_not_print_serving_refresh_hint(monkeypatch, capsys) -> None:
+    """게시가 실패했을 때 서빙 내보내기 안내를 성공처럼 출력하지 않는다."""
+    monkeypatch.setattr(publish.PostgresSettings, "from_environment", lambda: object())
+
+    def fail(*args, **kwargs):
+        """외부 게시 경계에서 검증 실패를 재현한다."""
+        raise publish.WarehouseBuildError("DBT_TEST_ERROR", "test failure")
+
+    monkeypatch.setattr(publish, "publish_warehouse", fail)
+    assert publish.main([]) == 1
+    assert "python -m src.serving export" not in capsys.readouterr().err
+
+
+def test_recover_only_does_not_print_serving_refresh_hint(monkeypatch, capsys) -> None:
+    """복구 전용 실행은 게시 성공 뒤에만 필요한 안내를 출력하지 않는다."""
+    monkeypatch.setattr(publish.PostgresSettings, "from_environment", lambda: object())
+    monkeypatch.setattr(publish, "ensure_publish_metadata", lambda _: None)
+    monkeypatch.setattr(publish, "recover_incomplete_publishes", lambda *args, **kwargs: ())
+    assert publish.main(["--recover-only"]) == 0
+    assert "python -m src.serving export" not in capsys.readouterr().err

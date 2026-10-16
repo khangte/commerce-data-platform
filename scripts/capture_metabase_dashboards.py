@@ -4,11 +4,18 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
 from collections.abc import Sequence
 from pathlib import Path
 from urllib.parse import urljoin
 
 from playwright.sync_api import BrowserContext, Page, sync_playwright
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from src.serving.metabase_settings import require_metabase_setting
 
 DASHBOARD_IDS = (2, 3, 4)
 DEFAULT_METABASE_URL = "http://localhost:3000"
@@ -20,21 +27,6 @@ DASHBOARD_RENDER_WAIT_MS = 8_000
 def dashboard_url(metabase_url: str, dashboard_id: int) -> str:
     """Dashboard 식별자에 대응하는 화면 URL을 만든다."""
     return urljoin(f"{metabase_url.rstrip('/')}/", f"dashboard/{dashboard_id}")
-
-
-def load_api_key() -> str:
-    """환경 변수 또는 로컬 .env에서 Metabase API Key를 읽는다."""
-    api_key = os.environ.get("METABASE_API_KEY", "").strip()
-    if api_key:
-        return api_key
-
-    env_path = Path(".env")
-    if env_path.is_file():
-        for line in env_path.read_text(encoding="utf-8").splitlines():
-            if line.startswith("METABASE_API_KEY="):
-                return line.partition("=")[2].strip()
-
-    raise RuntimeError("METABASE_API_KEY가 필요합니다.")
 
 
 def assert_api_key_access(context: BrowserContext, metabase_url: str) -> None:
@@ -114,7 +106,7 @@ def main(argv: Sequence[str] | None = None) -> None:
 
     capture_dashboards(
         metabase_url=args.metabase_url,
-        api_key=load_api_key(),
+        api_key=require_metabase_setting("METABASE_API_KEY", PROJECT_ROOT / ".env"),
         output_dir=args.output_dir,
         timeout_ms=args.timeout_ms,
     )

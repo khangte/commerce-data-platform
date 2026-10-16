@@ -3,7 +3,7 @@
 > 상태: Done  
 > Milestone: 2 — Data Platform Core  
 > 선행 Phase: [Phase 6. Dimensional Modeling](phase-06-dimensional-modeling.md)  
-> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.24](../../PRD_v1.24.md), [Mart Grain 계약](../reference/mart-grain.md)
+> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.25](../../PRD_v1.25.md), [Mart Grain 계약](../reference/mart-grain.md)
 
 ## 목표
 
@@ -267,6 +267,17 @@ Normal E2E Unknown Key = 0
 
 최종 검증: 전체 테스트 396건 통과·109건 생략, `RUN_POSTGRES_INTEGRATION=1` 통합 테스트 54건 통과·29건 생략, `ruff check .`와 공백 검사를 통과했다. 외부 연동별 실행 플래그가 없는 테스트는 생략됐다. 검증 시작 전과 실제 게시 직전 `mart_publish_runs`의 `BUILDING`·`PUBLISHING`은 각각 0건이었다. 정상 명령 `uv run python -m src.warehouse.publish --pipeline-name manual_run`으로 실행 `539746b5-32f5-4df4-a57e-dbf442db18f8`를 게시했고 dbt 테스트 143건 통과·0건 실패, 9개 해시 대상의 변경 없음과 기록 식별값 `(1020866, 1792141253195265434)`의 실제 파일 일치를 확인했다. `uv run python -m src.serving`은 1.67초에 내보내기 `85ecffe0-9401-497d-be6b-11f9c39c1a1b`를 만들었고 Manifest의 게시 실행이 일치했다. 기존 `repoint_and_prune_serving`으로 Metabase DB 2번을 `/serving/exports/85ecffe0-9401-497d-be6b-11f9c39c1a1b.duckdb`로 재연결해 Manifest를 검증했다. 카드 49·50·51을 각각 1회 실행해 오류 없이 74·10·10행을 확인했고 저장된 쿼리를 보존했다. 원시 로그·응답은 `/tmp/publish-identity-dev/`에 남겼다. 5.3초는 architect의 기존 해시 재계산 기준값이며 동일 환경의 전후 전체 시간을 이번에 다시 측정한 값은 아니다.
 
+## 서빙 갱신 절차 통합 (2026-10-16)
+
+- [x] 호스트 주소는 프로세스 설정만 사용하고 키·DB ID는 빈 값을 제외한 프로세스 설정과 루트 `.env` 순서로 읽는다.
+- [x] CLI 내보내기를 재지정·조건부 정리까지 연결하고 최신 상태 확인 명령을 추가한다.
+- [x] 카드 `--apply`는 변경 0건이어도 모든 GET 뒤 첫 PUT 전에 DB마다 실제 매니페스트를 검사한다.
+- [x] DAG 전체 새로고침 기본값은 거짓으로 두고 기존 서빙 작업·재시도·매니페스트 구조를 유지한다.
+- [x] 운영 절차와 PRD v1.25를 동기화하고 기존 PRD를 원문 그대로 보관한다.
+- [x] 전체 테스트·마커별 결과와 실제 CLI 내보내기·정리·상태·카드 49–51·반영 사전검사를 검증한다.
+
+최종 검증: 전체 테스트 437건 통과·109건 생략·실패 0건, Ruff·공백 검사 통과. 마커별 통과/실패/생략은 미지정 436/0/4, integration 1/0/100, reliability 0/0/18, airflow 0/0/5, benchmark 0/0/0이다. 복수 마커는 중복 집계되며 외부 연동 실행 플래그가 없는 테스트는 생략됐다. 인프라 관련 실패는 없었다. 실제 `uv run python -m src.serving export` 한 번으로 내보내기 `a3b6b240-e08c-4fcf-9c60-3e41c1247747`와 `metabase_repoint=SUCCESS`를 확인했고 새 파일 포함 3개만 남았다. Metabase DB 2의 `details.database_file`이 `/serving/exports/a3b6b240-e08c-4fcf-9c60-3e41c1247747.duckdb`와 일치했다. `status`는 종료 0·`fresh=true`이며 실제 실행과 최신 게시 실행 `539746b5-32f5-4df4-a57e-dbf442db18f8`가 같았다. 카드 49·50·51을 각각 1회 실행해 오류 없이 74·10·10행을 확인했다. `uv run python scripts/metabase_import.py 49 50 51 --apply`는 최신 여부 검사를 통과했고 쿼리 변경 0건으로 종료 0이었다. 기존 PRD 보관본과 매니페스트 기록·인증 전송·재지정·DAG 서빙 두 작업의 원문 또는 AST 보존도 검증했다. 원시 결과는 `/tmp/serving-refresh-dev/`에 보관하며 커밋하지 않았다.
+
 ## 파일·폴더별 변경 요약
 
 - [x] Bronze 스키마 통합: 게시·Airflow 경로와 직접 실행 테스트가 Python 계약 변수를 한 번의 `--vars`로 전달하도록 연결했다. Canary·재처리 변수는 같은 JSON에 병합한다. 리뷰 후 R-12 실행 안내도 같은 경로로 맞췄다.
@@ -298,6 +309,9 @@ Normal E2E Unknown Key = 0
 
 | 경로 | 구분 | 변경 내용 |
 | ---- | ---- | --------- |
+| `airflow/dags/warehouse_pipeline_dag.py`, `tests/test_airflow_dags.py` | 수정 | `full_refresh` 기본값 거짓과 명시적 참일 때만 dbt 전체 새로고침 인자 전달을 검증한다. 기존 두 서빙 작업의 AST를 보존했다. |
+| `src/warehouse/publish.py`, `tests/test_warehouse_publish_cli.py` | 수정 | CLI 게시 성공 뒤에만 서빙 내보내기 실행을 stderr로 안내하며 실패·복구 전용 실행에서는 출력하지 않는다. |
+| `PRD.bak/PRD_v1.24.md`, `PRD_v1.25.md`, `docs/phases/phase-07-data-quality-publish.md` | 이동·생성·수정 | 갱신·최신 상태 확인·카드 반영 전 검사와 DAG 전체 새로고침 계약을 문서화했다. |
 | `PRD.bak/PRD_v1.23.md`, `PRD_v1.24.md`, `docs/phases/phase-07-data-quality-publish.md` | 이동·생성 | 기존 PRD를 보관하고 파일 식별값 기록·복구·내보내기, 9개 해시 대상과 기존 실행의 호환성 제한을 v1.24에 문서화했다. |
 | `src/warehouse/duckdb_files.py`, `tests/test_duckdb_files.py` | 생성 | 공통 경로·WAL 경로·CHECKPOINT·디렉터리 fsync와 파일 식별값을 분리한다. 원자 교체 보존과 같은 inode의 수정 시각 변경을 검증한다. |
 | `src/warehouse/mart_hash.py`, `tests/test_mart_hash.py` | 수정 | 단일 스캔으로 해시와 행 수를 계산하며 기존 공개 함수 시그니처와 빈 테이블 결과를 보존한다. |
