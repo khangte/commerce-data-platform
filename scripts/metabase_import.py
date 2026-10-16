@@ -39,15 +39,12 @@ def request_card(url: str, api_key: str, payload: dict | None = None) -> dict:
         raise RuntimeError("Metabase 서버에 연결할 수 없습니다.") from None
 
 
-def validate_card(card: dict, card_id: int) -> int:
-    """요청 카드 식별자와 쿼리·메타데이터의 데이터베이스 식별자를 검증한다."""
-    if card.get("id") != card_id:
-        raise ValueError(f"카드 {card_id}: 카드 id 불일치")
-    database_id = card.get("database_id")
-    query_database = card["dataset_query"].get("database")
-    if type(database_id) is not int or database_id <= 0 or database_id != query_database:
-        raise ValueError(f"카드 {card_id}: database id 불일치 또는 누락")
-    return database_id
+def target_database(exported: dict, live: dict, card_id: int) -> int:
+    """Export 쿼리의 database가 운영 카드 database와 같을 때 그 id를 반환한다."""
+    database = exported["dataset_query"].get("database")
+    if type(database) is not int or database <= 0 or database != live.get("database_id"):
+        raise ValueError(f"카드 {card_id}: 운영·Export database id 불일치 또는 누락")
+    return database
 
 
 def query_diff(card_id: int, live_query: dict, export_query: dict) -> str:
@@ -74,7 +71,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """모든 카드의 식별자와 차이를 확인한 뒤 요청한 경우에만 쿼리를 반영한다."""
+    """모든 카드의 데이터베이스와 차이를 확인한 뒤 요청한 경우에만 쿼리를 반영한다."""
     args = parse_args(argv)
     try:
         api_key = require_metabase_setting("METABASE_API_KEY", PROJECT_ROOT / ".env")
@@ -83,12 +80,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         database_ids = set()
         for card_id in dict.fromkeys(args.card_ids):
             exported = json.loads((EXPORT_DIR / f"card-{card_id}.json").read_text(encoding="utf-8"))
-            export_database = validate_card(exported, card_id)
             url = f"{base}/api/card/{card_id}"
             live = request_card(url, api_key)
-            if validate_card(live, card_id) != export_database:
-                raise ValueError(f"카드 {card_id}: 운영·Export database id 불일치")
-            database_ids.add(export_database)
+            database_ids.add(target_database(exported, live, card_id))
             diff = query_diff(card_id, live["dataset_query"], exported["dataset_query"])
             if diff:
                 print(diff)
@@ -117,7 +111,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         else:
             print(f"모의 실행: 변경 대상 {len(changes)}개, PUT 요청 없음")
         return 0
-    except (RuntimeError, OSError, ValueError, KeyError, TypeError, AttributeError) as error:
+    except (RuntimeError, OSError, ValueError) as error:
         print(f"카드 가져오기 중단: {error}", file=sys.stderr)
         return 1
 

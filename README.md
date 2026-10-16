@@ -356,7 +356,7 @@ docker compose down
 
 Reliability Suite 실행법: [Runbook](docs/runbooks/README.md) · Benchmark 재현 명령: [`docs/benchmarks/00-environment.md`](docs/benchmarks/00-environment.md)
 
-Dashboard 재생성: `scripts/metabase_snapshot.sh` ([안내](docs/bi/dashboards.md))
+Dashboard 재생성: `uv run python scripts/metabase_snapshot.py` ([안내](docs/bi/dashboards.md))
 
 ### 5. Metabase 비밀번호 리셋
 

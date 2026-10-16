@@ -1,0 +1,22 @@
+{
+  "collection_id": 5,
+  "database_id": 2,
+  "dataset_query": {
+    "database": 2,
+    "lib/type": "mbql/query",
+    "stages": [
+      {
+        "lib/type": "mbql.stage/native",
+        "native": "select membership_tier, customer_count\nfrom metrics.rpt_membership_tier_performance"
+      }
+    ]
+  },
+  "description": "rpt_membership_tier_performance의 customer_count를 그대로 조회한다. 이미 distinct로 접힌 비가산 Measure이므로 등급을 넘어 합산하지 않는다.",
+  "display": "table",
+  "id": 45,
+  "name": "고객 수 (주문 시점 거래 실적 등급)",
+  "parameter_mappings": [],
+  "parameters": [],
+  "type": "question",
+  "visualization_settings": {}
+}

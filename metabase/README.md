@@ -47,7 +47,9 @@ airflow dags trigger warehouse_pipeline_dag --conf '{"full_refresh": true}'
 
 개발·복구 목적으로 CLI 게시를 했다면 바로 다음 명령을 실행한다.
 `export`는 서빙 파일을 만들고, Metabase를 새 버전 경로로 재지정해 매니페스트를 검증한 뒤
-최근 내보내기 3개만 남긴다. DAG 실행 중에는 CLI 내보내기를 함께 실행하지 않는다.
+최근 내보내기 3개만 남긴다. 매니페스트 검증 성공 뒤 `sync_schema`(스키마 동기화)를
+1회 요청한다. 동기화 요청 실패는 stderr 경고만 남기며 `SUCCESS`를 유지한다.
+이때 필드 메타데이터는 매시 정기 Sync에서 반영된다(060). DAG 실행 중에는 CLI 내보내기를 함께 실행하지 않는다.
 
 ```bash
 uv run python -m src.serving export
@@ -77,3 +79,15 @@ uv run python -m src.serving status
 재지정을 끄려면 Metabase DB의 `details.database_file`을 먼저 `/serving/mart.duckdb`로
 되돌린 다음 `METABASE_SERVING_DATABASE_ID`를 비운다. 순서를 지켜야 이후 정리에서
 Metabase가 가리키는 버전 파일이 제거되지 않는다(050).
+
+## 내부 테이블과 샘플 콘텐츠
+
+`serving_manifest`는 내부 검증용 테이블이므로 관리 화면의 Table Metadata에서 이름으로 찾아 숨긴다.
+API를 쓰면 해당 DB의 테이블 ID를 확인하고 `PUT /api/table/{id}`에
+`{"visibility_type": "hidden"}`을 보낸다. 앱 DB를 새로 만들면 ID가 바뀔 수 있다.
+숨긴 뒤에도 Native Query로 읽을 수 있어 재지정 검증과 최신 여부 검사는 동작한다.
+
+Sample Database와 Examples 콘텐츠는 안전 사본을 만든 뒤 제거했다.
+`compose.yaml`의 `MB_LOAD_SAMPLE_CONTENT=false`는 새 설치에서 샘플 콘텐츠 생성을 막는다.
+공개 공유와 익명 추적도 각각 `MB_ENABLE_PUBLIC_SHARING=false`,
+`MB_ANON_TRACKING_ENABLED=false`로 끈다.

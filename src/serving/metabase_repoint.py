@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from http.client import HTTPException
 from pathlib import Path
 from urllib.error import HTTPError, URLError
@@ -77,6 +78,14 @@ def repoint_metabase_serving(
     except _API_ERRORS as error:
         print(_failure_message(error, "서빙 파일", "재지정"))
         return "FAILED"
+    try:
+        _request_json(f"{base}/api/database/{numeric_id}/sync_schema", api_key, "POST")
+    except _API_ERRORS as error:
+        detail = f"HTTP {error.code}" if isinstance(error, HTTPError) else type(error).__name__
+        print(
+            f"경고: Metabase 스키마 동기화 요청 실패({detail}). 재지정은 성공했고 정기 Sync가 반영한다.",
+            file=sys.stderr,
+        )
     return "SUCCESS"
 
 

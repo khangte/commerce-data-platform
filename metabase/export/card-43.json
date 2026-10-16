@@ -1,0 +1,22 @@
+{
+  "collection_id": 5,
+  "database_id": 2,
+  "dataset_query": {
+    "database": 2,
+    "lib/type": "mbql/query",
+    "stages": [
+      {
+        "lib/type": "mbql.stage/native",
+        "native": "select dim_product.category_name, sum(fct_order_item.line_gross_value) as category_gmv\nfrom facts.fct_order_item\ninner join dimensions.dim_product using (product_id)\ngroup by dim_product.category_name"
+      }
+    ]
+  },
+  "description": "상품 항목 Grain에서 line_gross_value를 상품 카테고리별로 합산한다. 주문 Fact와 결합하지 않는다.",
+  "display": "bar",
+  "id": 43,
+  "name": "카테고리 GMV",
+  "parameter_mappings": [],
+  "parameters": [],
+  "type": "question",
+  "visualization_settings": {}
+}

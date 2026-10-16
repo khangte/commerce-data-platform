@@ -156,7 +156,7 @@ card 58은 `rpt_membership_tier_performance`와 같은 주문 Fact·주문 시�
 따라 `metabase/export/card-46.json`과 `card-48.json`의 `description`(카드 설명)에
 "최근 일자 매출은 이후 실행에서 기존 주문 상태가 실행당 최대 한 단계씩 전이되어 배송 완료에
 도달하면 증가할 수 있음."을 추가했다. 기존 GMV·AOV 설명을 유지했으며 JSON 파싱과 수정 전후
-비교로 두 파일 모두 `description`만 변경됐음을 확인했다. `scripts/metabase_snapshot.sh`는
+비교로 두 파일 모두 `description`만 변경됐음을 확인했다. 이전 셸 Snapshot 도구는
 운영 설정을 조회해 저장하는 스크립트이고, `docs/bi/dashboards.md`는 빈 앱 DB에서 Snapshot을
 기준으로 재생성하는 안내다. 당시에는 저장소에 Export를 기존 운영 카드에 반영하는 절차나 스크립트가
 없어 사용자 지정 조건에 따라 운영 반영과 반영 후 API 확인을 수행하지 않았다.
@@ -264,10 +264,20 @@ Phase 10에는 별도 AC 번호가 없으므로 ROADMAP의 Connection/Dashboard 
 - [x] `status`에서 `psycopg.Error`(PostgreSQL 드라이버 오류)를 잡아 예외 종류만 한 줄로 출력하고 종료 1을 반환한다.
 - [x] 실제 메타데이터 조회의 연결 경계에서 실패를 주입해 stdout 없음·stderr 한 줄·상세 및 인증값 비노출을 검증한다. serving 테스트 54건, Ruff와 공백 검사를 통과했다.
 
+- [x] 2026-10-16 060: Collection 5·6 기반 Python Snapshot, 변경된 출력 보호, 전체 조회 후 배포 필드 저장과 오래된 파일 제거를 구현했다. 테스트 5건이 통과했다.
+- [x] 2026-10-16 060: 재지정 검증 뒤 스키마 동기화를 요청하며, 실패는 stderr 경고만 남기고 SUCCESS를 유지한다. Serving 테스트 57건이 통과했다. Import는 Export 쿼리 DB와 운영 카드 DB를 한 번 대조하고 코드 결함 예외를 전파한다. Import 테스트 15건이 통과했다.
+- [x] 2026-10-16 060: 카드 1–39·Dashboard 1·Collection 2·DB 1을 미추적 작업 경로에 유효 JSON 42개로 백업한 뒤 Examples를 보관하고 DB 1을 삭제했다. Table 18의 DB·이름을 확인해 숨겼다. 새 환경 변수로 재생성한 Metabase가 healthy이고 DB 2만 남으며 공개 공유·익명 추적이 false임을 확인했다.
+- [x] 2026-10-16 060: 실제 Snapshot에서 카드 40–45를 추가했다. 카드 46–59의 쿼리와 Dashboard 2·3·4의 배치·필터는 HEAD와 같다. 운영 설명 불일치 5건은 architect 060 §2.6.1 지시에 따라 카드 46·48–51의 설명만 HEAD 값으로 PUT한 뒤 강제 Snapshot했다. 최종 카드·Dashboard의 모든 보존 필드는 HEAD와 같으며 두 번째 일반 Snapshot은 변경 보호로 종료 1이다.
+- [x] 2026-10-16 060: CLI Export `5957c321-d412-4fcf-a24c-afc9fe2be8cb` 재지정 SUCCESS, 10:19:39 UTC의 DB 2 Sync 성공, status 종료 0·fresh=true, 숨김 유지, 카드 49·50·51 completed(74·10·10행), 40–59 Import --apply 변경 0건·PUT 0회를 확인했다. 전체 테스트 441개 통과·109개 건너뜀·실패 0개(92.45초), Ruff·git diff --check 통과. 마커별로 미지정 440개 통과·4개 건너뜀, integration 1개 통과·100개 건너뜀, reliability 18개 건너뜀, airflow 5개 건너뜀이다(마커 중복 포함). reviewer 검토를 요청한다.
+
 ## 파일·폴더별 변경 요약
 
 | 경로 | 변경 내용 |
 | ---- | --------- |
+| `scripts/metabase_snapshot.py`, 이전 셸 Snapshot 도구(삭제), `tests/test_metabase_snapshot.py`, `metabase/export/` | Collection 5·6의 카드·Metric·Dataset·Dashboard를 수집한다. 변경된 출력은 HTTP 전에 거부하고 `--force`만 허용한다. 모든 조회 성공 뒤 배포 필드만 정렬 저장하고 대상에서 빠진 JSON만 삭제한다. 중간 조회 실패 시 기존 파일 보존·키 헤더 전용 전송·지원하지 않는 모델 제외를 검증했다. 실제 카드 20개·Dashboard 3개를 저장했고, 쿼리·배치·보존 필드의 HEAD 일치와 출력 보호를 확인했다. |
+| `src/serving/metabase_repoint.py`, `tests/serving/test_metabase_repoint.py` | 매니페스트 검증 성공 뒤 `sync_schema` 1회 요청, 검증 실패 시 요청 없음, 동기화 HTTP 실패 시 키 없는 stderr 경고와 SUCCESS 유지를 검증했다. |
+| `scripts/metabase_import.py`, `tests/test_metabase_import.py` | DB 검사를 Export `dataset_query.database`와 운영 `database_id` 대조로 축소했다. 처리 예외는 RuntimeError·OSError·ValueError이며 필수 쿼리 누락 KeyError는 전파한다. 중복 검사 테스트와 불필요한 HTTPError 테스트를 정리했다. |
+| `compose.yaml`, `PRD.bak/PRD_v1.25.md`, `PRD_v1.26.md`, `README.md`, `metabase/README.md`, `docs/bi/dashboards.md`, `docs/phases/phase-10-bi.md` | 샘플 생성·공개 공유·익명 추적을 끄고 Compose 설정 검증을 통과했다. PRD 계약, SQL 배포 정본, Snapshot·가져오기·Revision API 롤백, 스키마 동기화와 이름 기준 내부 테이블 숨김 절차를 동기화했다. 060 §2.6.1에 따라 설명만 HEAD 값으로 복원했고, 이후 설명·이름·표시는 운영 수정 후 Snapshot으로 보존하며 저장소에서 배포하는 것은 쿼리뿐임을 명시했다. |
 | `src/serving/cli.py`, `tests/serving/test_cli.py`, `docs/phases/phase-10-bi.md` | DB 연결 실패의 traceback을 한 줄 오류로 대체한다. 실제 `get_latest_publish_run` → `pipeline_connection` → `psycopg.connect` 경로의 실패 테스트를 먼저 확인한 뒤 최소 예외 처리를 추가했다. |
 | `src/serving/metabase_settings.py`, `tests/serving/test_metabase_settings.py` | 호스트 URL의 컨테이너 주소 격리와 키·DB ID의 환경 변수 우선·빈 값 대체·필수값 오류를 공통화하고 검증했다. |
 | `scripts/metabase_import.py`, `scripts/capture_metabase_dashboards.py`, `tests/test_metabase_import.py` | 루트 기준 공통 설정을 사용한다. 카드 반영은 모든 GET·DB 식별자 검사 뒤, 첫 PUT 전에 DB별 실제 매니페스트의 최신 여부를 검사한다. 변경 0건·오름차순 중복 제거·HTTP/URL 오류의 쓰기 차단·기본 모의 실행의 검사 생략을 검증했다. 기존 캡처 테스트도 통과했다. |
@@ -277,7 +287,7 @@ Phase 10에는 별도 AC 번호가 없으므로 ROADMAP의 Connection/Dashboard 
 | `PRD.bak/PRD_v1.23.md`, `PRD_v1.24.md`, `docs/phases/phase-10-bi.md` | PRD v1.24의 파일 식별값 계약과 서빙 검증 체크리스트를 동기화했다. |
 | `src/serving/export.py`, `src/warehouse/duckdb_files.py`, `airflow/dags/warehouse_pipeline_dag.py` | 게시된 파일의 inode·나노초 수정 시각을 DAG 또는 메타데이터에서 전달해 복사 전·교체 전에 검사한다. 해시는 Manifest 증적에만 보존한다. 파일 식별값이 없는 기존 실행은 CLI 내보내기를 거부하고 새 게시를 요구한다. |
 | `tests/serving/test_export.py` | 식별값 일치의 정상 내보내기, 다른 파일·수정 시각·복사 중 원자 교체 거부, 기존 NULL 기록의 명확한 오류와 실패 후 파일 정리를 검증한다. |
-| `scripts/metabase_import.py`, `tests/test_metabase_import.py`, `docs/bi/dashboards.md`, `docs/phases/phase-10-bi.md` | 카드 ID 목록으로 저장된 쿼리를 운영 카드와 비교하고, 기본 GET 모의 실행 및 명시적 `--apply`의 `dataset_query` 전용 PUT을 제공한다. 전체 대상 카드·데이터베이스 식별자 검사, 루트 `.env` 인증 키 대체, 오류·무변경 경로를 HTTP 모킹으로 검증했다. 사용 명령·권한·반영 범위·부분 반영 시 복원 한계를 문서화했다. 운영 GET 모의 실행에서 카드 49·50·51 모두 배송 완료 필터 추가만 차이로 확인했고, 저장된 JSON 체크섬을 보존했다. `metabase_snapshot.sh`와 실제 반영은 실행하지 않았다. |
+| `scripts/metabase_import.py`, `tests/test_metabase_import.py`, `docs/bi/dashboards.md`, `docs/phases/phase-10-bi.md` | 카드 ID 목록으로 저장된 쿼리를 운영 카드와 비교하고, 기본 GET 모의 실행 및 명시적 `--apply`의 `dataset_query` 전용 PUT을 제공한다. 전체 대상 카드·데이터베이스 식별자 검사, 루트 `.env` 인증 키 대체, 오류·무변경 경로를 HTTP 모킹으로 검증했다. 사용 명령·권한·반영 범위·부분 반영 시 복원 한계를 문서화했다. 운영 GET 모의 실행에서 카드 49·50·51 모두 배송 완료 필터 추가만 차이로 확인했고, 저장된 JSON 체크섬을 보존했다. 이전 셸 Snapshot 도구와 실제 반영은 실행하지 않았다. |
 | `dbt/models/intermediate/int_order_items_enriched.sql`, `dbt/models/marts/facts/fct_order_item.sql`, `dbt/models/marts/facts/schema.yml`, `dbt/tests/fct_order_item_status_matches_order.sql` | 기존 `stg_orders` 조인에서 표준 주문 상태를 상속해 항목 Fact에 투영했다. 주문 단위 `unique_key='order_id'`, `delete+insert`, 영향 주문 필터를 유지하고, 상태 필수값·8개 허용값·주문 Fact 일치 검증 및 원본에 항목별 상태가 없다는 설명을 추가했다. |
 | `tests/test_warehouse_quality_contract.py`, `tests/test_dbt_cleanup.py`, `tests/integration/test_order_items_reextract_integration.py`, `tests/serving/test_product_status_metrics.py` | 실패를 먼저 확인하고 상태 계약·차원 없이 항목 보존·주문 상태만 변경할 때 항목 교체·재수집 중복 방지·전체 재계산 해시 일치를 검증했다. 취소·진행 항목을 섞은 데이터로 배송 완료 상품 지표와 주문·카테고리 GMV 일치를 검증했다. |
 | `metabase/queries/dashboard_product.sql`, `metabase/queries/semantic_category_product_customer.sql`, `metabase/export/card-{49,50,51}.json` | Category GMV·Top Products·Sales Volume을 `DELIVERED` 주문 항목으로 한정하고 카드 설명을 맞췄다. 기존 날짜 필터·차원 조인을 보존했다. |
@@ -290,7 +300,7 @@ Phase 10에는 별도 AC 번호가 없으므로 ROADMAP의 Connection/Dashboard 
 | `dbt/profiles.yml`, `src/warehouse/publish.py`, `dbt/models/intermediate/int_order_items_enriched.sql`, `dbt/models/marts/facts/`, `dbt/tests/`, `tests/test_warehouse_*` | Mart Build 세션을 UTC로 고정해 날짜 키·대체 키의 실행 환경 의존성을 없앴고, Publish CLI에 전체 새로고침 인자를 추가했다. 주문 항목 Fact에는 주문 원본에서 유도한 `purchase_date_key`와 날짜 차원 FK·주문 Fact 일치 Test를 추가했다. Run `a10d06c3-c32e-4407-afdc-a1167b820c44`는 UTC 기준 Run `5d74a326-954b-4850-a3d6-56d1556fec8d`와 비교해 `facts.fct_order_item`만 Hash가 변경됨을 검증했다. |
 | `docs/reference/metric-dictionary.md`, `metabase/queries/semantic_*.sql` | GMV·Orders·AOV와 카테고리·상품·고객 지표의 원본 Grain·가산성·계약 근거를 고정하고, Metabase 등록 지표와 Warehouse 대조 SQL을 추가했다. |
 | `dbt/models/marts/metrics/rpt_customer_order_activity_daily.sql`, `dbt/models/marts/metrics/schema.yml` | 신규·재구매 고객을 BI Native SQL로 재정의하지 않도록 주문일×고객 구분 Report Model과 계약 Test를 추가했다. 이후 dbt 정리에서 그룹화로 보장되는 중복 유일성 테스트를 제거하고 날짜·고객 구분 검증은 유지했다. Run `7472eb21-ef48-4c8d-bd5f-f5c3e6f4c1cf`의 Serving Export `191cafe0-8ce4-4570-a43d-418209dfd948`에 1,141행으로 반영했다. |
-| `metabase/queries/dashboard_*.sql`, `scripts/metabase_snapshot.sh`, `metabase/export/`, `docs/bi/` | Metabase Sales(2)·Product(3)·Customer(4) Dashboard와 카드 14개의 Query·UTC Filter·재생성 Snapshot, Warehouse 대조표와 식별 증적을 보존했다. card 56은 기본 Brazil Region Map 부재로 경고가 나는 `map` 대신 주별 주문 수 내림차순 `bar`로 고쳤고, card 58은 주문 시점 거래 실적 등급별 고객 수 추이를 line으로, card 59는 최신 계약 상태 분포를 bar로 추가해 Customer Snapshot·Screenshot을 재생성했다. |
+| `metabase/queries/dashboard_*.sql`, 이전 셸 Snapshot 도구, `metabase/export/`, `docs/bi/` | Metabase Sales(2)·Product(3)·Customer(4) Dashboard와 카드 14개의 Query·UTC Filter·재생성 Snapshot, Warehouse 대조표와 식별 증적을 보존했다. card 56은 기본 Brazil Region Map 부재로 경고가 나는 `map` 대신 주별 주문 수 내림차순 `bar`로 고쳤고, card 58은 주문 시점 거래 실적 등급별 고객 수 추이를 line으로, card 59는 최신 계약 상태 분포를 bar로 추가해 Customer Snapshot·Screenshot을 재생성했다. |
 | `metabase/export/card-46.json`, `metabase/export/card-48.json`, `docs/phases/phase-10-bi.md` | 052 후속으로 기존 주문이 실행당 최대 한 단계씩 전이되어 배송 완료에 도달하면 최근 일자 매출이 증가할 수 있다는 카드 설명을 추가했다. 두 JSON은 기존 설명을 보존하고 `description`만 변경됐음을 검증했다. 체크리스트와 변경 요약에 기록했으며, 기존 운영 반영 절차 부재로 운영 적용·API 확인을 수행하지 않은 사실을 남겼다. |
 | `scripts/capture_metabase_dashboards.py`, `tests/test_capture_metabase_dashboards.py`, `docs/bi/screenshots/`, `docs/bi/dashboards.md`, `docs/bi/evidence.md`, `pyproject.toml`, `uv.lock` | Playwright headless Chromium으로 API Key 요청 헤더를 사용하는 Dashboard 2·3·4 재캡처 스크립트와 단위 Test를 추가하고, 하단 카드도 실제 차트로 저장하도록 기본 화면 뒤 8초 렌더링 대기를 적용했다. 실제 PNG 증적 경로·재실행 방법을 기록했다. |
 | `data/serving/mart.duckdb`, `metabase/export/card-54.json`, `metabase/export/dashboard-4.json`, `docs/bi/totals-reconciliation.md`, `docs/bi/evidence.md` | 구독 계약 4건·자동 청구 결제 1건을 수집·Publish한 Run `8890b135-5391-4290-8b05-bf99f24668a6`과 Serving Export `0616bd30-7c38-4a3c-b03b-aaecb0cc6cec` 기준으로 card 54의 실제 상태 전이 시계열, Export Snapshot, Customer Screenshot, Dashboard 대조표를 재생성했다. |

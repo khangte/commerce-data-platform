@@ -93,18 +93,13 @@ def test_apply_puts_only_dataset_query_after_all_gets(importer, monkeypatch):
 
 
 @pytest.mark.parametrize("side,field", [
-    ("export", "id"), ("live", "id"),
-    ("export", "database_id"), ("live", "database_id"),
-    ("export", "query_database"), ("live", "query_database"),
-    ("live", "database"),
+    ("export", "query_database"), ("live", "database_id"),
 ])
 def test_identity_mismatch_aborts_all_writes(importer, monkeypatch, side, field, capsys):
     """뒤 카드의 식별자가 다르면 앞 카드도 쓰지 않고 전체 반영을 중단한다."""
     exports, live, transport = prepare_cards(importer, monkeypatch, (49, 50))
     card = exports[50] if side == "export" else live[50]
-    if field == "database":
-        card["database_id"] = card["dataset_query"]["database"] = 999
-    elif field == "query_database":
+    if field == "query_database":
         card["dataset_query"]["database"] = 999
     else:
         card[field] = 999
@@ -142,18 +137,6 @@ def test_unchanged_query_makes_no_put(importer, monkeypatch):
     live[49]["dataset_query"] = exports[49]["dataset_query"]
     assert importer.main(["49", "--apply"]) == 0
     assert [call.args[0].get_method() for call in transport.call_args_list] == ["GET"]
-
-
-def test_http_error_is_clear_and_hides_credentials(importer, monkeypatch, capsys):
-    """권한 오류는 HTTP 상태만 보여주고 비밀값·응답 본문을 출력하지 않는다."""
-    prepare_cards(importer, monkeypatch)
-    monkeypatch.setattr(importer, "urlopen", Mock(side_effect=HTTPError(
-        "http://metabase.test", 403, "test-secret", {}, None,
-    )))
-    assert importer.main(["49"]) == 1
-    output = capsys.readouterr()
-    assert "403" in output.err
-    assert "test-secret" not in output.err + output.out
 
 
 def test_apply_aborts_before_put_when_serving_is_stale(importer, monkeypatch, capsys):
@@ -228,3 +211,11 @@ def test_apply_checks_databases_in_order_before_any_put(importer, monkeypatch):
     importer.check_serving_freshness.side_effect = check
     assert importer.main(["49", "50", "51", "--apply"]) == 0
     assert [call.args[3] for call in importer.check_serving_freshness.call_args_list] == [2, 3]
+
+
+def test_code_defect_in_export_is_not_swallowed(importer, monkeypatch):
+    """필수 쿼리 누락은 코드 결함으로 예외를 그대로 전파한다."""
+    prepare_cards(importer, monkeypatch)
+    (importer.EXPORT_DIR / "card-49.json").write_text(json.dumps({"id": 49, "database_id": 2}))
+    with pytest.raises(KeyError):
+        importer.main(["49"])

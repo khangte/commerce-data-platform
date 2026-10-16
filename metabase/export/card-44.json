@@ -1,0 +1,22 @@
+{
+  "collection_id": 5,
+  "database_id": 2,
+  "dataset_query": {
+    "database": 2,
+    "lib/type": "mbql/query",
+    "stages": [
+      {
+        "lib/type": "mbql.stage/native",
+        "native": "select product_id, count(*) as sales_volume\nfrom facts.fct_order_item\ngroup by product_id"
+      }
+    ]
+  },
+  "description": "상품 항목 Fact의 행 수다. 한 행은 주문 상품 항목 하나이므로 상품별 판매 수량은 항목 수를 집계한다.",
+  "display": "bar",
+  "id": 44,
+  "name": "상품 판매 수량",
+  "parameter_mappings": [],
+  "parameters": [],
+  "type": "question",
+  "visualization_settings": {}
+}

@@ -1,0 +1,39 @@
+{
+  "collection_id": 5,
+  "database_id": 2,
+  "dataset_query": {
+    "database": 2,
+    "lib/type": "mbql/query",
+    "stages": [
+      {
+        "aggregation": [
+          [
+            "sum",
+            {
+              "lib/uuid": "4e1cd1e8-27ae-4f2a-99ee-5332cabe90c7"
+            },
+            [
+              "field",
+              {
+                "base-type": "type/Integer",
+                "effective-type": "type/Integer",
+                "lib/uuid": "08cedd4b-4937-409e-ad8b-da609325a65f"
+              },
+              121
+            ]
+          ]
+        ],
+        "lib/type": "mbql.stage/mbql",
+        "source-table": 14
+      }
+    ]
+  },
+  "description": "모든 주문의 order_count 합계. order_count는 주문 1건당 상수 1이며 Mart Grain 계약 §3.1의 Additive Measure다.",
+  "display": "scalar",
+  "id": 42,
+  "name": "Orders",
+  "parameter_mappings": [],
+  "parameters": [],
+  "type": "metric",
+  "visualization_settings": {}
+}

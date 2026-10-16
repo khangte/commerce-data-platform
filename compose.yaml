@@ -126,6 +126,9 @@ services:
       MB_DB_USER: ${METABASE_DB_USER}
       MB_DB_PASS: ${METABASE_DB_PASSWORD}
       MB_PLUGINS_DIR: /plugins
+      MB_LOAD_SAMPLE_CONTENT: "false"
+      MB_ENABLE_PUBLIC_SHARING: "false"
+      MB_ANON_TRACKING_ENABLED: "false"
       JAVA_OPTS: -Xmx1g
     ports:
       - "127.0.0.1:${METABASE_PORT}:3000"

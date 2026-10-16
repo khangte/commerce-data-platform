@@ -142,3 +142,45 @@ def test_repoint_identifies_response_format_errors(monkeypatch, capsys) -> None:
 def test_failure_message_names_the_stage_and_error_kind(error, subject, action, expected) -> None:
     """예외 종류와 단계(대상·동작)에 맞는 로그 메시지를 만든다."""
     assert _failure_message(error, subject, action) == expected
+
+
+@pytest.mark.parametrize("sync_fails", [False, True])
+def test_repoint_requests_schema_sync_after_manifest_check(monkeypatch, capsys, sync_fails):
+    """검증 뒤 동기화를 요청하고 동기화 실패만으로 성공을 취소하지 않는다."""
+    calls = []
+    def fake_request(url, api_key, method, payload=None):
+        """재지정과 검증을 재현하고 마지막 동기화만 선택적으로 실패시킨다."""
+        calls.append((url, api_key, method, payload))
+        if method == "GET":
+            return {"details": {"database_file": "old"}}
+        if url.endswith("/api/dataset"):
+            return {"data": {"rows": [["export-id"]]}}
+        if url.endswith("/sync_schema") and sync_fails:
+            raise HTTPError(url, 500, "secret", {}, None)
+        return {}
+    monkeypatch.setattr("src.serving.metabase_repoint._request_json", fake_request)
+    assert repoint_metabase_serving("export-id", "http://metabase:3000", "secret", "2") == "SUCCESS"
+    assert len(calls) == 4
+    assert calls[3] == ("http://metabase:3000/api/database/2/sync_schema", "secret", "POST", None)
+    captured = capsys.readouterr()
+    if sync_fails:
+        assert "스키마 동기화" in captured.err and "HTTP 500" in captured.err
+    else:
+        assert not captured.err
+    assert "secret" not in captured.out + captured.err
+
+
+def test_manifest_mismatch_does_not_request_schema_sync(monkeypatch):
+    """검증 실패 시 동기화 요청을 보내지 않는다."""
+    calls = []
+    def fake_request(url, api_key, method, payload=None):
+        """다른 내보내기 식별자를 반환한다."""
+        calls.append(url)
+        if method == "GET":
+            return {"details": {"database_file": "old"}}
+        if url.endswith("/api/dataset"):
+            return {"data": {"rows": [["other"]]}}
+        return {}
+    monkeypatch.setattr("src.serving.metabase_repoint._request_json", fake_request)
+    assert repoint_metabase_serving("export-id", "http://metabase:3000", "secret", "2") == "FAILED"
+    assert not any(url.endswith("/sync_schema") for url in calls)

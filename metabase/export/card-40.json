@@ -1,0 +1,57 @@
+{
+  "collection_id": 5,
+  "database_id": 2,
+  "dataset_query": {
+    "database": 2,
+    "lib/type": "mbql/query",
+    "stages": [
+      {
+        "aggregation": [
+          [
+            "sum",
+            {
+              "lib/uuid": "3924f9ae-b3e2-4cd5-a615-2f331d5e0a43"
+            },
+            [
+              "field",
+              {
+                "base-type": "type/Decimal",
+                "effective-type": "type/Decimal",
+                "lib/uuid": "d3d3c3b7-c9b8-4ce3-8ca8-18d2ba5f9c7a"
+              },
+              119
+            ]
+          ]
+        ],
+        "filters": [
+          [
+            "=",
+            {
+              "lib/uuid": "b463764a-1067-49db-bd11-868ec8d6b7e6"
+            },
+            [
+              "field",
+              {
+                "base-type": "type/Text",
+                "effective-type": "type/Text",
+                "lib/uuid": "486f24f7-da36-4e35-8c1b-a3556b9e96d0"
+              },
+              116
+            ],
+            "DELIVERED"
+          ]
+        ],
+        "lib/type": "mbql.stage/mbql",
+        "source-table": 14
+      }
+    ]
+  },
+  "description": "배송 완료 주문의 gross_order_value 합계. Mart Grain 계약 §3.1 Measure를 그대로 집계한다.",
+  "display": "scalar",
+  "id": 40,
+  "name": "GMV (배송 완료)",
+  "parameter_mappings": [],
+  "parameters": [],
+  "type": "metric",
+  "visualization_settings": {}
+}

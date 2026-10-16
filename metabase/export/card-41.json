@@ -1,0 +1,78 @@
+{
+  "collection_id": 5,
+  "database_id": 2,
+  "dataset_query": {
+    "database": 2,
+    "lib/type": "mbql/query",
+    "stages": [
+      {
+        "aggregation": [
+          [
+            "/",
+            {
+              "lib/uuid": "5eeadcb4-5ea3-4e7f-9c18-78a339eb943d"
+            },
+            [
+              "sum",
+              {
+                "lib/uuid": "a390e287-3819-4cd4-9944-4fce285acffa"
+              },
+              [
+                "field",
+                {
+                  "base-type": "type/Decimal",
+                  "effective-type": "type/Decimal",
+                  "lib/uuid": "16dce108-83ba-4569-a63e-6413b7fd75d1"
+                },
+                119
+              ]
+            ],
+            [
+              "sum",
+              {
+                "lib/uuid": "3463c098-0e34-480a-9715-702ed38508ad"
+              },
+              [
+                "field",
+                {
+                  "base-type": "type/Integer",
+                  "effective-type": "type/Integer",
+                  "lib/uuid": "7747a4e2-ded0-4987-bb2e-dedad275e42e"
+                },
+                121
+              ]
+            ]
+          ]
+        ],
+        "filters": [
+          [
+            "=",
+            {
+              "lib/uuid": "e737bd28-b0a5-41f8-889a-4b540e141bbc"
+            },
+            [
+              "field",
+              {
+                "base-type": "type/Text",
+                "effective-type": "type/Text",
+                "lib/uuid": "87a79a92-aa25-40ad-9807-3582004d065d"
+              },
+              116
+            ],
+            "DELIVERED"
+          ]
+        ],
+        "lib/type": "mbql.stage/mbql",
+        "source-table": 14
+      }
+    ]
+  },
+  "description": "배송 완료 GMV를 배송 완료 주문 수로 나눈 값. Mart Grain 계약 §3.1의 gross_order_value와 order_count를 그대로 집계한다.",
+  "display": "scalar",
+  "id": 41,
+  "name": "AOV (배송 완료)",
+  "parameter_mappings": [],
+  "parameters": [],
+  "type": "metric",
+  "visualization_settings": {}
+}
