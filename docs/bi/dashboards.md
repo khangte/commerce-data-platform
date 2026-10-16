@@ -39,7 +39,7 @@ uv run python scripts/metabase_import.py 49 50 51 --apply
 `uv run playwright install chromium`(최초 1회)과 `uv run python scripts/capture_metabase_dashboards.py`를
 실행하면 Dashboard 2·3·4가 각각 `docs/bi/screenshots/dashboard-{2,3,4}.png`로 저장된다. 스크립트는
 `METABASE_API_KEY`를 BrowserContext의 `X-API-Key` 요청 헤더로만 전달하며 URL·출력 파일에는 넣지 않는다.
-각 Dashboard는 `GET /api/dashboard/{id}`의 쿼리 카드가 모두 `completed`로 응답하고 로딩 표시가 사라진 뒤 0.5초 더 기다려 캡처한다. 카드 쿼리가 실패하거나 `--timeout-ms`(기본 60초) 안에 끝나지 않으면 PNG를 저장하지 않고 실패한다.
+각 Dashboard는 `GET /api/dashboard/{id}`의 쿼리 카드가 모두 `completed`로 응답하고 로딩 표시가 사라진 뒤 0.5초 더 기다려 캡처한다. 카드 쿼리가 실패하거나 `--timeout-ms`(기본 60초) 안에 끝나지 않으면 PNG를 저장하지 않고 실패한다. Metabase가 Dashboard 본문을 내부 스크롤 영역에 그리므로, 렌더링 확인 뒤 넘친 높이만큼 viewport를 늘려 마지막 카드까지 한 장에 저장한다(최대 16,000px).
 
 2026-09-29 캡처에서는 Source 예약이 트리거한 최신 Warehouse 실행(04:30 UTC)이 끝난 뒤 Metabase만 재시작해
 교체 전 DuckDB 파일 연결을 끊고 같은 스크립트에 임시 `--output-dir`를 지정했다. 생성된 화면은

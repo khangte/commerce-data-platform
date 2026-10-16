@@ -178,3 +178,117 @@ def test_failed_query_saves_no_png_and_removes_response_handler(monkeypatch, tmp
     browser.close.assert_called_once()
     assert browser.new_context.call_args.kwargs["extra_http_headers"] == {"X-API-Key": "capture-test-secret"}
     assert "capture-test-secret" not in page.goto.call_args.args[0]
+
+
+class FitPage:
+    """넘침 측정값과 viewport 변경을 재현한다."""
+    def __init__(self, overflows):
+        """순서대로 반환할 넘침과 초기 화면 크기를 준비한다."""
+        self.overflows = iter(overflows)
+        self.viewport_size = {"width": 1440, "height": 1200}
+        self.resizes = []
+        self.waits = []
+    def evaluate(self, script):
+        """정해진 내부 넘침 높이를 반환한다."""
+        return next(self.overflows)
+    def set_viewport_size(self, viewport):
+        """변경한 크기를 기록하고 현재 크기에 반영한다."""
+        self.resizes.append(viewport)
+        self.viewport_size = viewport
+    def locator(self, selector):
+        """로딩 표시가 없는 화면을 제공한다."""
+        return SimpleNamespace(count=lambda: 0)
+    def wait_for_timeout(self, milliseconds):
+        """안정화 대기를 기록한다."""
+        self.waits.append(milliseconds)
+
+
+def test_fit_viewport_noop_when_no_overflow():
+    """넘침이 없으면 화면 크기를 유지한다."""
+    module = load_capture_module()
+    page = FitPage([0])
+    assert module.fit_viewport_to_content(page, 4, lambda: 5000) == 1200
+    assert not page.resizes and not page.waits
+
+
+def test_fit_viewport_grows_by_overflow_then_stops():
+    """초과 높이만큼 늘리고 안정화 뒤 넘침 해소를 확인한다."""
+    module = load_capture_module()
+    page = FitPage([700, 0])
+    assert module.fit_viewport_to_content(page, 4, lambda: 5000) == 1900
+    assert page.resizes == [{"width": 1440, "height": 1900}]
+    assert page.waits[-1] == module.RENDER_SETTLE_MS
+
+
+def test_fit_viewport_raises_when_overflow_persists():
+    """세 번 늘린 뒤에도 넘치면 잘린 캡처를 거부한다."""
+    module = load_capture_module()
+    page = FitPage([50] * 4)
+    with pytest.raises(RuntimeError, match="Dashboard 4.*50px"):
+        module.fit_viewport_to_content(page, 4, lambda: 5000)
+    assert len(page.resizes) == 3
+
+
+def test_fit_viewport_raises_above_max_height():
+    """상한 초과 크기는 실제 resize 없이 거부한다."""
+    module = load_capture_module()
+    page = FitPage([20000])
+    with pytest.raises(RuntimeError, match="21200"):
+        module.fit_viewport_to_content(page, 4, lambda: 5000)
+    assert not page.resizes
+
+
+def test_fit_viewport_stops_when_shared_deadline_expires():
+    """초기 렌더링에서 소진한 제한 시간을 새로 부여하지 않는다."""
+    module = load_capture_module()
+    page = FitPage([700])
+    def expired():
+        """공유 제한 시간 초과를 재현한다."""
+        raise TimeoutError("shared deadline")
+    with pytest.raises(TimeoutError, match="shared deadline"):
+        module.fit_viewport_to_content(page, 4, expired)
+    assert not page.resizes
+
+
+@pytest.mark.parametrize("overflow", [50, 20000, 0])
+def test_capture_resets_viewport_and_never_saves_clipped_png(monkeypatch, tmp_path, overflow):
+    """화면마다 초기 크기로 되돌리고 잘림 검증 실패 시 PNG를 저장하지 않는다."""
+    from unittest.mock import MagicMock
+
+    module = load_capture_module()
+    page = MagicMock()
+    page.viewport_size = dict(module.VIEWPORT)
+    page.locator.return_value.count.return_value = 0
+    context = MagicMock()
+    context.new_page.return_value = page
+    browser = MagicMock()
+    browser.new_context.return_value = context
+    playwright = MagicMock()
+    playwright.chromium.launch.return_value = browser
+    manager = MagicMock()
+    manager.__enter__.return_value = playwright
+    monkeypatch.setattr(module, "sync_playwright", lambda: manager)
+    monkeypatch.setattr(module, "DASHBOARD_IDS", (4, 2))
+    monkeypatch.setattr(module, "expected_query_dashcards", lambda *args: set())
+    initial_sizes = []
+    def resize(viewport):
+        """페이지의 현재 viewport를 실제 설정처럼 갱신한다."""
+        page.viewport_size = dict(viewport)
+    def navigate(*args, **kwargs):
+        """각 Dashboard 이동 시 초기화된 높이를 기록한다."""
+        initial_sizes.append(dict(page.viewport_size))
+    page.set_viewport_size.side_effect = resize
+    page.goto.side_effect = navigate
+    if overflow:
+        page.evaluate.return_value = overflow
+        with pytest.raises(RuntimeError):
+            module.capture_dashboards("http://localhost:3000", "capture-test-secret", tmp_path, 5000)
+        page.screenshot.assert_not_called()
+        page.remove_listener.assert_called_once()
+    else:
+        page.evaluate.side_effect = [700, 0, 0]
+        module.capture_dashboards("http://localhost:3000", "capture-test-secret", tmp_path, 5000)
+        assert initial_sizes == [module.VIEWPORT, module.VIEWPORT]
+        assert page.screenshot.call_count == 2
+        assert page.remove_listener.call_count == 2
+        assert page.viewport_size == module.VIEWPORT

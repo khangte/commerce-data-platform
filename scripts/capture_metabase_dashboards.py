@@ -6,7 +6,7 @@ import argparse
 import re
 import sys
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from functools import partial
 from pathlib import Path
 from urllib.parse import urljoin, urlsplit
@@ -21,6 +21,13 @@ if str(PROJECT_ROOT) not in sys.path:
 from src.serving.metabase_settings import host_metabase_url, require_metabase_setting
 
 DASHBOARD_IDS = (2, 3, 4)
+VIEWPORT = {"width": 1440, "height": 1200}
+MAX_VIEWPORT_HEIGHT = 16_000
+MAX_FIT_ATTEMPTS = 3
+OVERFLOW_SCRIPT = """() => Math.max(0, ...Array.from(document.querySelectorAll('*'))
+    .filter(e => e !== document.documentElement && e !== document.body &&
+        ['auto', 'scroll'].includes(getComputedStyle(e).overflowY))
+    .map(e => e.scrollHeight - e.clientHeight))"""
 DEFAULT_OUTPUT_DIR = Path("docs/bi/screenshots")
 DEFAULT_TIMEOUT_MS = 60_000
 RENDER_SETTLE_MS = 500
@@ -57,20 +64,37 @@ def record_query_response(response: Response, dashboard_id: int, responses: dict
         responses[int(match["dashcard"])] = response
 
 
+def remaining_dashboard_time(
+    deadline: float, dashboard_id: int, expected: set[int], responses: dict[int, Response],
+) -> float:
+    """렌더링과 높이 조정이 공유하는 남은 시간을 확인한다."""
+    remaining = (deadline - time.monotonic()) * 1000
+    if remaining <= 0:
+        received = len(expected.intersection(responses))
+        raise TimeoutError(f"Dashboard {dashboard_id} 렌더링 시간 초과: 쿼리 응답 {received}/{len(expected)}")
+    return remaining
+
+
+def wait_for_loading(page: Page, remaining_ms: Callable[[], float]) -> None:
+    """보이는 로딩 표시가 사라진 뒤 남은 시간 안에서 차트를 안정화한다."""
+    while page.locator(LOADING_SELECTOR).count():
+        page.wait_for_timeout(min(100, remaining_ms()))
+    if remaining_ms() < RENDER_SETTLE_MS:
+        raise TimeoutError("차트 안정화 대기 시간 초과")
+    page.wait_for_timeout(RENDER_SETTLE_MS)
+    remaining_ms()
+
+
 def wait_for_dashboard(
     page: Page, dashboard_id: int, expected: set[int], responses: dict[int, Response], timeout_ms: int,
+    *, remaining_ms: Callable[[], float] | None = None,
 ) -> None:
     """쿼리 완료와 보이는 로딩 표시 소멸을 같은 제한 시간 안에 확인한다."""
-    deadline = time.monotonic() + timeout_ms / 1000
-
-    def remaining_ms() -> float:
-        """남은 시간을 반환하고 초과 시 수신 수를 포함해 중단한다."""
-        remaining = (deadline - time.monotonic()) * 1000
-        if remaining <= 0:
-            received = len(expected.intersection(responses))
-            raise TimeoutError(f"Dashboard {dashboard_id} 렌더링 시간 초과: 쿼리 응답 {received}/{len(expected)}")
-        return remaining
-
+    if remaining_ms is None:
+        remaining_ms = partial(
+            remaining_dashboard_time, time.monotonic() + timeout_ms / 1000,
+            dashboard_id, expected, responses,
+        )
     while not expected.issubset(responses):
         page.wait_for_timeout(min(100, remaining_ms()))
     for dashcard_id in sorted(expected):
@@ -81,11 +105,28 @@ def wait_for_dashboard(
             raise RuntimeError(f"Dashboard {dashboard_id} dashcard {dashcard_id} 쿼리 응답 확인 실패") from None
         if status != "completed":
             raise RuntimeError(f"Dashboard {dashboard_id} dashcard {dashcard_id} 쿼리 실패")
-    while page.locator(LOADING_SELECTOR).count():
-        page.wait_for_timeout(min(100, remaining_ms()))
-    if remaining_ms() < RENDER_SETTLE_MS:
-        raise TimeoutError(f"Dashboard {dashboard_id} 렌더링 시간 초과: 쿼리 응답 {len(expected)}/{len(expected)}")
-    page.wait_for_timeout(RENDER_SETTLE_MS)
+    wait_for_loading(page, remaining_ms)
+
+
+def fit_viewport_to_content(
+    page: Page, dashboard_id: int, remaining_ms: Callable[[], float],
+) -> int:
+    """내부 스크롤 초과 높이만큼 화면을 늘리고 잘림이 남으면 중단한다."""
+    for _ in range(MAX_FIT_ATTEMPTS):
+        remaining_ms()
+        overflow = page.evaluate(OVERFLOW_SCRIPT)
+        if overflow <= 0:
+            return page.viewport_size["height"]
+        height = page.viewport_size["height"] + overflow
+        if height > MAX_VIEWPORT_HEIGHT:
+            raise RuntimeError(f"Dashboard {dashboard_id} 필요한 높이 {height}px가 최대 {MAX_VIEWPORT_HEIGHT}px를 초과함")
+        page.set_viewport_size({"width": VIEWPORT["width"], "height": height})
+        wait_for_loading(page, remaining_ms)
+    remaining_ms()
+    overflow = page.evaluate(OVERFLOW_SCRIPT)
+    if overflow > 0:
+        raise RuntimeError(f"Dashboard {dashboard_id} 하단 잘림 해소 실패: 남은 높이 {overflow}px")
+    return page.viewport_size["height"]
 
 
 def capture_dashboards(
@@ -100,7 +141,7 @@ def capture_dashboards(
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
         context = browser.new_context(
-            viewport={"width": 1440, "height": 1200},
+            viewport=VIEWPORT,
             device_scale_factor=1,
             extra_http_headers={"X-API-Key": api_key},
         )
@@ -118,17 +159,19 @@ def capture_dashboards(
 
                 page.on("response", collect)
                 try:
+                    page.set_viewport_size(VIEWPORT)
                     expected = expected_query_dashcards(context, metabase_url, dashboard_id)
-                    remaining = max(1, (deadline - time.monotonic()) * 1000)
-                    page.goto(dashboard_url(metabase_url, dashboard_id), wait_until="domcontentloaded", timeout=remaining)
-                    remaining = max(1, (deadline - time.monotonic()) * 1000)
-                    page.locator("main").wait_for(state="visible", timeout=remaining)
-                    wait_for_dashboard(page, dashboard_id, expected, responses, (deadline - time.monotonic()) * 1000)
+                    remaining_ms = partial(remaining_dashboard_time, deadline, dashboard_id, expected, responses)
+                    page.goto(dashboard_url(metabase_url, dashboard_id), wait_until="domcontentloaded", timeout=remaining_ms())
+                    page.locator("main").wait_for(state="visible", timeout=remaining_ms())
+                    wait_for_dashboard(page, dashboard_id, expected, responses, timeout_ms, remaining_ms=remaining_ms)
+                    height = fit_viewport_to_content(page, dashboard_id, remaining_ms)
                     page.screenshot(
                         path=str(output_dir / f"dashboard-{dashboard_id}.png"),
                         full_page=True,
+                        timeout=remaining_ms(),
                     )
-                    print(f"dashboard-{dashboard_id}.png {time.monotonic() - started:.1f}s")
+                    print(f"dashboard-{dashboard_id}.png {time.monotonic() - started:.1f}s {height}px")
                 finally:
                     page.remove_listener("response", collect)
         except PlaywrightError:
