@@ -272,10 +272,13 @@ Phase 10에는 별도 AC 번호가 없으므로 ROADMAP의 Connection/Dashboard 
 
 - [x] 2026-10-16 058·059·060 문서 후속: README의 파일 식별값 검증·재지정 후 스키마 동기화·게시 후 내보내기, R-14 전체 새로고침과 CLI 후속 내보내기, 중단된 게시의 파일 식별값별 복구 분기를 실제 코드와 맞췄다. Snapshot `--force`·`--output-dir` 도움말을 추가했다. 지정 검사에서 Snapshot 테스트 5개와 해당 스크립트 Ruff가 통과했다.
 
+- [x] 2026-10-16 N5: Dashboard 4는 스크롤 없이 카드 8개가 completed로 응답함을 실측했다. 고정 8초 대신 현재 Dashboard의 배치 카드별 최신 쿼리 응답·보이는 로딩 표시 소멸·0.5초 안정화를 같은 제한 시간 안에 기다린다. 기본 URL은 공통 호스트 설정을 사용한다. 실패 카드의 PNG 미저장·응답 필터·시간 초과·빈 URL 대체 등 테스트 12개가 통과했다. 실제 캡처는 임시 경로에서 5.0·2.4·5.2초였고 card 58·59의 실제 차트 표시를 확인했다. 기존 내부 스크롤에 따른 card 59 하단 잘림은 유지되며 캡처 구도는 바꾸지 않았다. 전체 테스트 450개 통과·109개 건너뜀·실패 0개(90.56초), Ruff·diff 검사·PNG 및 출력 로그의 키 비노출 검사가 통과했다.
+
 ## 파일·폴더별 변경 요약
 
 | 경로 | 변경 내용 |
 | ---- | --------- |
+| `scripts/capture_metabase_dashboards.py`, `tests/test_capture_metabase_dashboards.py`, `docs/bi/dashboards.md`, `docs/phases/phase-10-bi.md` | 고정 대기를 쿼리 완료·보이는 로딩 표시 소멸 대기로 교체했다. 응답 이벤트에서는 본문을 읽지 않고 현재 Dashboard의 배치 카드별 최신 응답만 모은다. 제한 시간·실패 응답·키 비노출·실패 시 PNG 미저장·핸들러 해제를 검증했다. 기본 URL을 `host_metabase_url()`로 통일하고 렌더링 대기 절차를 문서화했다. 추적 중인 PNG와 과거 증적은 보존했다. |
 | `README.md`, `docs/runbooks/r14-dbt-failure.md`, `docs/troubleshooting/warehouse-publish.md`, `scripts/metabase_snapshot.py`, `docs/phases/phase-10-bi.md` | 058·059·060 적용 뒤 낡은 문구 5곳과 Snapshot 옵션 도움말을 갱신했다. 복구 문구는 `recover_incomplete_publishes`의 파일 식별값 일치 분기와 대조했고, 기본 수동 실행 예시에는 게시 후 서빙 내보내기를 추가했다. Snapshot 테스트 5개·스크립트 Ruff 통과를 기록했다. |
 | `scripts/metabase_snapshot.py`, 이전 셸 Snapshot 도구(삭제), `tests/test_metabase_snapshot.py`, `metabase/export/` | Collection 5·6의 카드·Metric·Dataset·Dashboard를 수집한다. 변경된 출력은 HTTP 전에 거부하고 `--force`만 허용한다. 모든 조회 성공 뒤 배포 필드만 정렬 저장하고 대상에서 빠진 JSON만 삭제한다. 중간 조회 실패 시 기존 파일 보존·키 헤더 전용 전송·지원하지 않는 모델 제외를 검증했다. 실제 카드 20개·Dashboard 3개를 저장했고, 쿼리·배치·보존 필드의 HEAD 일치와 출력 보호를 확인했다. |
 | `src/serving/metabase_repoint.py`, `tests/serving/test_metabase_repoint.py` | 매니페스트 검증 성공 뒤 `sync_schema` 1회 요청, 검증 실패 시 요청 없음, 동기화 HTTP 실패 시 키 없는 stderr 경고와 SUCCESS 유지를 검증했다. |
