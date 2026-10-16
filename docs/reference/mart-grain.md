@@ -342,6 +342,8 @@ Business Key가 계약이므로 해지 뒤 재가입한 사람은 `subscription_
 - 출처: `int_order_items_enriched`
 - Dimension 참조: `dim_product`, `dim_seller`, `dim_date`
 
+Olist 원본 order_items에는 상품(항목)별 상태 데이터가 없고 취소는 orders.order_status로만 표현된다. 원본 구조를 유지하므로 항목별 상태는 관리하지 않고 소속 주문 상태를 상속한다.
+
 | 컬럼                      | 타입          | 종류                             | Null | 정의 / Test                                                                                          |
 | ------------------------- | ------------- | -------------------------------- | ---- | ---------------------------------------------------------------------------------------------------- |
 | `order_id`                | VARCHAR       | Degenerate Dimension / Grain Key | N    | Olist 주문 식별자 / `not_null`                                                                       |
@@ -349,6 +351,7 @@ Business Key가 계약이므로 해지 뒤 재가입한 사람은 `subscription_
 | `product_id`              | VARCHAR       | Dimension FK                     | N    | 상품 Dimension 참조 키 / `not_null`, `relationships → dim_product.product_id`                        |
 | `seller_id`               | VARCHAR       | Dimension FK                     | N    | 판매자 Dimension 참조 키 / `not_null`, `relationships → dim_seller.seller_id`                        |
 | `purchase_date_key`       | INTEGER       | Dimension FK                     | N    | 항목이 속한 주문의 구매일. `stg_orders.purchase_at`에서 `fct_order.purchase_date_key`와 같은 식으로 파생 / `not_null`, `relationships → dim_date.date_key`, 같은 `order_id`의 `fct_order.purchase_date_key`와 일치 |
+| `order_status` | VARCHAR | Fact Attribute | N | 소속 주문의 상태 / `not_null`, `accepted_values: CREATED, APPROVED, PROCESSING, INVOICED, SHIPPED, DELIVERED, CANCELED, UNAVAILABLE`, 같은 `order_id`의 `fct_order.order_status`와 일치 |
 | `item_price`              | DECIMAL(14,2) | Additive Measure                 | N    | 해당 주문 상품의 판매 가격 / `not_null`, `>= 0`, `SUM` 가능                                          |
 | `freight_value`           | DECIMAL(14,2) | Additive Measure                 | N    | 해당 주문 상품에 배분된 배송비 / `not_null`, `>= 0`                                                  |
 | `line_gross_value`        | DECIMAL(15,2) | Additive Measure                 | N    | 상품 판매가와 해당 항목 배송비의 합계. `SUM` 가능                                                    |

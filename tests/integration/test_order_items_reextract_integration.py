@@ -43,13 +43,14 @@ from tests.integration.test_subscription_payment_temporal_join_integration impor
 pytestmark = pytest.mark.integration
 
 
+@pytest.mark.parametrize("status_only", [False, True])
 @pytest.mark.skipif(
     os.environ.get("RUN_POSTGRES_INTEGRATION") != "1"
     or os.environ.get("RUN_SEAWEEDFS_INTEGRATION") != "1",
     reason="Set PostgreSQL and SeaweedFS integration environment flags after starting containers.",
 )
-def test_reextracted_order_items_do_not_duplicate_lines(tmp_path: Path) -> None:
-    """두 항목을 재수집해도 항목·주문 금액을 보존하고 전체 재계산과 해시가 같다."""
+def test_reextracted_order_items_do_not_duplicate_lines(tmp_path: Path, status_only: bool) -> None:
+    """항목 재수집·주문 상태 변경은 항목을 중복 없이 교체하고 전체 재계산과 해시가 같다."""
     postgres = PostgresSettings.from_environment()
     storage = SeaweedFSSettings.from_environment()
     pipeline_name = f"test_items_reextract_{uuid.uuid4().hex}"
@@ -90,30 +91,43 @@ def test_reextracted_order_items_do_not_duplicate_lines(tmp_path: Path) -> None:
             gross_before = connection.execute(
                 "SELECT gross_order_value FROM facts.fct_order WHERE order_id = ?", [order_id]
             ).fetchone()[0]
-        _set_watermark(
-            postgres, pipeline_name, "order_items",
-            CursorPosition(first_item.created_at - timedelta(microseconds=1), (order_id, 1)),
-            now=ingested_at,
-        )
+        source_table = "orders" if status_only else "order_items"
+        if status_only:
+            with postgres.source_connection() as connection, connection.transaction():
+                connection.execute(
+                    "UPDATE orders SET order_status = 'canceled', updated_at = %s "
+                    "WHERE order_id = %s",
+                    (FIXTURE_START + timedelta(seconds=1), order_id),
+                )
+        else:
+            _set_watermark(
+                postgres, pipeline_name, "order_items",
+                CursorPosition(first_item.created_at - timedelta(microseconds=1), (order_id, 1)),
+                now=ingested_at,
+            )
         repeated = _ingest(
-            postgres, storage, pipeline_name, "order_items", FIXTURE_START,
+            postgres, storage, pipeline_name, source_table,
+            FIXTURE_START + timedelta(seconds=1),
             2, tmp_path, ingested_at + timedelta(seconds=1),
         )
         results.append(repeated)
-        assert repeated.row_count == 2
+        assert repeated.row_count == (1 if status_only else 2)
         _append_fixture_catalog(postgres, warehouse_path, [repeated])
         second_build = _run_dbt_build(warehouse_path, storage, tmp_path)
         with duckdb.connect(str(warehouse_path), read_only=True) as connection:
             bronze_rows = connection.execute(
                 "SELECT sum(row_count) FROM control.bronze_files WHERE source_table = 'order_items'"
             ).fetchone()[0]
-        assert bronze_rows == 4
+        assert bronze_rows == (2 if status_only else 4)
         assert second_build.returncode == 0, _combined_output(second_build)
         with duckdb.connect(str(warehouse_path), read_only=True) as connection:
             assert connection.execute(
-                "SELECT order_id, order_item_id FROM facts.fct_order_item "
+                "SELECT order_id, order_item_id, order_status FROM facts.fct_order_item "
                 "WHERE order_id = ? ORDER BY order_item_id", [order_id]
-            ).fetchall() == [(order_id, 1), (order_id, 2)]
+            ).fetchall() == [
+                (order_id, item_id, "CANCELED" if status_only else "CREATED")
+                for item_id in (1, 2)
+            ]
             assert connection.execute(
                 "SELECT gross_order_value FROM facts.fct_order WHERE order_id = ?", [order_id]
             ).fetchone()[0] == gross_before

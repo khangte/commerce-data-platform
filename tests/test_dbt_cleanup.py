@@ -19,8 +19,8 @@ def _render(relative_path: str) -> str:
 def test_order_items_preserve_lines_without_dimensions() -> None:
     """차원 테이블 없이 주문 항목의 금액·구매일과 참조 주문 누락 행을 보존한다."""
     with duckdb.connect() as connection:
-        connection.execute("CREATE TABLE stg_orders (order_id VARCHAR, purchase_at TIMESTAMP)")
-        connection.execute("INSERT INTO stg_orders VALUES ('o1', '2026-10-01 12:00:00')")
+        connection.execute("CREATE TABLE stg_orders (order_id VARCHAR, purchase_at TIMESTAMP, order_status VARCHAR)")
+        connection.execute("INSERT INTO stg_orders VALUES ('o1', '2026-10-01 12:00:00', 'DELIVERED')")
         connection.execute("""
             CREATE TABLE stg_order_items (
                 order_id VARCHAR, order_item_id INTEGER, product_id VARCHAR,
@@ -37,9 +37,13 @@ def test_order_items_preserve_lines_without_dimensions() -> None:
             "CREATE TABLE enriched AS " + _render("models/intermediate/int_order_items_enriched.sql")
         )
         assert connection.execute("""
-            SELECT order_id, order_item_id, purchase_date_key, line_gross_value
+            SELECT order_id, order_item_id, purchase_date_key, line_gross_value, order_status
             FROM enriched ORDER BY order_id, order_item_id
-        """).fetchall() == [("missing", 1, None, 6), ("o1", 1, 20261001, 23), ("o1", 2, 20261001, 12)]
+        """).fetchall() == [
+            ("missing", 1, None, 6, None),
+            ("o1", 1, 20261001, 23, "DELIVERED"),
+            ("o1", 2, 20261001, 12, "DELIVERED"),
+        ]
 
 
 def test_rejoined_count_requires_active_after_churn() -> None:

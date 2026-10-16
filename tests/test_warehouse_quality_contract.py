@@ -30,6 +30,10 @@ def test_status_domains_and_foreign_keys_are_declared() -> None:
     assert _named(_tests("fct_order", "order_status"), "accepted_values")["arguments"]["values"] == [
         "CREATED", "APPROVED", "PROCESSING", "INVOICED", "SHIPPED", "DELIVERED", "CANCELED", "UNAVAILABLE"
     ]
+    assert "not_null" in _tests("fct_order_item", "order_status")
+    assert _named(_tests("fct_order_item", "order_status"), "accepted_values") == _named(
+        _tests("fct_order", "order_status"), "accepted_values"
+    )
     assert _named(_tests("fct_order_item", "order_id"), "relationships")["arguments"]["to"] == "ref('fct_order')"
     assert _named(_tests("fct_order_item", "purchase_date_key"), "relationships")[
         "arguments"
@@ -63,6 +67,7 @@ def test_non_negative_and_singular_gate_tests_exist() -> None:
         "stg_orders_timestamp_order.sql",
         "fct_order_item_total_matches_order.sql",
         "fct_order_item_date_matches_order.sql",
+        "fct_order_item_status_matches_order.sql",
         "fct_order_payment_date_matches_order.sql",
         "fct_order_payment_customer_matches_order.sql",
         "publish_gate_canary.sql",
