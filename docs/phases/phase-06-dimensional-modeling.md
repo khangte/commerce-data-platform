@@ -185,6 +185,11 @@ Report Model은 Mart 위에서 파생된다. BI가 Source·Bronze·Staging을 �
 
 ## 파일·폴더별 변경 요약
 
+- [x] 주문 변경 이력 계획 Task 5: 현재 상태 Fact 네 개의 `incremental_strategy='delete+insert'`(교체 단위 삭제 후 삽입)를 계약 테스트로 고정했다.
+- `tests/test_fact_incremental_contract.py`: `CURRENT_STATE_FACTS` 상수와 `test_current_state_facts_use_delete_insert`를 추가했다. 기존 테스트와 Fact SQL·설정은 유지한다. 주문 항목 전략을 일시적으로 `merge`로 바꿨을 때 해당 경로와 함께 실패함을 확인하고 원복했다.
+- [x] Task 5 계약 테스트 4건 통과. 전체 오프라인 회귀 371건 통과(9건 생략, 통합 97건 제외). `merge` 변이 실패 근거: `/tmp/order-items-t45/strategy-red.txt`.
+- [x] Task 5 reviewer 승인: 지적 0건. reviewer가 Ruff, 오프라인 371건 통과·9건 생략, 집중 테스트 7건 통과와 재추출 통합 테스트 통과를 독립 확인했다. 커밋은 lead가 수행한다.
+
 - 구독 결제 상태 전환과 최종 테스트 결과는 [Phase 7 검증 기록](phase-07-data-quality-publish.md)을 참조한다.
 
 

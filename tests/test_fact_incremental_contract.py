@@ -11,6 +11,12 @@ ORDER_AXIS_FACTS = (
 )
 
 
+CURRENT_STATE_FACTS = (
+    *ORDER_AXIS_FACTS,
+    "dbt/models/marts/facts/fct_subscription_payment.sql",
+)
+
+
 def test_order_axis_facts_filter_by_affected_order_keys() -> None:
     """주문 축 Fact는 Incremental 실행에서 영향 주문만 다시 계산한다."""
     for relative_path in ORDER_AXIS_FACTS:
@@ -38,3 +44,10 @@ def test_subscription_payment_fact_filters_by_affected_payment_keys() -> None:
     assert "ref('int_affected_subscription_payment_keys')" in sql
     assert "-- depends_on: {{ ref('int_affected_subscription_payment_keys') }}" in sql
     assert "unique_key='payment_id'" in sql
+
+
+def test_current_state_facts_use_delete_insert() -> None:
+    """현재 상태 Fact는 교체 단위 전체를 지우고 다시 넣는다. merge로 바꾸면 주문 단위 교체가 깨진다."""
+    for relative_path in CURRENT_STATE_FACTS:
+        sql = (PROJECT_ROOT / relative_path).read_text()
+        assert "incremental_strategy='delete+insert'" in sql, relative_path
