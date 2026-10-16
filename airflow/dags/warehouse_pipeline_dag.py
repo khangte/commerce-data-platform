@@ -30,6 +30,7 @@ from src.serving.metabase_repoint import (
     metabase_repoint_summary_status,
     repoint_and_prune_serving,
 )
+from src.warehouse.duckdb_files import FileIdentity
 from src.warehouse.publish import (
     DEFAULT_WAREHOUSE_ROOT,
     WarehousePaths,
@@ -216,6 +217,8 @@ with DAG(
             "publish_run_id": str(outcome.publish_run_id),
             "changed_relations": list(outcome.changed_relations),
             "mart_hashes": outcome.mart_hashes,
+            "published_inode": outcome.published_identity.inode,
+            "published_mtime_ns": outcome.published_identity.mtime_ns,
         }
 
     @task(task_id="export_serving_mart", trigger_rule="all_success", retries=0)
@@ -227,6 +230,9 @@ with DAG(
                 SERVING_PATHS,
                 publish_run_id=uuid.UUID(publish["publish_run_id"]),
                 mart_hashes=publish["mart_hashes"],
+                published_identity=FileIdentity(
+                    publish["published_inode"], publish["published_mtime_ns"]
+                ),
                 now=datetime.now(UTC),
             )
         except Exception as error:

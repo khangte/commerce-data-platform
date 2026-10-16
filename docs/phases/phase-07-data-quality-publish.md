@@ -3,7 +3,7 @@
 > 상태: Done  
 > Milestone: 2 — Data Platform Core  
 > 선행 Phase: [Phase 6. Dimensional Modeling](phase-06-dimensional-modeling.md)  
-> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.22](../../PRD_v1.22.md), [Mart Grain 계약](../reference/mart-grain.md)
+> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.24](../../PRD_v1.24.md), [Mart Grain 계약](../reference/mart-grain.md)
 
 ## 목표
 
@@ -253,6 +253,20 @@ Normal E2E Unknown Key = 0
 - 실패 Run `f7b2b395-0d47-4acb-9a51-357e2ebe31a9`는 구독 결제 상태 Test 대소문자 회귀로 `DBT_TEST_ERROR`가 발생했고 Build를 `failed/`에 격리했다.
 - 성공 Run `53f2c77c-77fb-44c0-a24a-f4fcc2e41531`는 E2E Fixture와 전역 PUBLISHED Chain Test 보정 후 `PUBLISHED`로 완료했다. 직전 성공 Run은 `5a15484a-b831-4535-904d-1d9a6709228b`로 연결됐다.
 
+## 게시 파일 식별값 전환 (2026-10-16)
+
+3번 작업 검증: 전체 테스트 394건 통과·107건 생략, PostgreSQL 통합 테스트 52건 통과·29건 생략. 통합 실행 플래그에 따라 외부 시스템을 요구하는 일부 테스트는 생략된다.
+
+- [x] 공통 DuckDB 파일 함수와 `(st_ino, st_mtime_ns)` 식별값을 분리하고 기존 import 경로를 유지한다.
+- [x] 게시 해시와 행 수를 대상 테이블별 단일 스캔으로 계산한다.
+- [x] nullable 열의 반복 적용과 게시 직전 파일 식별값 기록을 실제 PostgreSQL로 검증한다.
+- [x] 중단된 게시 복구를 기록된 파일 식별값 비교로 전환한다.
+- [x] 서빙 내보내기를 복사 전·교체 전 식별값 검사로 전환하고 검증한다.
+- [x] PRD v1.24, 전체 테스트, 실제 게시·서빙·Metabase 카드 검증을 완료한다.
+
+
+최종 검증: 전체 테스트 396건 통과·109건 생략, `RUN_POSTGRES_INTEGRATION=1` 통합 테스트 54건 통과·29건 생략, `ruff check .`와 공백 검사를 통과했다. 외부 연동별 실행 플래그가 없는 테스트는 생략됐다. 검증 시작 전과 실제 게시 직전 `mart_publish_runs`의 `BUILDING`·`PUBLISHING`은 각각 0건이었다. 정상 명령 `uv run python -m src.warehouse.publish --pipeline-name manual_run`으로 실행 `539746b5-32f5-4df4-a57e-dbf442db18f8`를 게시했고 dbt 테스트 143건 통과·0건 실패, 9개 해시 대상의 변경 없음과 기록 식별값 `(1020866, 1792141253195265434)`의 실제 파일 일치를 확인했다. `uv run python -m src.serving`은 1.67초에 내보내기 `85ecffe0-9401-497d-be6b-11f9c39c1a1b`를 만들었고 Manifest의 게시 실행이 일치했다. 기존 `repoint_and_prune_serving`으로 Metabase DB 2번을 `/serving/exports/85ecffe0-9401-497d-be6b-11f9c39c1a1b.duckdb`로 재연결해 Manifest를 검증했다. 카드 49·50·51을 각각 1회 실행해 오류 없이 74·10·10행을 확인했고 저장된 쿼리를 보존했다. 원시 로그·응답은 `/tmp/publish-identity-dev/`에 남겼다. 5.3초는 architect의 기존 해시 재계산 기준값이며 동일 환경의 전후 전체 시간을 이번에 다시 측정한 값은 아니다.
+
 ## 파일·폴더별 변경 요약
 
 - [x] Bronze 스키마 통합: 게시·Airflow 경로와 직접 실행 테스트가 Python 계약 변수를 한 번의 `--vars`로 전달하도록 연결했다. Canary·재처리 변수는 같은 JSON에 병합한다. 리뷰 후 R-12 실행 안내도 같은 경로로 맞췄다.
@@ -284,6 +298,11 @@ Normal E2E Unknown Key = 0
 
 | 경로 | 구분 | 변경 내용 |
 | ---- | ---- | --------- |
+| `PRD.bak/PRD_v1.23.md`, `PRD_v1.24.md`, `docs/phases/phase-07-data-quality-publish.md` | 이동·생성 | 기존 PRD를 보관하고 파일 식별값 기록·복구·내보내기, 9개 해시 대상과 기존 실행의 호환성 제한을 v1.24에 문서화했다. |
+| `src/warehouse/duckdb_files.py`, `tests/test_duckdb_files.py` | 생성 | 공통 경로·WAL 경로·CHECKPOINT·디렉터리 fsync와 파일 식별값을 분리한다. 원자 교체 보존과 같은 inode의 수정 시각 변경을 검증한다. |
+| `src/warehouse/mart_hash.py`, `tests/test_mart_hash.py` | 수정 | 단일 스캔으로 해시와 행 수를 계산하며 기존 공개 함수 시그니처와 빈 테이블 결과를 보존한다. |
+| `sql/metadata/005_create_mart_publish_runs.sql`, `src/warehouse/publish_metadata.py`, `src/warehouse/publish.py`, `airflow/dags/warehouse_pipeline_dag.py` | 수정 | nullable `published_inode`·`published_mtime_ns`를 멱등적으로 추가하고 교체 직전 파일 식별값을 같은 상태 UPDATE와 DAG 전달값에 기록한다. 오래된 `PUBLISHING`은 해시 대신 inode·수정 시각이 모두 일치할 때만 `PUBLISHED`로 복구하며 누락·불일치는 `FAILED(UNKNOWN_ERROR)`로 닫는다. |
+| `tests/integration/test_publish_metadata_integration.py`, `tests/integration/test_warehouse_publish_integration.py`, `tests/test_warehouse_publish_cli.py` | 수정 | 반복 마이그레이션·저장값 조회·원자 교체 뒤 식별값 보존과 확장된 CLI 결과를 검증한다. |
 | `src/warehouse/errors.py`, `src/ingestion/errors.py` | 생성·수정 | Warehouse 오류 분류와 기본 `UNKNOWN_ERROR`를 추가했다. |
 | `sql/metadata/005_create_mart_publish_runs.sql`, `src/warehouse/publish_metadata.py` | 생성 | Publish 상태 전이와 활성 실행 Mutex를 구현했다. |
 | `src/warehouse/dbt_runner.py`, `src/warehouse/publish.py` | 생성 | 격리 Build, dbt 결과 분류, 원자 파일 교체, 복구 CLI를 구현했다. |

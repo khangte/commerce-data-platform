@@ -11,6 +11,7 @@ import psycopg
 import pytest
 
 from src.common.database import PostgresSettings
+from src.warehouse.duckdb_files import FileIdentity
 from src.warehouse.errors import PublishInProgressError, PublishStateError
 from src.warehouse.publish_metadata import (
     BUILDING,
@@ -80,10 +81,12 @@ def test_full_success_transition_links_previous_published_run(settings: Postgres
         first.publish_run_id,
         mart_hashes={"dimensions.dim_date": "abc"},
         mart_row_counts={"dimensions.dim_date": 3},
+        published_identity=FileIdentity(123, 456),
     )
     mark_published(settings, first.publish_run_id, now=base + timedelta(minutes=1))
     stored = get_publish_run(settings, first.publish_run_id)
     assert stored is not None
+    assert stored.published_identity == FileIdentity(123, 456)
     assert stored.status == PUBLISHED
     assert stored.mart_hashes == {"dimensions.dim_date": "abc"}
 
@@ -168,3 +171,16 @@ def test_stale_active_runs_returns_only_old_active_rows(settings: PostgresSettin
         failed_path=None,
         now=NOW,
     )
+
+
+def test_publish_metadata_migration_is_idempotent(settings: PostgresSettings) -> None:
+    """기존 테이블을 보존하며 열 추가를 반복해도 중복이 생기지 않는다."""
+    ensure_publish_metadata(settings)
+    ensure_publish_metadata(settings)
+    with settings.pipeline_connection() as connection:
+        columns = connection.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = 'mart_publish_runs' AND column_name LIKE 'published_%' "
+            "ORDER BY column_name"
+        ).fetchall()
+    assert [row[0] for row in columns] == ["published_inode", "published_mtime_ns"]

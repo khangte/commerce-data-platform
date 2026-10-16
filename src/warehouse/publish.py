@@ -14,14 +14,21 @@ from datetime import UTC, datetime, timedelta
 from functools import partial
 from pathlib import Path
 
-import duckdb
 import yaml
 
-from src.common.database import PROJECT_ROOT, PostgresSettings
+from src.common.database import PostgresSettings
 from src.ingestion.bronze.catalog import sync_bronze_catalog
 from src.ingestion.errors import classify_error
 from src.warehouse.dbt_runner import DbtRunResult, run_dbt_build
 from src.warehouse.dbt_vars import dbt_vars_json
+from src.warehouse.duckdb_files import (
+    DEFAULT_WAREHOUSE_ROOT,
+    FileIdentity,
+    checkpoint,
+    file_identity,
+    fsync_directory,
+    wal_path,
+)
 from src.warehouse.errors import (
     DBT_BUILD_ERROR,
     UNKNOWN_ERROR,
@@ -32,10 +39,8 @@ from src.warehouse.errors import (
 from src.warehouse.mart_hash import (
     MART_HASH_TARGETS,
     MartTarget,
-    mart_logical_hashes,
-    mart_row_counts,
+    mart_hashes_and_row_counts,
     mismatched_relations,
-    target_for,
 )
 from src.warehouse.publish_metadata import (
     PUBLISHING,
@@ -51,7 +56,6 @@ from src.warehouse.publish_metadata import (
     start_publish_run,
 )
 
-DEFAULT_WAREHOUSE_ROOT = PROJECT_ROOT / "data" / "warehouse"
 PUBLISHED_FILE_NAME = "warehouse.duckdb"
 FAILED_BUILD_RETENTION = 3
 PUBLISH_STALE_AFTER = timedelta(hours=1)
@@ -101,6 +105,7 @@ class PublishOutcome:
     mart_hashes: dict[str, str]
     mart_row_counts: dict[str, int]
     changed_relations: tuple[str, ...]
+    published_identity: FileIdentity
 
 
 def recover_incomplete_publishes(
@@ -109,7 +114,9 @@ def recover_incomplete_publishes(
     """1시간 넘게 활성 상태인 Run을 PUBLISHED 확정 또는 abandoned FAILED로 닫는다."""
     recovered: list[uuid.UUID] = []
     for record in stale_active_runs(settings, older_than=now - PUBLISH_STALE_AFTER):
-        if record.status == PUBLISHING and _published_matches(paths.published, record.mart_hashes):
+        if record.status == PUBLISHING and _published_identity_matches(
+            paths.published, record.published_identity
+        ):
             mark_published(settings, record.publish_run_id, now=now)
             paths.build_file(record.publish_run_id).unlink(missing_ok=True)
             shutil.rmtree(paths.target_dir(record.publish_run_id), ignore_errors=True)
@@ -187,12 +194,15 @@ def publish_build(
         raise PublishStateError(f"Publish run {publish_run_id} does not exist")
     build_path = paths.build_file(publish_run_id)
     try:
-        _checkpoint(build_path)
+        checkpoint(build_path)
         if wal_path(build_path).exists():
             raise PublishedWalError(f"Build warehouse still has a WAL: {build_path}")
-        hashes = mart_logical_hashes(build_path, targets)
-        counts = mart_row_counts(build_path, targets)
-        mark_publishing(settings, publish_run_id, mart_hashes=hashes, mart_row_counts=counts)
+        hashes, counts = mart_hashes_and_row_counts(build_path, targets)
+        identity = file_identity(build_path)
+        mark_publishing(
+            settings, publish_run_id, mart_hashes=hashes, mart_row_counts=counts,
+            published_identity=identity,
+        )
         os.replace(build_path, paths.published)
         fsync_directory(paths.published.parent)
         mark_published(settings, publish_run_id, now=now or datetime.now(UTC))
@@ -206,6 +216,7 @@ def publish_build(
         previous_publish_run_id=record.previous_publish_run_id,
         mart_hashes=hashes,
         mart_row_counts=counts,
+        published_identity=identity,
         changed_relations=mismatched_relations(_previous_hashes(settings, record), hashes),
     )
 
@@ -232,15 +243,9 @@ def _previous_hashes(settings: PostgresSettings, record: PublishRecord) -> dict[
     return {} if previous is None else dict(previous.mart_hashes or {})
 
 
-def _published_matches(published: Path, recorded: dict[str, str] | None) -> bool:
-    """Published 파일 Hash가 기록된 Hash와 같으면 True다."""
-    if not recorded or not published.is_file():
-        return False
-    try:
-        targets = tuple(target_for(relation) for relation in recorded)
-        return mart_logical_hashes(published, targets) == recorded
-    except (KeyError, duckdb.Error):
-        return False
+def _published_identity_matches(published: Path, recorded: FileIdentity | None) -> bool:
+    """게시 파일과 기록된 inode·수정 시각이 모두 같을 때만 참이다."""
+    return recorded is not None and published.is_file() and file_identity(published) == recorded
 
 
 def _fail(
@@ -292,26 +297,6 @@ def _prune_failed_builds(failed_dir: Path, keep: int = FAILED_BUILD_RETENTION) -
     for stale in builds[keep:]:
         stale.unlink(missing_ok=True)
         wal_path(stale).unlink(missing_ok=True)
-
-
-def _checkpoint(warehouse_path: Path) -> None:
-    """WAL 내용을 본 파일에 반영하고 연결을 닫는다."""
-    with duckdb.connect(str(warehouse_path)) as connection:
-        connection.execute("CHECKPOINT")
-
-
-def fsync_directory(directory: Path) -> None:
-    """Rename 결과가 Disk에 남도록 Directory를 fsync한다."""
-    descriptor = os.open(directory, os.O_RDONLY)
-    try:
-        os.fsync(descriptor)
-    finally:
-        os.close(descriptor)
-
-
-def wal_path(warehouse_path: Path) -> Path:
-    """DuckDB 파일의 WAL 경로를 반환한다."""
-    return warehouse_path.with_name(f"{warehouse_path.name}.wal")
 
 
 def _failure_summary(error_type: str, result: DbtRunResult) -> str:

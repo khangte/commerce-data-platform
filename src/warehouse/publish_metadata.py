@@ -10,6 +10,7 @@ import psycopg
 from psycopg.types.json import Jsonb
 
 from src.common.database import PostgresSettings, apply_sql_file
+from src.warehouse.duckdb_files import FileIdentity
 from src.warehouse.errors import PublishInProgressError, PublishStateError
 
 BUILDING = "BUILDING"
@@ -21,7 +22,8 @@ ACTIVE_PUBLISH_INDEX = "mart_publish_runs_single_active_idx"
 ERROR_MESSAGE_LIMIT = 4000
 
 _RECORD_COLUMNS = (
-    "publish_run_id, status, started_at, previous_publish_run_id, mart_hashes, error_type"
+    "publish_run_id, status, started_at, previous_publish_run_id, mart_hashes, error_type, "
+    "published_inode, published_mtime_ns"
 )
 
 
@@ -45,6 +47,7 @@ class PublishRecord:
     previous_publish_run_id: uuid.UUID | None
     mart_hashes: dict[str, str] | None
     error_type: str | None
+    published_identity: FileIdentity | None
 
 
 def ensure_publish_metadata(settings: PostgresSettings) -> None:
@@ -106,14 +109,16 @@ def mark_publishing(
     *,
     mart_hashes: dict[str, str],
     mart_row_counts: dict[str, int],
+    published_identity: FileIdentity,
 ) -> None:
-    """Swap 직전 Hash와 Row 수를 저장하고 BUILDING을 PUBLISHING으로 바꾼다."""
+    """교체 직전 해시·행 수·파일 식별값을 함께 저장하고 PUBLISHING으로 바꾼다."""
     _transition(
         settings,
         publish_run_id,
         (BUILDING,),
-        "status = 'PUBLISHING', mart_hashes = %s, mart_row_counts = %s",
-        (Jsonb(mart_hashes), Jsonb(mart_row_counts)),
+        "status = 'PUBLISHING', mart_hashes = %s, mart_row_counts = %s, "
+        "published_inode = %s, published_mtime_ns = %s",
+        (Jsonb(mart_hashes), Jsonb(mart_row_counts), *published_identity),
     )
 
 
@@ -226,4 +231,7 @@ def _record(row: tuple) -> PublishRecord:
         previous_publish_run_id=row[3],
         mart_hashes=row[4],
         error_type=row[5],
+        published_identity=(
+            FileIdentity(row[6], row[7]) if row[6] is not None and row[7] is not None else None
+        ),
     )

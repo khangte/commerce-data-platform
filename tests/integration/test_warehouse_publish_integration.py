@@ -14,6 +14,7 @@ import pytest
 from src.common.database import PostgresSettings
 from src.ingestion.control.metadata import ensure_ingestion_metadata
 from src.warehouse.dbt_runner import DbtRunResult
+from src.warehouse.duckdb_files import FileIdentity, file_identity
 from src.warehouse.errors import (
     DBT_TEST_ERROR,
     PublishedWalError,
@@ -105,6 +106,8 @@ def test_failed_build_never_reaches_the_published_file(
     paths = WarehousePaths.under(tmp_path)
 
     first = publish_warehouse(settings, paths, _run(), dbt_runner=_dbt_writing(3), targets=TARGETS)
+    assert first.published_identity == file_identity(paths.published)
+    assert get_publish_run(settings, first.publish_run_id).published_identity == first.published_identity
     first_hash = _published_hash(paths)
     assert mart_row_counts(paths.published, TARGETS) == {"dimensions.dim_date": 3}
 
@@ -169,10 +172,10 @@ def test_fresh_active_run_blocks_a_new_build(settings: PostgresSettings, tmp_pat
         )
 
 
-def test_recovery_confirms_a_publishing_run_whose_hash_matches(
+def test_recovery_confirms_a_publishing_run_whose_file_identity_matches(
     settings: PostgresSettings, tmp_path: Path
 ) -> None:
-    """Swap 후 기록 전에 멈춘 PUBLISHING Run은 Hash가 같으면 PUBLISHED로 확정한다."""
+    """교체 후 멈춘 PUBLISHING은 해시와 무관하게 파일 식별값으로 확정한다."""
     paths = WarehousePaths.under(tmp_path)
     publish_warehouse(settings, paths, _run(), dbt_runner=_dbt_writing(3), targets=TARGETS)
     now = datetime.now(UTC)
@@ -180,8 +183,9 @@ def test_recovery_confirms_a_publishing_run_whose_hash_matches(
     mark_publishing(
         settings,
         stuck.publish_run_id,
-        mart_hashes=_published_hash(paths),
+        mart_hashes={"dimensions.dim_date": "0" * 64},
         mart_row_counts=mart_row_counts(paths.published, TARGETS),
+        published_identity=file_identity(paths.published),
     )
     paths.build_dir.mkdir(exist_ok=True)
     paths.build_file(stuck.publish_run_id).write_bytes(b"leftover")
@@ -216,3 +220,31 @@ def test_recovery_fails_an_abandoned_building_run(settings: PostgresSettings, tm
             (abandoned.publish_run_id,),
         ).fetchone()[0]
     assert message == ABANDONED_MESSAGE
+
+
+@pytest.mark.parametrize("without_identity", [False, True])
+def test_recovery_fails_a_publishing_run_with_unusable_file_identity(
+    settings: PostgresSettings, tmp_path: Path, without_identity: bool
+) -> None:
+    """올바른 해시가 있어도 수정 시각 불일치나 식별값 누락이면 복구를 거부한다."""
+    paths = WarehousePaths.under(tmp_path)
+    publish_warehouse(settings, paths, _run(), dbt_runner=_dbt_writing(3), targets=TARGETS)
+    now = datetime.now(UTC)
+    stuck = start_publish_run(settings, _run(), now=now - timedelta(hours=2))
+    actual = file_identity(paths.published)
+    mark_publishing(
+        settings, stuck.publish_run_id,
+        mart_hashes=_published_hash(paths),
+        mart_row_counts=mart_row_counts(paths.published, TARGETS),
+        published_identity=actual if without_identity else FileIdentity(actual.inode, 1),
+    )
+    if without_identity:
+        with settings.pipeline_connection() as connection:
+            connection.execute(
+                "UPDATE mart_publish_runs SET published_inode = NULL, published_mtime_ns = NULL "
+                "WHERE publish_run_id = %s", (stuck.publish_run_id,),
+            )
+    assert recover_incomplete_publishes(settings, paths, now=now) == (stuck.publish_run_id,)
+    record = get_publish_run(settings, stuck.publish_run_id)
+    assert record is not None
+    assert (record.status, record.error_type) == (FAILED, "UNKNOWN_ERROR")

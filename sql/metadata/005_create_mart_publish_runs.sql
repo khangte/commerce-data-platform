@@ -12,6 +12,8 @@ CREATE TABLE IF NOT EXISTS mart_publish_runs (
         REFERENCES mart_publish_runs (publish_run_id) ON DELETE SET NULL,
     mart_hashes JSONB,
     mart_row_counts JSONB,
+    published_inode BIGINT,
+    published_mtime_ns BIGINT,
     tests_passed INTEGER NOT NULL DEFAULT 0 CHECK (tests_passed >= 0),
     tests_failed INTEGER NOT NULL DEFAULT 0 CHECK (tests_failed >= 0),
     failed_path TEXT,
@@ -41,3 +43,6 @@ CREATE UNIQUE INDEX IF NOT EXISTS mart_publish_runs_single_active_idx
 
 CREATE INDEX IF NOT EXISTS mart_publish_runs_batch_started_idx
     ON mart_publish_runs (batch_id, started_at);
+
+ALTER TABLE mart_publish_runs ADD COLUMN IF NOT EXISTS published_inode BIGINT;
+ALTER TABLE mart_publish_runs ADD COLUMN IF NOT EXISTS published_mtime_ns BIGINT;

@@ -3,7 +3,7 @@
 > 상태: Done — `P10-01`~`P10-23` 완료 (2026-09-28)
 > Milestone: 3 — Portfolio Evidence  
 > 선행 Phase: [Phase 9. Benchmark](phase-09-benchmark.md)  
-> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.22](../../PRD_v1.22.md)
+> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.24](../../PRD_v1.24.md)
 
 ## 목표
 
@@ -238,10 +238,23 @@ Phase 10에는 별도 AC 번호가 없으므로 ROADMAP의 Connection/Dashboard 
 - Dashboard 재현/Export 자료
 - dbt 기준 Query와 Dashboard Total 비교 결과
 
+## 게시 파일 식별값 기반 내보내기 (2026-10-16)
+
+- [x] 파일 식별값(`FileIdentity`: inode·나노초 수정 시각)으로 복사 전과 서빙 교체 직전에 같은 게시 파일인지 확인한다.
+- [x] 내보내기 시작의 게시 파일 WAL 검사·해시 재계산을 제거하고 서빙 임시 파일의 CHECKPOINT 뒤 WAL 검사는 유지한다.
+- [x] 다른 inode·같은 inode의 수정 시각 변경·복사 중 교체·식별값 없는 기존 게시 기록의 거부와 임시 파일 정리를 검증한다.
+- [x] 전체 테스트와 실제 게시·서빙 내보내기·Metabase 재연결, 카드 49–51을 검증한다.
+
+
+최종 검증: 전체 테스트 396건 통과·109건 생략, `RUN_POSTGRES_INTEGRATION=1` 통합 테스트 54건 통과·29건 생략, `ruff check .`와 공백 검사를 통과했다. 외부 연동별 실행 플래그가 없는 테스트는 생략됐다. 검증 시작 전과 실제 게시 직전 `mart_publish_runs`의 `BUILDING`·`PUBLISHING`은 각각 0건이었다. 정상 명령 `uv run python -m src.warehouse.publish --pipeline-name manual_run`으로 실행 `539746b5-32f5-4df4-a57e-dbf442db18f8`를 게시했고 dbt 테스트 143건 통과·0건 실패, 9개 해시 대상의 변경 없음과 기록 식별값 `(1020866, 1792141253195265434)`의 실제 파일 일치를 확인했다. `uv run python -m src.serving`은 1.67초에 내보내기 `85ecffe0-9401-497d-be6b-11f9c39c1a1b`를 만들었고 Manifest의 게시 실행이 일치했다. 기존 `repoint_and_prune_serving`으로 Metabase DB 2번을 `/serving/exports/85ecffe0-9401-497d-be6b-11f9c39c1a1b.duckdb`로 재연결해 Manifest를 검증했다. 카드 49·50·51을 각각 1회 실행해 오류 없이 74·10·10행을 확인했고 저장된 쿼리를 보존했다. 원시 로그·응답은 `/tmp/publish-identity-dev/`에 남겼다. 5.3초는 architect의 기존 해시 재계산 기준값이며 동일 환경의 전후 전체 시간을 이번에 다시 측정한 값은 아니다.
+
 ## 파일·폴더별 변경 요약
 
 | 경로 | 변경 내용 |
 | ---- | --------- |
+| `PRD.bak/PRD_v1.23.md`, `PRD_v1.24.md`, `docs/phases/phase-10-bi.md` | PRD v1.24의 파일 식별값 계약과 서빙 검증 체크리스트를 동기화했다. |
+| `src/serving/export.py`, `src/warehouse/duckdb_files.py`, `airflow/dags/warehouse_pipeline_dag.py` | 게시된 파일의 inode·나노초 수정 시각을 DAG 또는 메타데이터에서 전달해 복사 전·교체 전에 검사한다. 해시는 Manifest 증적에만 보존한다. 파일 식별값이 없는 기존 실행은 CLI 내보내기를 거부하고 새 게시를 요구한다. |
+| `tests/serving/test_export.py` | 식별값 일치의 정상 내보내기, 다른 파일·수정 시각·복사 중 원자 교체 거부, 기존 NULL 기록의 명확한 오류와 실패 후 파일 정리를 검증한다. |
 | `scripts/metabase_import.py`, `tests/test_metabase_import.py`, `docs/bi/dashboards.md`, `docs/phases/phase-10-bi.md` | 카드 ID 목록으로 저장된 쿼리를 운영 카드와 비교하고, 기본 GET 모의 실행 및 명시적 `--apply`의 `dataset_query` 전용 PUT을 제공한다. 전체 대상 카드·데이터베이스 식별자 검사, 루트 `.env` 인증 키 대체, 오류·무변경 경로를 HTTP 모킹으로 검증했다. 사용 명령·권한·반영 범위·부분 반영 시 복원 한계를 문서화했다. 운영 GET 모의 실행에서 카드 49·50·51 모두 배송 완료 필터 추가만 차이로 확인했고, 저장된 JSON 체크섬을 보존했다. `metabase_snapshot.sh`와 실제 반영은 실행하지 않았다. |
 | `dbt/models/intermediate/int_order_items_enriched.sql`, `dbt/models/marts/facts/fct_order_item.sql`, `dbt/models/marts/facts/schema.yml`, `dbt/tests/fct_order_item_status_matches_order.sql` | 기존 `stg_orders` 조인에서 표준 주문 상태를 상속해 항목 Fact에 투영했다. 주문 단위 `unique_key='order_id'`, `delete+insert`, 영향 주문 필터를 유지하고, 상태 필수값·8개 허용값·주문 Fact 일치 검증 및 원본에 항목별 상태가 없다는 설명을 추가했다. |
 | `tests/test_warehouse_quality_contract.py`, `tests/test_dbt_cleanup.py`, `tests/integration/test_order_items_reextract_integration.py`, `tests/serving/test_product_status_metrics.py` | 실패를 먼저 확인하고 상태 계약·차원 없이 항목 보존·주문 상태만 변경할 때 항목 교체·재수집 중복 방지·전체 재계산 해시 일치를 검증했다. 취소·진행 항목을 섞은 데이터로 배송 완료 상품 지표와 주문·카테고리 GMV 일치를 검증했다. |
@@ -249,7 +262,7 @@ Phase 10에는 별도 AC 번호가 없으므로 ROADMAP의 Connection/Dashboard 
 | `docs/reference/mart-grain.md`, `docs/reference/metric-dictionary.md`, `docs/bi/totals-reconciliation.md`, `docs/phases/phase-10-bi.md` | 항목 상태 정의·원본 제약·배송 완료 지표 범위와 구현 체크리스트를 동기화했다. 실제 Bronze 복사본에서 카드 SQL 대조와 Category GMV = Sales GMV 15,696,682.34, 항목 113,215행, 해시 대상 9개, 운영 파일 체크섬 보존을 기록했다. 운영 반영에는 사용자가 `uv run python -m src.warehouse.publish --full-refresh`를 실행해야 하며 운영 Publish·Metabase 반영은 수행하지 않았다. |
 | `dbt/dbt_project.yml`, `tests/test_published_mart_queryable.py` | `marts.metrics`를 table로 실체화하고, 외부 접근 없이 Published Mart 전 객체가 조회되는 회귀 Test를 추가했다. |
 | `src/serving/`, `tests/serving/` | Mart Schema만 복사하고 Publish Hash·행 수를 Manifest에 보존하는 원자 Serving Export와 단위 Test를 추가했다. |
-| `src/serving/export.py`, `tests/serving/test_export.py` | CLI와 DAG가 함께 호출하는 Export 함수에서 Published 파일의 Mart 결과 해시를 요청한 Publish Run의 기록과 대조한다. 일치 시 Manifest 기록, 불일치 시 Relation 이름 보고와 Build·버전 파일 미생성을 검증한다. |
+| `src/serving/export.py`, `tests/serving/test_export.py` | 기존에는 CLI와 DAG의 내보내기에서 게시 파일 해시를 실행 기록과 대조했다. 2026-10-16 전환으로 이 검사는 복사 전·교체 전 파일 식별값 비교로 대체됐고, 해시는 Manifest에 보존한다. |
 | `airflow/dags/warehouse_pipeline_dag.py`, `tests/test_airflow_dags.py` | Publish 성공 뒤 Serving Export를 실행하고 Export 실패를 Publish와 분리해 Summary에 남기도록 연결했다. |
 | `compose.yaml`, `.env.example`, `sql/bootstrap/01-create-databases-and-roles.sh`, `metabase/`, `data/serving/` | `bi` Profile Metabase, 별도 애플리케이션 DB·역할, 읽기 전용 Serving Mount와 Driver 설치 문서를 추가했다. Connection Gate 준비 과정에서 플러그인 디렉터리를 Metabase UID/GID `2000`이 쓰도록 고쳐 DuckDB 드라이버가 로드됨을 확인했고, release `1.5.5.0` jar의 플러그인 표기 버전은 `1.4.1.0`임을 문서화했다. DuckDB JDBC native 라이브러리가 Alpine musl에서 동작하지 않아, `metabase/Dockerfile`은 공식 Metabase 앱을 glibc 기반 Temurin Java 이미지에서 실행하고 health check용 `wget`을 포함한다. WSL 멈춤 완화를 위해 Metabase `JAVA_OPTS=-Xmx1g`, `mem_limit: 1536m`, `restart: "no"`를 적용했다. `.env.example`에는 Connection Gate 자동 검증용 `METABASE_API_KEY`의 로컬 전용 안내를 추가했다. 2026-09-23 Run `5d74a326-954b-4850-a3d6-56d1556fec8d`에서 생성한 Serving Export는 Mart 12개를 `data/serving/mart.duckdb`에 담았고, `Commerce Mart Serving` Connection이 세 Mart Schema를 read-only로 조회한 뒤 컨테이너 재기동 후에도 유지됨을 확인했다. |
 | `dbt/profiles.yml`, `src/warehouse/publish.py`, `dbt/models/intermediate/int_order_items_enriched.sql`, `dbt/models/marts/facts/`, `dbt/tests/`, `tests/test_warehouse_*` | Mart Build 세션을 UTC로 고정해 날짜 키·대체 키의 실행 환경 의존성을 없앴고, Publish CLI에 전체 새로고침 인자를 추가했다. 주문 항목 Fact에는 주문 원본에서 유도한 `purchase_date_key`와 날짜 차원 FK·주문 Fact 일치 Test를 추가했다. Run `a10d06c3-c32e-4407-afdc-a1167b820c44`는 UTC 기준 Run `5d74a326-954b-4850-a3d6-56d1556fec8d`와 비교해 `facts.fct_order_item`만 Hash가 변경됨을 검증했다. |

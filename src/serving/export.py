@@ -14,8 +14,14 @@ from pathlib import Path
 import duckdb
 
 from src.common.database import PROJECT_ROOT, PostgresSettings
-from src.warehouse.mart_hash import mart_logical_hashes, mismatched_relations, target_for
-from src.warehouse.publish import DEFAULT_WAREHOUSE_ROOT, fsync_directory, wal_path
+from src.warehouse.duckdb_files import (
+    DEFAULT_WAREHOUSE_ROOT,
+    FileIdentity,
+    checkpoint,
+    file_identity,
+    fsync_directory,
+    wal_path,
+)
 from src.warehouse.publish_metadata import PUBLISHED, get_latest_publish_run, get_publish_run
 
 SERVING_FILE_NAME = "mart.duckdb"
@@ -55,20 +61,14 @@ def export_serving_mart(
     *,
     publish_run_id: uuid.UUID,
     mart_hashes: Mapping[str, str],
+    published_identity: FileIdentity,
     storage_version: str = STORAGE_VERSION,
     now: datetime,
 ) -> ServingExportResult:
     """Published Mart만 복사해 Serving 파일을 원자 교체하고 Publish Hash를 기록한다."""
-    if wal_path(published).exists():
-        raise ValueError(f"Published warehouse has a WAL: {wal_path(published)}")
     if not published.is_file():
         raise FileNotFoundError(f"Published warehouse does not exist: {published}")
-    targets = tuple(target_for(relation) for relation in mart_hashes)
-    computed_hashes = mart_logical_hashes(published, targets)
-    expected_hashes = dict(mart_hashes)
-    if computed_hashes != expected_hashes:
-        mismatched = ", ".join(mismatched_relations(computed_hashes, expected_hashes))
-        raise ValueError(f"Published mart hashes do not match the requested publish run: {mismatched}")
+    _require_identity(published, published_identity, publish_run_id)
 
     export_id = uuid.uuid4()
     build_path = paths.build_file(export_id)
@@ -86,13 +86,14 @@ def export_serving_mart(
             now=now,
         )
         _validate_serving_file(build_path)
-        _checkpoint(build_path)
+        checkpoint(build_path)
         if wal_path(build_path).exists():
             raise ValueError(f"Serving build has a WAL: {wal_path(build_path)}")
         paths.serving.parent.mkdir(parents=True, exist_ok=True)
         versions_dir = paths.serving.parent / "exports"
         versions_dir.mkdir(parents=True, exist_ok=True)
         versioned_path = versions_dir / f"{export_id}.duckdb"
+        _require_identity(published, published_identity, publish_run_id)
         os.link(build_path, versioned_path)
         os.replace(build_path, paths.serving)
         fsync_directory(versions_dir)
@@ -104,6 +105,16 @@ def export_serving_mart(
             versioned_path.unlink(missing_ok=True)
         raise
     return ServingExportResult(export_id=export_id, row_counts=row_counts, serving_path=paths.serving)
+
+
+def _require_identity(published: Path, expected: FileIdentity, publish_run_id: uuid.UUID) -> None:
+    """게시 파일이 요청 실행의 inode·수정 시각과 다르면 내보내기를 거부한다."""
+    actual = file_identity(published)
+    if actual != expected:
+        raise ValueError(
+            f"Published warehouse identity {actual} does not match publish run "
+            f"{publish_run_id} ({expected})"
+        )
 
 
 def prune_serving_exports(versions_dir: Path, keep: int = 3) -> None:
@@ -214,12 +225,6 @@ def _validate_serving_file(build_path: Path) -> None:
             raise ValueError(f"Serving main schema is invalid: {manifest}")
 
 
-def _checkpoint(path: Path) -> None:
-    """Serving Build의 WAL을 본 파일에 반영하고 연결을 닫는다."""
-    with duckdb.connect(str(path)) as connection:
-        connection.execute("CHECKPOINT")
-
-
 def _identifier(value: str) -> str:
     """DuckDB 식별자를 SQL에 안전하게 넣는다."""
     return '"' + value.replace('"', '""') + '"'
@@ -251,11 +256,16 @@ def main(argv: list[str] | None = None) -> int:
     )
     if record is None or record.status != PUBLISHED or record.mart_hashes is None:
         raise ValueError("No published mart run with recorded hashes exists")
+    if record.published_identity is None:
+        raise ValueError(
+            f"Publish run {record.publish_run_id} has no recorded file identity; run a new publish"
+        )
     result = export_serving_mart(
         arguments.published,
         ServingPaths.under(arguments.serving_root),
         publish_run_id=record.publish_run_id,
         mart_hashes=record.mart_hashes,
+        published_identity=record.published_identity,
         now=datetime.now(UTC),
     )
     print(

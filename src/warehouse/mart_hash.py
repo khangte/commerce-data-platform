@@ -48,21 +48,35 @@ MART_HASH_TARGETS: tuple[MartTarget, ...] = (
 
 def mart_logical_hash(connection: duckdb.DuckDBPyConnection, target: MartTarget) -> str:
     """Mart 한 개를 Key 정렬 Canonical JSON 누적 SHA-256 Hash로 변환한다."""
+    return _hash_and_count(connection, target)[0]
+
+
+def _hash_and_count(
+    connection: duckdb.DuckDBPyConnection, target: MartTarget
+) -> tuple[str, int]:
+    """대상 테이블을 키 순서로 한 번 읽어 해시와 행 수를 계산한다."""
     order_by = ", ".join(f'"{column}"' for column in target.order_by)
     cursor = connection.execute(f"SELECT * FROM {target.relation} ORDER BY {order_by}")
-    digest, _ = hash_cursor_rows(cursor)
-    return digest
+    return hash_cursor_rows(cursor)
+
+
+def mart_hashes_and_row_counts(
+    warehouse_path: Path, targets: tuple[MartTarget, ...] = MART_HASH_TARGETS
+) -> tuple[dict[str, str], dict[str, int]]:
+    """연결 하나에서 대상별 단일 스캔으로 해시와 행 수를 반환한다."""
+    hashes: dict[str, str] = {}
+    counts: dict[str, int] = {}
+    with duckdb.connect(str(warehouse_path), read_only=True) as connection:
+        for target in targets:
+            hashes[target.relation], counts[target.relation] = _hash_and_count(connection, target)
+    return hashes, counts
 
 
 def mart_logical_hashes(
     warehouse_path: Path, targets: tuple[MartTarget, ...] = MART_HASH_TARGETS
 ) -> dict[str, str]:
-    """Hash 대상 Mart 전부를 Relation 이름 기준 Hash Dict로 반환한다."""
-    with duckdb.connect(str(warehouse_path), read_only=True) as connection:
-        return {
-            target.relation: mart_logical_hash(connection, target)
-            for target in targets
-        }
+    """해시 대상 테이블의 해시를 Relation 이름 기준으로 반환한다."""
+    return mart_hashes_and_row_counts(warehouse_path, targets)[0]
 
 
 def mart_row_counts(

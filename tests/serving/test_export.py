@@ -13,6 +13,7 @@ import pytest
 
 from src.serving.export import ServingPaths, export_serving_mart
 from src.serving.metabase_repoint import repoint_and_prune_serving
+from src.warehouse.duckdb_files import FileIdentity, file_identity
 from src.warehouse.mart_hash import mart_logical_hashes, target_for
 
 
@@ -46,6 +47,7 @@ def test_export_copies_only_mart_objects_and_records_publish_evidence(
         published,
         paths,
         publish_run_id=publish_run_id,
+        published_identity=file_identity(published),
         mart_hashes=mart_logical_hashes(
             published, (target_for("dimensions.dim_date"), target_for("facts.fct_order"))
         ),
@@ -98,41 +100,84 @@ def test_export_copies_only_mart_objects_and_records_publish_evidence(
     )
 
 
-def test_export_rejects_mismatched_publish_hash_before_creating_files(tmp_path: Path) -> None:
-    """기록된 Mart Hash가 Published 파일과 다르면 파일과 Manifest를 만들지 않는다."""
+def test_export_rejects_a_different_file_before_creating_files(tmp_path: Path) -> None:
+    """게시 파일 식별값이 다르면 어떤 서빙 파일이나 디렉터리도 만들지 않는다."""
     published = tmp_path / "warehouse.duckdb"
     _create_published_mart(published)
     paths = ServingPaths.under(tmp_path / "serving")
-
-    with pytest.raises(ValueError, match="dimensions.dim_date"):
+    actual = file_identity(published)
+    with pytest.raises(ValueError, match="identity"):
         export_serving_mart(
-            published,
-            paths,
-            publish_run_id=uuid.uuid4(),
-            mart_hashes={"dimensions.dim_date": "0" * 64},
-            now=datetime(2026, 9, 22, tzinfo=UTC),
+            published, paths, publish_run_id=uuid.uuid4(), mart_hashes={},
+            published_identity=FileIdentity(actual.inode + 1, actual.mtime_ns),
+            now=datetime.now(UTC),
         )
-
     assert not paths.serving.exists()
     assert not paths.build_dir.exists()
     assert not (paths.serving.parent / "exports").exists()
 
 
-def test_export_refuses_a_published_file_with_a_wal(tmp_path: Path) -> None:
-    """활성 Writer를 암시하는 Published WAL이 있으면 찢어진 복사를 거부한다."""
+def test_export_rejects_the_same_inode_with_a_different_mtime(tmp_path: Path) -> None:
+    """inode가 같아도 수정 시각이 다른 파일을 오래된 게시 실행으로 내보내지 않는다."""
     published = tmp_path / "warehouse.duckdb"
     _create_published_mart(published)
-    wal = published.with_name(f"{published.name}.wal")
-    wal.write_text("active writer", encoding="utf-8")
-
-    with pytest.raises(ValueError, match="WAL"):
+    expected = file_identity(published)
+    os.utime(published, ns=(expected.mtime_ns + 1_000, expected.mtime_ns + 1_000))
+    paths = ServingPaths.under(tmp_path / "serving")
+    with pytest.raises(ValueError, match="identity"):
         export_serving_mart(
-            published,
-            ServingPaths.under(tmp_path / "serving"),
-            publish_run_id=uuid.uuid4(),
-            mart_hashes={},
-            now=datetime(2026, 9, 22, tzinfo=UTC),
+            published, paths, publish_run_id=uuid.uuid4(), mart_hashes={},
+            published_identity=expected, now=datetime.now(UTC),
         )
+    assert not paths.serving.exists()
+    assert not paths.build_dir.exists()
+    assert not (paths.serving.parent / "exports").exists()
+
+
+def test_export_rejects_a_published_file_replaced_during_copy(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """복사 도중 게시 파일이 교체되면 서빙 교체를 거부하고 임시 파일을 정리한다."""
+    from src.serving import export
+
+    published = tmp_path / "warehouse.duckdb"
+    other = tmp_path / "other.duckdb"
+    _create_published_mart(published)
+    _create_published_mart(other)
+    paths = ServingPaths.under(tmp_path / "serving")
+    original = export._copy_mart_objects
+
+    def copy_and_replace(*args) -> dict[str, int]:
+        """실제 복사를 마친 뒤 다른 게시 파일로 원자 교체한다."""
+        counts = original(*args)
+        os.replace(other, published)
+        return counts
+
+    monkeypatch.setattr(export, "_copy_mart_objects", copy_and_replace)
+    with pytest.raises(ValueError, match="identity"):
+        export_serving_mart(
+            published, paths, publish_run_id=uuid.uuid4(), mart_hashes={},
+            published_identity=file_identity(published), now=datetime.now(UTC),
+        )
+    assert not paths.serving.exists()
+    assert not list(paths.build_dir.iterdir())
+    assert not list((paths.serving.parent / "exports").glob("*.duckdb"))
+
+
+def test_cli_rejects_a_legacy_publish_without_file_identity(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """기존 게시 기록에 식별값이 없으면 새 게시를 요구하고 파일을 만들지 않는다."""
+    from src.serving import export
+    from src.warehouse.publish_metadata import PUBLISHED, PublishRecord
+
+    record = PublishRecord(uuid.uuid4(), PUBLISHED, datetime.now(UTC), None, {}, None, None)
+    monkeypatch.setattr(export.PostgresSettings, "from_environment", lambda: object())
+    monkeypatch.setattr(export, "get_latest_publish_run", lambda _: record)
+    root = tmp_path / "serving"
+    with pytest.raises(ValueError, match="no recorded file identity; run a new publish"):
+        export.main(["export", "--serving-root", str(root)])
+    assert not root.exists()
 
 
 def test_export_keeps_all_versions_until_repoint_succeeds(
@@ -152,7 +197,8 @@ def test_export_keeps_all_versions_until_repoint_succeeds(
     monkeypatch.setattr("src.serving.metabase_repoint.repoint_metabase_serving", fake_repoint)
     for _ in range(4):
         result = export_serving_mart(
-            published, paths, publish_run_id=uuid.uuid4(), mart_hashes={}, now=datetime.now(UTC)
+            published, paths, publish_run_id=uuid.uuid4(), mart_hashes={},
+            published_identity=file_identity(published), now=datetime.now(UTC)
         )
         exported.append(result.export_id)
         assert repoint_and_prune_serving(

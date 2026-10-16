@@ -8,6 +8,7 @@ import pytest
 
 from src.warehouse import publish
 from src.warehouse.dbt_runner import DbtRunResult
+from src.warehouse.duckdb_files import FileIdentity
 
 
 def test_main_passes_full_refresh_and_dbt_vars_to_build_runner(monkeypatch, tmp_path: Path) -> None:
@@ -33,6 +34,7 @@ def test_main_passes_full_refresh_and_dbt_vars_to_build_runner(monkeypatch, tmp_
             mart_hashes={},
             mart_row_counts={},
             changed_relations=(),
+            published_identity=FileIdentity(123, 456),
         )
 
     monkeypatch.setattr(publish.PostgresSettings, "from_environment", staticmethod(lambda: object()))

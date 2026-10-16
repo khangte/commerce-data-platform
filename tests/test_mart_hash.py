@@ -17,7 +17,9 @@ from src.warehouse.mart_hash import (
     _json_default,
     describe_mart_difference,
     main,
+    mart_hashes_and_row_counts,
     mart_logical_hash,
+    mart_logical_hashes,
     mart_row_counts,
     mismatched_relations,
     target_for,
@@ -195,3 +197,22 @@ def _write_sample_database(path: Path, rows: list[tuple[int, str]]) -> None:
     with duckdb.connect(str(path)) as connection:
         connection.execute("CREATE TABLE sample (id INTEGER, label VARCHAR)")
         connection.executemany("INSERT INTO sample VALUES (?, ?)", rows)
+
+
+def test_single_pass_matches_separate_hash_and_count(tmp_path: Path) -> None:
+    """단일 스캔은 기존 해시·행 수와 같고 빈 테이블도 보존한다."""
+    path = tmp_path / "warehouse.duckdb"
+    with duckdb.connect(str(path)) as connection:
+        connection.execute("CREATE SCHEMA dimensions")
+        connection.execute("CREATE TABLE dimensions.dim_date AS SELECT range AS date_key FROM range(3)")
+        connection.execute("CREATE TABLE dimensions.empty_date (date_key INTEGER)")
+    targets = (
+        MartTarget("dimensions", "dim_date", ("date_key",)),
+        MartTarget("dimensions", "empty_date", ("date_key",)),
+    )
+    hashes, counts = mart_hashes_and_row_counts(path, targets)
+    assert hashes == mart_logical_hashes(path, targets)
+    assert counts == mart_row_counts(path, targets) == {
+        "dimensions.dim_date": 3,
+        "dimensions.empty_date": 0,
+    }
