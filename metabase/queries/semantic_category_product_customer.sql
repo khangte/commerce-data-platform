@@ -4,6 +4,7 @@ select
     sum(fct_order_item.line_gross_value) as category_gmv
 from facts.fct_order_item
 inner join dimensions.dim_product using (product_id)
+where fct_order_item.order_status = 'DELIVERED'
 group by dim_product.category_name;
 
 -- 상품 판매 수량: 한 행이 주문 상품 항목 하나이므로 행 수를 센다.
@@ -11,6 +12,7 @@ select
     product_id,
     count(*) as sales_volume
 from facts.fct_order_item
+where order_status = 'DELIVERED'
 group by product_id;
 
 -- 고객 수: 이미 distinct로 접힌 비가산 값을 다시 합산하지 않는다.

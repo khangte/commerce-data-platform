@@ -113,6 +113,7 @@ Metabase
 - [x] `P10-13` Category GMV
 - [x] `P10-14` Top Products
 - [x] `P10-15` Sales Volume
+- [x] 2026-10-16 주문 항목에 소속 주문 상태를 상속하고, 카테고리·상품 GMV와 판매 수량을 배송 완료로 한정했다. 상태 단독 변경 증분 교체·항목 재수집과 전체 재계산 일치, 실제 Bronze 복사본의 품질 테스트 143개·113,215행·해시 대상 9개·Category GMV = Sales GMV 15,696,682.34를 검증했다. 운영 반영은 사용자 전체 새로고침이 필요하다. 오프라인 376개·통합 2개·Ruff 통과, reviewer 독립 실행 377개 통과·106개 건너뜀·Ruff 통과 및 지적 0건으로 승인받았다.
 - [x] Item Grain과 Order Grain 혼합으로 인한 Fan-out이 없는지 검증
 
 ### 10-2-4. Customer Dashboard
@@ -237,6 +238,10 @@ Phase 10에는 별도 AC 번호가 없으므로 ROADMAP의 Connection/Dashboard 
 
 | 경로 | 변경 내용 |
 | ---- | --------- |
+| `dbt/models/intermediate/int_order_items_enriched.sql`, `dbt/models/marts/facts/fct_order_item.sql`, `dbt/models/marts/facts/schema.yml`, `dbt/tests/fct_order_item_status_matches_order.sql` | 기존 `stg_orders` 조인에서 표준 주문 상태를 상속해 항목 Fact에 투영했다. 주문 단위 `unique_key='order_id'`, `delete+insert`, 영향 주문 필터를 유지하고, 상태 필수값·8개 허용값·주문 Fact 일치 검증 및 원본에 항목별 상태가 없다는 설명을 추가했다. |
+| `tests/test_warehouse_quality_contract.py`, `tests/test_dbt_cleanup.py`, `tests/integration/test_order_items_reextract_integration.py`, `tests/serving/test_product_status_metrics.py` | 실패를 먼저 확인하고 상태 계약·차원 없이 항목 보존·주문 상태만 변경할 때 항목 교체·재수집 중복 방지·전체 재계산 해시 일치를 검증했다. 취소·진행 항목을 섞은 데이터로 배송 완료 상품 지표와 주문·카테고리 GMV 일치를 검증했다. |
+| `metabase/queries/dashboard_product.sql`, `metabase/queries/semantic_category_product_customer.sql`, `metabase/export/card-{49,50,51}.json` | Category GMV·Top Products·Sales Volume을 `DELIVERED` 주문 항목으로 한정하고 카드 설명을 맞췄다. 기존 날짜 필터·차원 조인을 보존했다. |
+| `docs/reference/mart-grain.md`, `docs/reference/metric-dictionary.md`, `docs/bi/totals-reconciliation.md`, `docs/phases/phase-10-bi.md` | 항목 상태 정의·원본 제약·배송 완료 지표 범위와 구현 체크리스트를 동기화했다. 실제 Bronze 복사본에서 카드 SQL 대조와 Category GMV = Sales GMV 15,696,682.34, 항목 113,215행, 해시 대상 9개, 운영 파일 체크섬 보존을 기록했다. 운영 반영에는 사용자가 `uv run python -m src.warehouse.publish --full-refresh`를 실행해야 하며 운영 Publish·Metabase 반영은 수행하지 않았다. |
 | `dbt/dbt_project.yml`, `tests/test_published_mart_queryable.py` | `marts.metrics`를 table로 실체화하고, 외부 접근 없이 Published Mart 전 객체가 조회되는 회귀 Test를 추가했다. |
 | `src/serving/`, `tests/serving/` | Mart Schema만 복사하고 Publish Hash·행 수를 Manifest에 보존하는 원자 Serving Export와 단위 Test를 추가했다. |
 | `src/serving/export.py`, `tests/serving/test_export.py` | CLI와 DAG가 함께 호출하는 Export 함수에서 Published 파일의 Mart 결과 해시를 요청한 Publish Run의 기록과 대조한다. 일치 시 Manifest 기록, 불일치 시 Relation 이름 보고와 Build·버전 파일 미생성을 검증한다. |
