@@ -130,7 +130,7 @@ initialize_run → acquire_lease → extract (Table별 mapped, 동시 3개)
                                      ├─ release_lease   (all_done)
                                      └─ verify_bronze_commit
                                               → prepare_build → dbt_build → publish_mart
-                                              → export_serving_mart → repoint_metabase
+                                              → export_serving_mart → repoint_metabase_serving
 ```
 
 ---
