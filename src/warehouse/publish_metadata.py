@@ -20,6 +20,8 @@ FAILED = "FAILED"
 ACTIVE_STATUSES = (BUILDING, PUBLISHING)
 ACTIVE_PUBLISH_INDEX = "mart_publish_runs_single_active_idx"
 ERROR_MESSAGE_LIMIT = 4000
+ABANDONED_MESSAGE = "abandoned"
+RECLAIMED_MESSAGE = "abandoned: reclaimed by same DAG run retry"
 
 _RECORD_COLUMNS = (
     "publish_run_id, status, started_at, previous_publish_run_id, mart_hashes, error_type, "
@@ -202,14 +204,13 @@ def touch_publish_run(settings: PostgresSettings, publish_run_id: uuid.UUID, *, 
 
 
 def close_stale_run(
-    settings: PostgresSettings, publish_run_id: uuid.UUID, *, status: str,
+    settings: PostgresSettings, publish_run_id: uuid.UUID, *, published: bool,
     stale_before: datetime, now: datetime,
 ) -> bool:
     """여전히 만료된 활성 행만 조건부로 종료해 파일 처리 권한을 확보한다."""
-    if status not in (PUBLISHED, FAILED):
-        raise ValueError("만료 실행의 종료 상태는 PUBLISHED 또는 FAILED여야 합니다.")
-    error_type = "UNKNOWN_ERROR" if status == FAILED else None
-    error_message = "abandoned" if status == FAILED else None
+    status = PUBLISHED if published else FAILED
+    error_type = None if published else "UNKNOWN_ERROR"
+    error_message = None if published else ABANDONED_MESSAGE
     with settings.pipeline_connection() as connection:
         cursor = connection.execute(
             "UPDATE mart_publish_runs SET status = %s, finished_at = %s, "
@@ -221,33 +222,19 @@ def close_stale_run(
         return cursor.rowcount == 1
 
 
-def dag_run_building_runs(
-    settings: PostgresSettings, *, pipeline_name: str, dag_run_id: str,
-) -> tuple[PublishRecord, ...]:
-    """같은 Pipeline과 DagRun에 남은 준비·빌드 상태 행을 조회한다."""
+def close_dag_run_building(
+    settings: PostgresSettings, *, pipeline_name: str, dag_run_id: str, now: datetime,
+) -> tuple[uuid.UUID, ...]:
+    """같은 DagRun의 BUILDING 행을 한 번에 닫고 회수한 실행 식별자만 반환한다."""
     with settings.pipeline_connection() as connection:
         rows = connection.execute(
-            f"SELECT {_RECORD_COLUMNS} FROM mart_publish_runs "
-            "WHERE status = 'BUILDING' AND pipeline_name = %s AND dag_run_id = %s "
-            "ORDER BY started_at",
-            (pipeline_name, dag_run_id),
-        ).fetchall()
-    return tuple(_record(row) for row in rows)
-
-
-def close_dag_run_building(
-    settings: PostgresSettings, publish_run_id: uuid.UUID, *, pipeline_name: str,
-    dag_run_id: str, message: str, now: datetime,
-) -> bool:
-    """같은 DagRun의 이전 준비 실행만 조건부로 종료해 회수 권한을 확보한다."""
-    with settings.pipeline_connection() as connection:
-        cursor = connection.execute(
             "UPDATE mart_publish_runs SET status = 'FAILED', error_type = 'UNKNOWN_ERROR', "
-            "error_message = %s, finished_at = %s WHERE publish_run_id = %s "
-            "AND status = 'BUILDING' AND pipeline_name = %s AND dag_run_id = %s",
-            (message, now, publish_run_id, pipeline_name, dag_run_id),
-        )
-        return cursor.rowcount == 1
+            "error_message = %s, finished_at = %s "
+            "WHERE status = 'BUILDING' AND pipeline_name = %s AND dag_run_id = %s "
+            "RETURNING publish_run_id",
+            (RECLAIMED_MESSAGE, now, pipeline_name, dag_run_id),
+        ).fetchall()
+    return tuple(row[0] for row in rows)
 
 
 def record_failed_path(settings: PostgresSettings, publish_run_id: uuid.UUID, failed_path: str) -> None:

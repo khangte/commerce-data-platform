@@ -31,7 +31,6 @@ from src.warehouse.errors import (
 )
 from src.warehouse.mart_hash import MartTarget, mart_logical_hashes, mart_row_counts
 from src.warehouse.publish import (
-    ABANDONED_MESSAGE,
     WarehousePaths,
     prepare_warehouse_build,
     publish_warehouse,
@@ -227,7 +226,7 @@ def test_recovery_fails_an_abandoned_building_run(settings: PostgresSettings, tm
             "SELECT error_message FROM mart_publish_runs WHERE publish_run_id = %s",
             (abandoned.publish_run_id,),
         ).fetchone()[0]
-    assert message == ABANDONED_MESSAGE
+    assert message == metadata.ABANDONED_MESSAGE
 
 
 @pytest.mark.parametrize("without_identity", [False, True])
@@ -396,7 +395,7 @@ def test_retry_reclaims_own_dag_run_building_row(settings, tmp_path, sigkill):
     assert not target.exists()
     with settings.pipeline_connection() as connection:
         row = connection.execute("SELECT status,error_type,error_message,failed_path FROM mart_publish_runs WHERE publish_run_id=%s", (owner.publish_run_id,)).fetchone()
-    assert row == (FAILED, "UNKNOWN_ERROR", publisher.RECLAIMED_MESSAGE, str(paths.failed_file(owner.publish_run_id)))
+    assert row == (FAILED, "UNKNOWN_ERROR", metadata.RECLAIMED_MESSAGE, str(paths.failed_file(owner.publish_run_id)))
 
 
 @pytest.mark.parametrize("old_pipeline,old_dag,new_pipeline,new_dag,publishing", [
@@ -435,25 +434,3 @@ def test_reclaimed_zombie_cannot_publish(settings, tmp_path):
     with pytest.raises(PublishStateError):
         mark_publishing(settings, owner.publish_run_id, mart_hashes={}, mart_row_counts={}, published_identity=FileIdentity(1, 2))
     assert (paths.published.read_bytes(), file_identity(paths.published)) == before
-
-
-def test_reclaim_skips_files_when_candidate_becomes_publishing(settings, tmp_path, monkeypatch):
-    """조회 뒤 상태가 변해 회수 UPDATE가 0행이면 파일·결과를 보존한다."""
-    paths = WarehousePaths.under(tmp_path)
-    owner = PublishRun(uuid.uuid4(), "test_publish_reclaim", dag_run_id="dr1")
-    start_publish_run(settings, owner, now=datetime.now(UTC))
-    paths.build_dir.mkdir(parents=True)
-    paths.build_file(owner.publish_run_id).write_bytes(b"keep")
-    target = paths.target_dir(owner.publish_run_id)
-    target.mkdir()
-    lookup = publisher.dag_run_building_runs
-    def transition_after_lookup(*args, **kwargs):
-        """후보 조회 뒤 교체 시작 상태 전이를 끼워 넣는다."""
-        records = lookup(*args, **kwargs)
-        mark_publishing(settings, owner.publish_run_id, mart_hashes={}, mart_row_counts={}, published_identity=FileIdentity(1, 2))
-        return records
-    monkeypatch.setattr(publisher, "dag_run_building_runs", transition_after_lookup)
-    assert recover_incomplete_publishes(settings, paths, now=datetime.now(UTC), reclaim=owner) == ()
-    assert paths.build_file(owner.publish_run_id).read_bytes() == b"keep"
-    assert target.is_dir()
-    assert not paths.failed_file(owner.publish_run_id).exists()

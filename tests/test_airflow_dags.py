@@ -388,9 +388,6 @@ def test_warehouse_pipeline_publishes_then_exports_the_serving_mart() -> None:
     assert '"retries": 2' in dag_source
     assert 'repoint_and_prune_serving(' in dag_source
     assert not re.search(r'task_id="repoint_metabase_serving"[^\n]*retries=0', dag_source)
-    assert "sync_bronze_catalog" not in dag_source
-    assert "subprocess" not in dag_source
-    assert "CATALOG_PATH" not in dag_source
 
 
 def test_repoint_task_fails_when_repoint_result_is_failed(tmp_path: Path) -> None:

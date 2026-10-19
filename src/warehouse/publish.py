@@ -23,6 +23,7 @@ from src.warehouse.dbt_runner import DbtRunResult, run_dbt_build
 from src.warehouse.dbt_vars import dbt_vars_json
 from src.warehouse.duckdb_files import (
     DEFAULT_WAREHOUSE_ROOT,
+    PUBLISHED_FILE_NAME,
     FileIdentity,
     checkpoint,
     file_identity,
@@ -43,14 +44,11 @@ from src.warehouse.mart_hash import (
 )
 from src.warehouse.publish_heartbeat import publish_heartbeat
 from src.warehouse.publish_metadata import (
-    FAILED,
-    PUBLISHED,
     PUBLISHING,
     PublishRecord,
     PublishRun,
     close_dag_run_building,
     close_stale_run,
-    dag_run_building_runs,
     ensure_publish_metadata,
     get_publish_run,
     mark_failed,
@@ -62,12 +60,9 @@ from src.warehouse.publish_metadata import (
     start_publish_run,
 )
 
-PUBLISHED_FILE_NAME = "warehouse.duckdb"
 FAILED_BUILD_RETENTION = 3
 PUBLISH_LEASE = timedelta(minutes=5)
 PUBLISH_HEARTBEAT_INTERVAL = timedelta(seconds=30)
-ABANDONED_MESSAGE = "abandoned"
-RECLAIMED_MESSAGE = "abandoned: reclaimed by same DAG run retry"
 FAILED_NODE_LIMIT = 20
 
 DbtRunner = Callable[[Path, Path], DbtRunResult]
@@ -123,22 +118,18 @@ def recover_incomplete_publishes(
     """같은 DagRun 잔재와 만료 행을 먼저 닫고 인수한 파일만 정리한다."""
     recovered: list[uuid.UUID] = []
     if reclaim is not None and reclaim.dag_run_id is not None:
-        for record in dag_run_building_runs(
-            settings, pipeline_name=reclaim.pipeline_name, dag_run_id=reclaim.dag_run_id,
+        for publish_run_id in close_dag_run_building(
+            settings, pipeline_name=reclaim.pipeline_name, dag_run_id=reclaim.dag_run_id, now=now,
         ):
-            if close_dag_run_building(
-                settings, record.publish_run_id, pipeline_name=reclaim.pipeline_name,
-                dag_run_id=reclaim.dag_run_id, message=RECLAIMED_MESSAGE, now=now,
-            ):
-                _clean_failed_recovery(settings, paths, record.publish_run_id, now=now)
-                recovered.append(record.publish_run_id)
+            _clean_failed_recovery(settings, paths, publish_run_id, now=now)
+            recovered.append(publish_run_id)
     stale_before = now - PUBLISH_LEASE
     for record in stale_active_runs(settings, stale_before=stale_before):
         published = record.status == PUBLISHING and _published_identity_matches(
             paths.published, record.published_identity
         )
         if not close_stale_run(
-            settings, record.publish_run_id, status=PUBLISHED if published else FAILED,
+            settings, record.publish_run_id, published=published,
             stale_before=stale_before, now=now,
         ):
             continue
@@ -155,11 +146,9 @@ def prepare_warehouse_build(
     settings: PostgresSettings,
     paths: WarehousePaths,
     run: PublishRun,
-    *,
-    now: datetime | None = None,
 ) -> Path:
     """활성 Run을 잡고 Published 파일을 복사한 Build 파일에 Catalog를 동기화한다."""
-    now = now or datetime.now(UTC)
+    now = datetime.now(UTC)
     ensure_publish_metadata(settings)
     recover_incomplete_publishes(settings, paths, now=now, reclaim=run)
     start_publish_run(settings, run, now=now)
@@ -213,7 +202,6 @@ def publish_build(
     publish_run_id: uuid.UUID,
     *,
     targets: tuple[MartTarget, ...] = MART_HASH_TARGETS,
-    now: datetime | None = None,
 ) -> PublishOutcome:
     """검증된 Build 파일을 CHECKPOINT·Hash 기록 후 Published 경로로 원자 교체한다."""
     record = get_publish_run(settings, publish_run_id)
@@ -233,7 +221,7 @@ def publish_build(
             )
             os.replace(build_path, paths.published)
             fsync_directory(paths.published.parent)
-            mark_published(settings, publish_run_id, now=now or datetime.now(UTC))
+            mark_published(settings, publish_run_id, now=datetime.now(UTC))
     except Exception as error:
         if build_path.exists():
             _fail(settings, paths, publish_run_id, classify_error(error), str(error))
@@ -293,10 +281,9 @@ def _fail(
     publish_run_id: uuid.UUID,
     error_type: str,
     message: str,
-    now: datetime | None = None,
 ) -> None:
     """Build를 격리하고 Run을 FAILED로 기록한 뒤 오래된 실패 Build를 정리한다."""
-    now = now or datetime.now(UTC)
+    now = datetime.now(UTC)
     failed_path = _isolate_build(paths, publish_run_id, now=now)
     mark_failed(
         settings,

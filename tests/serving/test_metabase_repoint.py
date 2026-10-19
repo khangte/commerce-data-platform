@@ -9,6 +9,7 @@ from urllib.error import HTTPError, URLError
 import pytest
 
 from src.serving.metabase_repoint import (
+    LIVE_MANIFEST_QUERY,
     _failure_message,
     metabase_repoint_summary_status,
     repoint_and_prune_serving,
@@ -27,13 +28,13 @@ def test_repoint_updates_only_database_file_and_checks_manifest(monkeypatch) -> 
         if method == "GET":
             return {"details": {"database_file": "/serving/mart.duckdb", "read_only": True}}
         if url.endswith("/api/dataset"):
-            return {"data": {"rows": [[str(export_id)]]}}
+            return {"data": {"rows": [[str(export_id), "publish-id"]]}}
         return {}
 
     monkeypatch.setattr("src.serving.metabase_repoint._request_json", fake_request)
     assert repoint_metabase_serving(str(export_id), "http://metabase:3000", "secret", "2") == "SUCCESS"
     assert calls[1][3] == {"details": {"database_file": f"/serving/exports/{export_id}.duckdb", "read_only": True}}
-    assert calls[2][3]["native"]["query"] == "SELECT CAST(export_id AS VARCHAR) FROM serving_manifest"
+    assert calls[2][3]["native"]["query"] == LIVE_MANIFEST_QUERY
     assert all(call[1] == "secret" for call in calls)
 
 
@@ -83,7 +84,7 @@ def test_repoint_reports_failed_on_manifest_mismatch(monkeypatch) -> None:
         if method == "GET":
             return {"details": {"database_file": "/serving/mart.duckdb"}}
         if url.endswith("/api/dataset"):
-            return {"data": {"rows": [[str(uuid.uuid4())]]}}
+            return {"data": {"rows": [[str(uuid.uuid4()), "publish-id"]]}}
         return {}
 
     monkeypatch.setattr("src.serving.metabase_repoint._request_json", fake_request)
@@ -154,7 +155,7 @@ def test_repoint_requests_schema_sync_after_manifest_check(monkeypatch, capsys, 
         if method == "GET":
             return {"details": {"database_file": "old"}}
         if url.endswith("/api/dataset"):
-            return {"data": {"rows": [["export-id"]]}}
+            return {"data": {"rows": [["export-id", "publish-id"]]}}
         if url.endswith("/sync_schema") and sync_fails:
             raise HTTPError(url, 500, "secret", {}, None)
         return {}
@@ -179,7 +180,7 @@ def test_manifest_mismatch_does_not_request_schema_sync(monkeypatch):
         if method == "GET":
             return {"details": {"database_file": "old"}}
         if url.endswith("/api/dataset"):
-            return {"data": {"rows": [["other"]]}}
+            return {"data": {"rows": [["other", "publish-id"]]}}
         return {}
     monkeypatch.setattr("src.serving.metabase_repoint._request_json", fake_request)
     assert repoint_metabase_serving("export-id", "http://metabase:3000", "secret", "2") == "FAILED"

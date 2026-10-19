@@ -292,14 +292,20 @@ Normal E2E Unknown Key = 0
 
 ## 같은 DagRun 재시도의 잔여 실행 회수 (061 §2.4)
 
-- [x] 같은 Pipeline·NULL이 아닌 DagRun·BUILDING 상태만 조회하고 조건부 UPDATE로 먼저 FAILED 처리한 뒤 파일을 격리한다. 준비 단계에 연결하고 만료 복구의 실패 파일 정리와 helper를 공유한다.
-- [x] 다른 DagRun·Pipeline·CLI·PUBLISHING은 기존 Lease 규칙을 유지한다. 실제 SIGKILL 직후 같은 DagRun 재시도 성공, 인수된 소유자의 전이 거부, 조회 후 상태 변경 시 파일 보존을 검증했다. Metadata 통합 19개와 복구 통합 20개가 통과했다.
+- [x] 같은 Pipeline·NULL이 아닌 DagRun·BUILDING 상태를 단일 조건부 `UPDATE … RETURNING`으로 먼저 FAILED 처리하고 반환된 실행의 파일만 격리한다. 준비 단계에 연결하고 만료 복구의 실패 파일 정리와 helper를 공유한다.
+- [x] 다른 DagRun·Pipeline·CLI·PUBLISHING은 기존 Lease 규칙을 유지한다. 실제 SIGKILL 직후 같은 DagRun 재시도 성공과 인수된 소유자의 전이 거부를 검증했다. 회수 조회·갱신 사이 경합 전용 테스트는 단일 UPDATE 전환으로 제거하고, Metadata의 경계·종료 정보·반환 식별자 검증은 하나의 매개변수화 테스트로 합쳤다.
 - [x] PRD v1.27을 원문 보관하고 v1.28·복구 문서와 변경 이력을 동기화했다.
 - [x] 전체 기본 테스트 465개 통과·135개 건너뜀·실패 0개(107.43초), PostgreSQL 통합 전체 80개 통과·47개 건너뜀·473개 선택 제외·실패 0개(110.58초), Ruff·diff 검사 통과. DAG 구성·Lease 상수·heartbeat 모듈은 변경하지 않았고 PRD v1.27 보관본은 HEAD와 바이트 단위로 같다.
 - [x] Airflow 없이 운영 준비 반환 직후 setsid 프로세스 그룹을 SIGKILL했다. 같은 DagRun의 이전 실행 `eaca7507-715c-44d4-b1af-c91826fd7b6a`은 종료 후 0.273241초에 전용 회수 메시지로 FAILED 처리되고 파일이 격리됐다. 새 실행 `b7f4e7f5-4329-4b96-a7a8-fbb0ce1f96e0`은 PUBLISHED·품질 테스트 143개 통과·실패 0개·해시 변경 없음이다.
 - [x] 다른 DagRun 대조 행 `d8c74f02-023f-46da-a213-0974b90c21e3`은 즉시 재시도가 차단됐다. 실제 마지막 heartbeat 뒤 301.313897초에 --recover-only로 일반 abandoned 실패 처리·격리했다. Export `5921fa8d-077b-4169-9e1a-04b15e600015`의 재지정 SUCCESS·status 종료 0·fresh=true, 활성 게시 0건·build/ 잔여 0개와 키·DB 비밀번호 비노출을 확인했다. 증적은 `.team/developer/061-reclaim-review.md`와 `061-reclaim-live-result.json`이다.
 
+- [x] 잔여 정리(A1~A3·B1~B4·C1~C4·C6~C7) 검증: 전체 `uv run pytest -q` 464개 통과·132개 건너뜀, PostgreSQL 통합 77개 통과·47개 건너뜀(통합 디렉터리 77개 통과·29개 건너뜀, 디렉터리 밖 integration 표식 18개 건너뜀). 관련 집중 검증 119개 통과·5개 건너뜀, Ruff·diff 검사 통과. C5와 D 항목을 보존했고 커밋하지 않았다.
+
 ## 파일·폴더별 변경 요약
+
+- `src/warehouse/publish.py`, `src/warehouse/publish_metadata.py`: 같은 실행 회수를 단일 조건부 갱신으로 합치고, 만료 종료 인자를 게시 여부로 바꾸며 두 회수 메시지를 기록 모듈에서 공유한다. 사용하지 않는 시각 인자를 제거했다. 상태 전이·행 종료 후 파일 처리 순서는 보존한다.
+- `src/warehouse/publish_heartbeat.py`, `src/warehouse/duckdb_files.py`: 상수로만 전달하는 갱신 주기의 방어 검사를 제거하고 게시 파일명을 공유 모듈로 옮겼다. 소유권 상실 감지·종료 갱신은 유지한다.
+- `tests/integration/test_publish_metadata_integration.py`, `tests/integration/test_warehouse_publish_integration.py`: 회수 테스트를 합치고 제거된 경합·상태 인자 방어 테스트를 정리했다. 같은 실행의 신선한 생존 신호 무시·다른 실행 및 PUBLISHING 제외·종료 정보·파일 격리를 검증한다.
 
 - `src/warehouse/publish_metadata.py`, `src/warehouse/publish.py`, `tests/integration/test_publish_metadata_integration.py`, `tests/integration/test_warehouse_publish_integration.py`: 같은 DagRun BUILDING 후보 조회·상태와 소속 조건부 종료·준비 재시도 연결을 추가했다. 실패 확정 뒤 파일 정리를 helper로 공유하고 SIGKILL 자식 준비 helper를 재사용했다. Pipeline·DagRun·상태 경계·NULL 제외·상태 변경 경합·인수된 소유자 전이 차단을 검증했다.
 - `PRD.bak/PRD_v1.27.md`, `PRD_v1.28.md`, `docs/troubleshooting/warehouse-publish.md`, `docs/phases/phase-07-data-quality-publish.md`: 같은 DagRun 재시도 회수와 다른 실행의 5분 Lease 차단을 구분하고 회수 메시지·진행 기록을 동기화했다.

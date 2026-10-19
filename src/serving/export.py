@@ -58,12 +58,9 @@ def export_serving_mart(
     publish_run_id: uuid.UUID,
     mart_hashes: Mapping[str, str],
     published_identity: FileIdentity,
-    storage_version: str = STORAGE_VERSION,
     now: datetime,
 ) -> ServingExportResult:
     """Published Mart만 복사해 Serving 파일을 원자 교체하고 Publish Hash를 기록한다."""
-    if not published.is_file():
-        raise FileNotFoundError(f"Published warehouse does not exist: {published}")
     _require_identity(published, published_identity, publish_run_id)
 
     export_id = uuid.uuid4()
@@ -71,21 +68,19 @@ def export_serving_mart(
     paths.build_dir.mkdir(parents=True, exist_ok=True)
     versioned_path: Path | None = None
     try:
-        row_counts = _copy_mart_objects(published, build_path, storage_version)
+        row_counts = _copy_mart_objects(published, build_path)
         _record_manifest(
             build_path,
             export_id=export_id,
             publish_run_id=publish_run_id,
             mart_hashes=mart_hashes,
             row_counts=row_counts,
-            storage_version=storage_version,
             now=now,
         )
         _validate_serving_file(build_path)
         checkpoint(build_path)
         if wal_path(build_path).exists():
             raise ValueError(f"Serving build has a WAL: {wal_path(build_path)}")
-        paths.serving.parent.mkdir(parents=True, exist_ok=True)
         versions_dir = paths.serving.parent / "exports"
         versions_dir.mkdir(parents=True, exist_ok=True)
         versioned_path = versions_dir / f"{export_id}.duckdb"
@@ -113,12 +108,12 @@ def _require_identity(published: Path, expected: FileIdentity, publish_run_id: u
         )
 
 
-def _copy_mart_objects(published: Path, build_path: Path, storage_version: str) -> dict[str, int]:
+def _copy_mart_objects(published: Path, build_path: Path) -> dict[str, int]:
     """Published 파일의 Mart Table·View를 독립된 Serving Table로 복사한다."""
     row_counts: dict[str, int] = {}
     with duckdb.connect() as connection:
         connection.execute(
-            f"ATTACH {_sql_string(build_path)} AS serving (STORAGE_VERSION {_sql_string(storage_version)})"
+            f"ATTACH {_sql_string(build_path)} AS serving (STORAGE_VERSION {_sql_string(STORAGE_VERSION)})"
         )
         connection.execute(f"ATTACH {_sql_string(published)} AS published (READ_ONLY)")
         for schema in SERVING_SCHEMAS:
@@ -151,7 +146,6 @@ def _record_manifest(
     publish_run_id: uuid.UUID,
     mart_hashes: Mapping[str, str],
     row_counts: Mapping[str, int],
-    storage_version: str,
     now: datetime,
 ) -> None:
     """Serving 파일 자체에 Export와 Publish의 추적 증적을 한 행으로 남긴다."""
@@ -177,7 +171,7 @@ def _record_manifest(
                 export_id,
                 publish_run_id,
                 now.astimezone(UTC),
-                storage_version,
+                STORAGE_VERSION,
                 json.dumps(dict(mart_hashes), ensure_ascii=False, separators=(",", ":"), sort_keys=True),
                 json.dumps(dict(row_counts), ensure_ascii=False, separators=(",", ":"), sort_keys=True),
             ],

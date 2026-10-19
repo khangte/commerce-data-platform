@@ -22,8 +22,6 @@ def publish_heartbeat(
 ) -> Iterator[None]:
     """단계 동안 갱신하고 정상 종료 때 마지막 생존 신호를 남긴다."""
     seconds = interval.total_seconds()
-    if seconds <= 0:
-        raise ValueError("생존 신호 주기는 0보다 커야 합니다.")
     stop = threading.Event()
     lost = threading.Event()
 

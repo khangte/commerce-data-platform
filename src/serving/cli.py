@@ -3,7 +3,6 @@
 import argparse
 import json
 import sys
-import uuid
 from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
@@ -20,8 +19,8 @@ from src.serving.metabase_settings import (
     metabase_setting,
     require_metabase_setting,
 )
-from src.warehouse.duckdb_files import DEFAULT_WAREHOUSE_ROOT
-from src.warehouse.publish_metadata import PUBLISHED, get_latest_publish_run, get_publish_run
+from src.warehouse.duckdb_files import DEFAULT_WAREHOUSE_ROOT, PUBLISHED_FILE_NAME
+from src.warehouse.publish_metadata import get_latest_publish_run
 
 
 def _parse_arguments(argv: list[str] | None) -> argparse.Namespace:
@@ -29,9 +28,8 @@ def _parse_arguments(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Export the serving mart or check its freshness")
     commands = parser.add_subparsers(dest="command", required=True)
     export = commands.add_parser("export", help="서빙 내보내기와 Metabase 재지정")
-    export.add_argument("--published", type=Path, default=DEFAULT_WAREHOUSE_ROOT / "warehouse.duckdb")
+    export.add_argument("--published", type=Path, default=DEFAULT_WAREHOUSE_ROOT / PUBLISHED_FILE_NAME)
     export.add_argument("--serving-root", type=Path, default=PROJECT_ROOT / "data" / "serving")
-    export.add_argument("--publish-run-id", type=uuid.UUID)
     commands.add_parser("status", help="Metabase가 최신 게시 실행을 읽는지 확인")
     return parser.parse_args(argv)
 
@@ -39,12 +37,8 @@ def _parse_arguments(argv: list[str] | None) -> argparse.Namespace:
 def _export(arguments: argparse.Namespace) -> int:
     """게시 파일 내보내기 뒤 Metabase 재지정과 조건부 정리를 수행한다."""
     settings = PostgresSettings.from_environment()
-    record = (
-        get_publish_run(settings, arguments.publish_run_id)
-        if arguments.publish_run_id is not None
-        else get_latest_publish_run(settings)
-    )
-    if record is None or record.status != PUBLISHED or record.mart_hashes is None:
+    record = get_latest_publish_run(settings)
+    if record is None or record.mart_hashes is None:
         raise ValueError("No published mart run with recorded hashes exists")
     if record.published_identity is None:
         raise ValueError(

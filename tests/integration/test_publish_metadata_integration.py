@@ -233,60 +233,41 @@ def test_close_stale_run_skips_refreshed_heartbeat(settings):
     """후보 조회 후 갱신된 생존 신호가 조건부 종료를 막는다."""
     record = start_publish_run(settings, _run(), now=NOW - timedelta(hours=2))
     metadata.touch_publish_run(settings, record.publish_run_id, now=NOW)
-    assert not metadata.close_stale_run(settings, record.publish_run_id, status=FAILED, stale_before=NOW - timedelta(minutes=5), now=NOW)
+    assert not metadata.close_stale_run(settings, record.publish_run_id, published=False, stale_before=NOW - timedelta(minutes=5), now=NOW)
     assert get_publish_run(settings, record.publish_run_id).status == BUILDING
 
 
 def test_close_stale_run_failed_sets_abandoned(settings):
     """만료된 행을 먼저 닫고 격리 경로는 실패 행에만 기록한다."""
     record = start_publish_run(settings, _run(), now=NOW - timedelta(hours=2))
-    assert metadata.close_stale_run(settings, record.publish_run_id, status=FAILED, stale_before=NOW - timedelta(minutes=5), now=NOW)
+    assert metadata.close_stale_run(settings, record.publish_run_id, published=False, stale_before=NOW - timedelta(minutes=5), now=NOW)
     metadata.record_failed_path(settings, record.publish_run_id, "failed/test.duckdb")
     with settings.pipeline_connection() as connection:
         row = connection.execute("SELECT status, error_type, error_message, finished_at, failed_path FROM mart_publish_runs WHERE publish_run_id = %s", (record.publish_run_id,)).fetchone()
     assert row == (FAILED, "UNKNOWN_ERROR", "abandoned", NOW, "failed/test.duckdb")
-    assert not metadata.close_stale_run(settings, record.publish_run_id, status=FAILED, stale_before=NOW, now=NOW)
+    assert not metadata.close_stale_run(settings, record.publish_run_id, published=False, stale_before=NOW, now=NOW)
 
 
-def test_close_stale_run_rejects_other_status(settings):
-    """활성 상태로의 조건부 종료는 허용하지 않는다."""
-    with pytest.raises(ValueError):
-        metadata.close_stale_run(settings, uuid.uuid4(), status=BUILDING, stale_before=NOW, now=NOW)
-
-
-@pytest.mark.parametrize("pipeline,dag_run_id,matches", [
-    ("test_publish_reclaim", "dr1", True),
-    ("test_publish_reclaim", "dr2", False),
-    ("test_publish_other", "dr1", False),
-    ("test_publish_reclaim", None, False),
+@pytest.mark.parametrize("pipeline,dag_run_id,publishing,matches", [
+    ("test_publish_reclaim", "dr1", False, True),
+    ("test_publish_reclaim", "dr2", False, False),
+    ("test_publish_other", "dr1", False, False),
+    ("test_publish_reclaim", None, False, False),
+    ("test_publish_reclaim", "dr1", True, False),
 ])
-def test_dag_run_building_runs_matches_only_same_pipeline_and_dag_run(settings, pipeline, dag_run_id, matches):
-    """전역 활성 행 하나를 유지하며 Pipeline·DagRun 경계를 각각 검증한다."""
+def test_close_dag_run_building_returns_only_closed_runs(settings, pipeline, dag_run_id, publishing, matches):
+    """같은 실행의 BUILDING만 생존 신호와 무관하게 닫고 종료된 식별자만 반환한다."""
     run = PublishRun(uuid.uuid4(), pipeline, dag_run_id=dag_run_id)
     start_publish_run(settings, run, now=NOW)
-    records = metadata.dag_run_building_runs(settings, pipeline_name="test_publish_reclaim", dag_run_id="dr1")
-    assert [r.publish_run_id for r in records] == ([run.publish_run_id] if matches else [])
-
-
-def test_close_dag_run_building_ignores_heartbeat(settings):
-    """신선한 생존 신호와 무관하게 같은 실행만 닫고 종료 정보를 기록한다."""
-    run = PublishRun(uuid.uuid4(), "test_publish_reclaim", dag_run_id="dr1")
-    start_publish_run(settings, run, now=NOW)
     metadata.touch_publish_run(settings, run.publish_run_id, now=NOW)
-    for pipeline, dag in (("test_publish_other", "dr1"), (run.pipeline_name, "dr2")):
-        assert not metadata.close_dag_run_building(settings, run.publish_run_id, pipeline_name=pipeline, dag_run_id=dag, message="retry", now=NOW)
-    assert metadata.close_dag_run_building(settings, run.publish_run_id, pipeline_name=run.pipeline_name, dag_run_id="dr1", message="retry", now=NOW)
+    if publishing:
+        mark_publishing(settings, run.publish_run_id, mart_hashes={}, mart_row_counts={}, published_identity=FileIdentity(1, 2))
+    closed = metadata.close_dag_run_building(settings, pipeline_name="test_publish_reclaim", dag_run_id="dr1", now=NOW)
+    assert closed == ((run.publish_run_id,) if matches else ())
     with settings.pipeline_connection() as connection:
         row = connection.execute("SELECT status,error_type,error_message,finished_at FROM mart_publish_runs WHERE publish_run_id=%s", (run.publish_run_id,)).fetchone()
-    assert row == (FAILED, "UNKNOWN_ERROR", "retry", NOW)
-    assert not metadata.close_dag_run_building(settings, run.publish_run_id, pipeline_name=run.pipeline_name, dag_run_id="dr1", message="retry", now=NOW)
-
-
-def test_close_dag_run_building_skips_publishing(settings):
-    """교체 중인 실행은 조회와 조건부 회수 모두에서 제외한다."""
-    run = PublishRun(uuid.uuid4(), "test_publish_reclaim", dag_run_id="dr1")
-    start_publish_run(settings, run, now=NOW)
-    mark_publishing(settings, run.publish_run_id, mart_hashes={}, mart_row_counts={}, published_identity=FileIdentity(1, 2))
-    assert metadata.dag_run_building_runs(settings, pipeline_name=run.pipeline_name, dag_run_id="dr1") == ()
-    assert not metadata.close_dag_run_building(settings, run.publish_run_id, pipeline_name=run.pipeline_name, dag_run_id="dr1", message="retry", now=NOW)
-    assert get_publish_run(settings, run.publish_run_id).status == "PUBLISHING"
+    if matches:
+        assert row == (FAILED, "UNKNOWN_ERROR", metadata.RECLAIMED_MESSAGE, NOW)
+    else:
+        assert row == ("PUBLISHING" if publishing else BUILDING, None, None, None)
+    assert metadata.close_dag_run_building(settings, pipeline_name="test_publish_reclaim", dag_run_id="dr1", now=NOW) == ()

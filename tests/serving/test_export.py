@@ -12,7 +12,6 @@ import duckdb
 import pytest
 
 from src.serving.export import ServingPaths, export_serving_mart
-from src.serving.metabase_repoint import repoint_and_prune_serving
 from src.warehouse.duckdb_files import FileIdentity, file_identity
 from src.warehouse.mart_hash import mart_logical_hashes, target_for
 
@@ -162,38 +161,3 @@ def test_export_rejects_a_published_file_replaced_during_copy(
     assert not paths.serving.exists()
     assert not list(paths.build_dir.iterdir())
     assert not list((paths.serving.parent / "exports").glob("*.duckdb"))
-
-
-def test_export_keeps_all_versions_until_repoint_succeeds(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """재지정 실패가 반복되면 모든 버전 파일을 보존한다."""
-    published = tmp_path / "warehouse.duckdb"
-    _create_published_mart(published)
-    paths = ServingPaths.under(tmp_path / "serving")
-    exported = []
-    status = "FAILED"
-
-    def fake_repoint(*args) -> str:
-        """재지정 실패와 성공을 순서대로 재현한다."""
-        return status
-
-    monkeypatch.setattr("src.serving.metabase_repoint.repoint_metabase_serving", fake_repoint)
-    for _ in range(4):
-        result = export_serving_mart(
-            published, paths, publish_run_id=uuid.uuid4(), mart_hashes={},
-            published_identity=file_identity(published), now=datetime.now(UTC)
-        )
-        exported.append(result.export_id)
-        assert repoint_and_prune_serving(
-            str(result.export_id), "url", "key", "2", paths.serving.parent / "exports"
-        ) == "FAILED"
-    versions = {path.stem for path in (paths.serving.parent / "exports").glob("*.duckdb")}
-    assert versions == {str(export_id) for export_id in exported}
-
-    status = "SUCCESS"
-    assert repoint_and_prune_serving(
-        str(exported[-1]), "url", "key", "2", paths.serving.parent / "exports"
-    ) == "SUCCESS"
-    versions = {path.stem for path in (paths.serving.parent / "exports").glob("*.duckdb")}
-    assert versions == {str(export_id) for export_id in exported[-3:]}

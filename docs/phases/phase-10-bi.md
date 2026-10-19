@@ -61,6 +61,8 @@ Metabase 연결과 권한 검증은 조회 대상 Model과 독립적이다. 어�
 - [x] `P10-03` Read-only 권한과 Published Mart만 노출되는지 검증
 - [x] `P10-04` 재기동 후 Connection/Dashboard 지속성 확인
 - [x] `P10-05` 연결 방식과 제한을 ADR-012에 기록
+- [x] 잔여 정리(A1~A3·B1~B4·C1~C4·C6~C7) 검증: 전체 `uv run pytest -q` 464개 통과·132개 건너뜀, PostgreSQL 통합 77개 통과·47개 건너뜀(통합 디렉터리 77개 통과·29개 건너뜀, 디렉터리 밖 integration 표식 18개 건너뜀). 관련 집중 검증 119개 통과·5개 건너뜀, Ruff·diff 검사 통과. C5와 D 항목을 보존했고 커밋하지 않았다.
+- [x] 서빙 CLI는 최신 게시 실행만 내보내고, 재지정 검증은 최신 상태 확인과 같은 매니페스트 조회를 사용한다. 저장 버전은 상수로 고정하며 `_validate_serving_file`의 Mart 경계 검사·파일 처리·종료 코드는 유지한다.
 - [x] Serving Export 전에 Published 파일의 Mart 결과 해시를 요청한 Publish Run의 기록과 비교하고, 불일치한 Relation 이름을 알리며 파일 생성 전에 거부한다.
 
 기본 경로:
@@ -280,6 +282,9 @@ Phase 10에는 별도 AC 번호가 없으므로 ROADMAP의 Connection/Dashboard 
 
 | 경로 | 변경 내용 |
 | ---- | --------- |
+| `src/serving/cli.py`, `src/warehouse/duckdb_files.py`, `docs/architect-review/058_publish-file-identity.md` | `export --publish-run-id`를 제거해 최신 게시 조회만 사용하고 게시 파일명을 공유한다. 058의 과거 사례에는 현재 옵션이 제거됐음을 덧붙였다. |
+| `src/serving/metabase_repoint.py`, `tests/serving/test_metabase_repoint.py` | 재지정 확인을 두 식별자를 읽는 기존 매니페스트 조회로 통합하고 성공·불일치·동기화 요청 테스트를 같은 응답 구조로 맞췄다. 오류 메시지 변경만 허용하며 성공·실패 상태와 정리 조건을 유지한다. |
+| `src/serving/export.py`, `tests/serving/test_export.py`, `tests/test_airflow_dags.py` | 저장 버전 인자·파일 존재 선검사·중복 부모 디렉터리 생성을 정리했다. 다른 테스트가 덮는 버전 보존 테스트와 과거 DAG 구현 문자열 검사를 제거했다. 매니페스트 컬럼·Mart 경계 검증·식별값 재검사·파일 교체는 유지한다. |
 | `scripts/capture_metabase_dashboards.py`, `tests/test_capture_metabase_dashboards.py`, `docs/bi/dashboards.md`, `docs/phases/phase-10-bi.md` | N5 후속으로 내부 넘침 측정·viewport 높이 조정·Dashboard별 크기 초기화·조정 후 로딩 및 안정화 대기를 추가했다. 지속 잘림·최대 높이 초과·공유 제한 시간 초과 때 캡처를 거부하고, 크기 초기화와 실패 시 PNG 미저장을 검증했다. 출력에 최종 높이를 추가하고 캡처 절차를 동기화했다. 추적 PNG와 과거 증적은 수정하지 않는다. |
 | `scripts/capture_metabase_dashboards.py`, `tests/test_capture_metabase_dashboards.py`, `docs/bi/dashboards.md`, `docs/phases/phase-10-bi.md` | 고정 대기를 쿼리 완료·보이는 로딩 표시 소멸 대기로 교체했다. 응답 이벤트에서는 본문을 읽지 않고 현재 Dashboard의 배치 카드별 최신 응답만 모은다. 제한 시간·실패 응답·키 비노출·실패 시 PNG 미저장·핸들러 해제를 검증했다. 기본 URL을 `host_metabase_url()`로 통일하고 렌더링 대기 절차를 문서화했다. 추적 중인 PNG와 과거 증적은 보존했다. |
 | `README.md`, `docs/runbooks/r14-dbt-failure.md`, `docs/troubleshooting/warehouse-publish.md`, `scripts/metabase_snapshot.py`, `docs/phases/phase-10-bi.md` | 058·059·060 적용 뒤 낡은 문구 5곳과 Snapshot 옵션 도움말을 갱신했다. 복구 문구는 `recover_incomplete_publishes`의 파일 식별값 일치 분기와 대조했고, 기본 수동 실행 예시에는 게시 후 서빙 내보내기를 추가했다. Snapshot 테스트 5개·스크립트 Ruff 통과를 기록했다. |

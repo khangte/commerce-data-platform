@@ -61,18 +61,8 @@ def repoint_metabase_serving(
         details = dict(database["details"])
         details["database_file"] = f"/serving/exports/{export_id}.duckdb"
         _request_json(database_url, api_key, "PUT", {"details": details})
-        result = _request_json(
-            f"{base}/api/dataset",
-            api_key,
-            "POST",
-            {
-                "database": numeric_id,
-                "type": "native",
-                "native": {"query": "SELECT CAST(export_id AS VARCHAR) FROM serving_manifest"},
-            },
-        )
-        rows = result["data"]["rows"]
-        if rows != [[export_id]]:
+        live_export_id, _ = read_live_serving_manifest(base, api_key, numeric_id)
+        if live_export_id != export_id:
             print("Metabase 서빙 매니페스트의 export_id가 새 내보내기와 일치하지 않음")
             return "FAILED"
     except _API_ERRORS as error:

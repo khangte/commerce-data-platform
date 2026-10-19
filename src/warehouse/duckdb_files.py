@@ -10,6 +10,7 @@ import duckdb
 
 from src.common.database import PROJECT_ROOT
 
+PUBLISHED_FILE_NAME = "warehouse.duckdb"
 DEFAULT_WAREHOUSE_ROOT = PROJECT_ROOT / "data" / "warehouse"
 
 
