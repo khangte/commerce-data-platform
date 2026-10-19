@@ -1,24 +1,32 @@
-# 데이터 변환 흐름: Source → Data Lake → Data Warehouse
+# 데이터 흐름: Source → Data Lake → Data Warehouse → Serving
 
 > 상태: Reference
-> 기준 문서: [PRD v1.20](../../PRD_v1.21.md), [Phase 3](../phases/phase-03-incremental-ingestion.md), [Phase 4](../phases/phase-04-airflow-orchestration.md), [Phase 5](../phases/phase-05-bronze-catalog-and-staging.md)
+> 기준 문서: [PRD v1.28](../../PRD_v1.28.md), [Phase 3](../phases/phase-03-incremental-ingestion.md), [Phase 4](../phases/phase-04-airflow-orchestration.md), [Phase 5](../phases/phase-05-bronze-catalog-and-staging.md), [Phase 7](../phases/phase-07-data-quality-publish.md), [Phase 10](../phases/phase-10-bi.md)
 
-이 문서는 하나의 주문 레코드가 PostgreSQL 원천에서 DuckDB Mart에 도달할 때까지 이름, 타입, 값, Grain이 어느 지점에서 왜 바뀌는지를 정리한다. 각 변환의 근거와, 그 변환을 다른 지점에서 했을 때 무엇이 깨지는지를 함께 기록한다.
+이 문서는 하나의 주문 레코드가 PostgreSQL 원천에서 Metabase가 읽는 Serving 파일에 도달할 때까지의 전체 경로를 정리한다. 3~8절은 이름, 타입, 값, Grain이 어느 지점에서 왜 바뀌는지와, 그 변환을 다른 지점에서 했을 때 무엇이 깨지는지를 기록한다. 9~13절은 Mart가 만들어진 뒤 Build, Publish, Serving Export, Metabase 재지정, 운영 기록으로 이어지는 구간을 단계별 동작과 실패 시 동작 중심으로 정리한다. 이 구간에서는 데이터 값이 바뀌지 않는다. 바뀌는 것은 파일 위치와 가시성이다.
 
 ## 1. 전체 흐름
 
 ```text
 PostgreSQL commerce_source          OLTP 원천
-        ↓ Phase 3 ingest_table()    이름 보존, 기술 컬럼만 추가
+        ↓ ingest_table()            이름 보존, 기술 컬럼만 추가 (Table별 extract_validate_load)
 SeaweedFS bronze/*.parquet          Data Lake (불변 Object)
-        ↓ Phase 3 sync_bronze_catalog()
-DuckDB control.bronze_files         Commit된 Object 목록
-        ↓ Phase 5 dbt staging       이름·값 변환이 일어나는 유일한 지점
+        ↓ sync_bronze_catalog()     prepare_warehouse_build가 Build 파일에 실행
+DuckDB control.bronze_files         Commit된 Object 목록 (Build 파일 안)
+        ↓ dbt staging               이름·값 변환이 일어나는 유일한 지점
 DuckDB staging.*                    분석 Naming (View)
-        ↓ Phase 5 dbt intermediate  Join과 사전 집계
+        ↓ dbt intermediate          Join과 사전 집계
 DuckDB intermediate.*               (View)
-        ↓ Phase 5 dbt marts         Grain 확정
-DuckDB marts.*                      Data Warehouse (Table / Incremental)
+        ↓ dbt marts                 Grain 확정
+DuckDB dimensions·facts·metrics.*   Mart (Build 파일 build/{publish_run_id}.duckdb 안)
+        ↓ publish_mart              검증된 Build 파일을 원자 교체
+data/warehouse/warehouse.duckdb     Published Warehouse
+        ↓ export_serving_mart       Mart Schema만 복사, serving_manifest 기록
+data/serving/exports/{export_id}.duckdb   Serving 파일 (mart.duckdb와 같은 inode)
+        ↓ repoint_metabase_serving  Metabase 연결 경로 교체·검증·Schema 동기화
+Metabase                            BI 조회
+        ↓ publish_run_summary       DagRun마다 운영 기록 1행
+pipeline_metadata.warehouse_run_reports
 ```
 
 각 구간의 책임은 겹치지 않는다.
@@ -30,8 +38,10 @@ DuckDB marts.*                      Data Warehouse (Table / Incremental)
 | Catalog → Staging      | **변환** | **정규화** | **표준화** | 보존     | 분석 Naming으로 바꾸는 단일 지점이다             |
 | Staging → Intermediate | 보존     | 보존       | 보존       | **변경** | Join과 사전 집계로 Grain을 맞춘다                |
 | Intermediate → Mart    | 보존     | 보존       | 보존       | 확정     | 문서화된 Grain과 Unique Key로 고정한다           |
+| Build → Published      | 보존     | 보존       | 보존       | 보존     | 검증을 통과한 파일만 원자 교체로 노출한다        |
+| Published → Serving    | 보존     | 보존       | 보존       | 보존     | Mart Schema만 복사해 BI 읽기를 Warehouse와 분리한다 |
 
-이름 변환이 Staging 한 곳에만 있는 것이 이 설계의 핵심이다. 근거는 6절에서 다룬다.
+이름 변환이 Staging 한 곳에만 있는 것이 변환 구간 설계의 핵심이다. 근거는 6절에서 다룬다. Mart 이후 구간은 값을 바꾸지 않고, 실패한 결과가 BI에 보이지 않게 하는 데 책임이 있다.
 
 ---
 
@@ -41,8 +51,11 @@ DuckDB marts.*                      Data Warehouse (Table / Incremental)
 | --------- | ---------------------------- | -------------- | ----------------------- | ---------------------------------- |
 | Source    | PostgreSQL `commerce_source` | Row 지향 Table | Mutable (UPDATE)        | Generator, Ingestion Extract       |
 | Data Lake | SeaweedFS (S3 호환)          | Parquet Object | Immutable (Append Only) | Ingestion Commit, dbt Source Macro |
-| Catalog   | DuckDB `control`             | Table          | 매 DagRun 재동기화      | dbt Source Macro                   |
-| Warehouse | DuckDB `staging`~`marts`     | View / Table   | Incremental 교체        | 분석가, BI                         |
+| Catalog   | DuckDB `control` (Build 파일 안) | Table      | 매 DagRun 재동기화      | dbt Source Macro                   |
+| Build     | `data/warehouse/build/{publish_run_id}.duckdb` | DuckDB 파일 | DagRun마다 Published 복사본에서 새로 만든다 | dbt build |
+| Warehouse | `data/warehouse/warehouse.duckdb` — `staging`·`intermediate`·`dimensions`·`facts`·`metrics` | View / Table | Publish 때 파일 전체를 원자 교체 | 분석가, Serving Export |
+| Serving   | `data/serving/exports/{export_id}.duckdb` (`mart.duckdb`와 같은 inode) | DuckDB 파일 | Export마다 새 파일, 최신 3개 보존 | Metabase |
+| 운영 기록 | PostgreSQL `pipeline_metadata` | Table | Publish Run 상태 전이, DagRun별 기록 Upsert | 운영자 |
 
 Source가 Mutable이고 Lake가 Immutable인 것이 계층을 나누는 근본 이유다. 원천의 `UPDATE`는 이전 값을 지우지만, Lake는 Batch마다 새 Object를 쌓으므로 과거 상태가 남는다. 이 차이가 시점별 이력 복원을 가능하게 한다.
 
@@ -50,7 +63,7 @@ Source가 Mutable이고 Lake가 Immutable인 것이 계층을 나누는 근본 �
 
 ## 3. Source → Bronze: 이름을 바꾸지 않는 구간
 
-Phase 3 `ingest_table()`이 담당한다. `src/ingestion/tables.py`의 `TableConfig.source_columns`가 계약이다.
+Phase 3 `ingest_table()`(`src/ingestion/service.py`)이 담당하고, `warehouse_pipeline_dag`의 `extract_validate_load` Task가 Source Table 9개에 Mapping되어 Table마다 한 번 호출한다. 추출 전에 `acquire_source_snapshot_lease`가 원천 변경 Lease를 잡고, 모든 Table Task가 끝나면 `release_source_snapshot_lease`가 해제한다. `src/ingestion/contract/tables.py`의 `TableConfig.source_columns`가 계약이다.
 
 ### 3.1 이 구간에서 하는 일
 
@@ -84,7 +97,9 @@ Phase 3 `ingest_table()`이 담당한다. `src/ingestion/tables.py`의 `TableCon
 | `_run_id`         | `string`             | Pipeline Run UUID              | 실행 추적용이다                                             |
 | `_ingested_at`    | `timestamp[us, UTC]` | Bronze 기록 시각               | Current 선택 Tie-breaker다                                  |
 | `_source_table`   | `string`             | 원천 Table 이름                | Object 자체로 출처를 식별한다                               |
-| `_schema_version` | `int32`              | `1`                            | 지원하지 않는 Version을 dbt 이전에 차단한다                 |
+| `_schema_version` | `int32`              | `3` (`BRONZE_SCHEMA_VERSION`)  | 지원하지 않는 Version을 dbt 이전에 차단한다                 |
+
+지원 Version 목록은 `src/ingestion/contract/schema.py`의 `SUPPORTED_BRONZE_SCHEMA_VERSIONS`이고, 현재 `{3}`이다. Version 증가 규칙은 [ADR 015](../adr/015-bronze-schema-evolution-policy.md)를 따른다.
 
 `_batch_id`와 `_ingested_at`은 Staging에서 **보존해야 한다**. 같은 `customer_id`가 여러 Batch에 걸쳐 여러 Version으로 존재할 때, 어느 Row가 최신인지 판정하는 유일한 근거이기 때문이다.
 
@@ -109,12 +124,12 @@ Bronze가 원천의 무손실 복제여야 하는 이유는 세 가지다.
 
 ## 4. Bronze → Catalog: 목록만 전달하는 구간
 
-Phase 3 `sync_bronze_catalog()`가 담당하고, Phase 4 `warehouse_pipeline_dag`의 `sync_bronze_catalog_task`가 호출한다.
+`sync_bronze_catalog()`(`src/ingestion/bronze/catalog.py`)가 담당한다. 별도 Task는 없다. `warehouse_pipeline_dag`의 `prepare_warehouse_build` Task가 Published 파일을 Build 파일로 복사한 직후 그 Build 파일에 호출한다(`src/warehouse/publish.py`의 `prepare_warehouse_build`). 따라서 Catalog는 dbt가 실행될 Build 파일 안에 있고, Publish 때 Warehouse와 함께 교체된다.
 
 ```text
 pipeline_metadata.bronze_objects (status = 'COMMITTED')
         ↓
-DuckDB control.bronze_files
+DuckDB control.bronze_files (data/warehouse/build/{publish_run_id}.duckdb 안)
 ```
 
 | 동작 | 내용                                                                       |
@@ -407,17 +422,161 @@ Staging까지의 이름·타입·값 변환을 다루고, Mart 설계는 다루�
 | 계층         | 위치                                                                                                     | 형태                                                                                                                                   |
 | ------------ | -------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
 | Source       | `commerce_source.orders`                                                                                 | `order_id='o1'`, `customer_id='c1'`, `order_status='delivered'`, `order_purchase_timestamp='2026-09-05T10:00:00Z'`                     |
-| Bronze       | `bronze/orders/ingestion_date=2026-09-08/batch_id=warehouse_pipeline_dag__20260908T000000Z/data.parquet` | 위와 동일한 컬럼명 + `_batch_id`, `_ingested_at`, `_schema_version=2`                                                                  |
-| Catalog      | `control.bronze_files`                                                                                   | `source_table='orders'`, `object_key='bronze/orders/...'`, `schema_version=2`                                                          |
+| Bronze       | `bronze/orders/ingestion_date=2026-09-08/batch_id=warehouse_pipeline_dag__20260908T000000Z/data.parquet` | 위와 동일한 컬럼명 + `_batch_id`, `_ingested_at`, `_schema_version=3`                                                                  |
+| Catalog      | `control.bronze_files`                                                                                   | `source_table='orders'`, `object_key='bronze/orders/...'`, `schema_version=3`                                                          |
 | Staging      | `staging.stg_orders`                                                                                     | `order_id='o1'`, `source_customer_id='c1'`, `customer_id='u1'`(Join), `order_status='DELIVERED'`, `purchase_at='2026-09-05T10:00:00Z'` |
 | Intermediate | `intermediate.*`                                                                                          | Staging 값을 목표 Grain으로 접고 파생 값을 계산한다                                                                                    |
-| Mart         | `marts.*`                                                                                                 | 확정된 Grain의 행으로 투영된다. Model과 컬럼은 [Mart Grain 계약](mart-grain.md) 참조                                                  |
+| Mart         | `dimensions.*`, `facts.*`, `metrics.*`                                                                    | 확정된 Grain의 행으로 투영된다. Model과 컬럼은 [Mart Grain 계약](mart-grain.md) 참조                                                  |
+| Published    | `data/warehouse/warehouse.duckdb`                                                                         | 같은 행. `mart_publish_runs` Row가 `PUBLISHED`가 된 Build 파일이다                                                                     |
+| Serving      | `data/serving/exports/{export_id}.duckdb`                                                                 | 같은 행. Mart 3개 Schema만 있고 `main.serving_manifest`에 `publish_run_id`가 기록된다                                                  |
 
 `ingestion_date`는 2026-09-08이지만 `purchase_at`은 2026-09-05다. 이 분리 덕분에 Late Arrival 주문이 과거 Business Date의 Fact로 정확히 들어간다.
 
 ---
 
-## 9. 요약
+## 9. Mart 이후 실행 순서
+
+`source_simulation_dag`가 Generator를 실행한 뒤 `trigger_warehouse_pipeline`으로 같은 Logical Date의 `warehouse_pipeline_dag`를 시작한다. `warehouse_pipeline_dag`는 `schedule=None`, `max_active_runs=1`이다. Task 순서는 다음과 같다.
+
+```text
+initialize_run → acquire_source_snapshot_lease → extract_validate_load ×9 ─┬→ release_source_snapshot_lease ─┐
+                                                                            └→ verify_bronze_commit_task      │
+   → prepare_warehouse_build → dbt_build → publish_mart → export_serving_mart → repoint_metabase_serving     │
+   → publish_run_summary (trigger_rule=all_done, release 이후) ←─────────────────────────────────────────────┘
+```
+
+| Task | 재시도 | 하는 일 | 실패 시 |
+| --- | --- | --- | --- |
+| `prepare_warehouse_build` | 기본값(2회) | 활성 Publish Run을 잡고 Published 파일을 Build 파일로 복사한 뒤 Catalog를 동기화한다 | 복사·동기화 실패는 Run `FAILED`, Build 파일 격리. 다른 활성 Run이 있으면 `PublishInProgressError`. Published 파일 변화 없음 |
+| `dbt_build` | 0 | Build 파일에만 `dbt build`를 실행한다 | `DBT_BUILD_ERROR`/`DBT_TEST_ERROR`로 `FAILED`, Build 파일 `failed/` 격리 |
+| `publish_mart` | 0 | CHECKPOINT, Hash 기록, `os.replace`로 Published 교체 | 교체 전이면 Published 변화 없음 |
+| `export_serving_mart` | 0 | Published에서 Serving 파일을 만든다 | `SERVING_EXPORT_FAILED`. Publish 결과는 `PUBLISHED`로 남는다 |
+| `repoint_metabase_serving` | 기본값(2회) | Metabase 연결을 새 Export로 바꾸고 검증한다 | `METABASE_REPOINT_FAILED`. 옛 Export 정리 안 함 |
+| `publish_run_summary` | 기본값(2회) | Summary와 운영 기록을 남긴다 | 운영 기록 수집·저장 실패는 DAG를 실패시키지 않는다 |
+
+dbt·Publish·Export를 재시도하지 않는 이유는 부분 실행 결과를 덮어쓰지 않고 실패 Build를 원인 분석용으로 보존하기 위해서다. 실패 Error Type별 조치는 [Warehouse Publish 오류 유형](../troubleshooting/warehouse-publish.md)이 정본이다.
+
+---
+
+## 10. Build와 Publish: 검증된 파일만 교체하는 구간
+
+[ADR 016](../adr/016-publish-mart-via-warehouse-file-swap.md)의 Build-then-swap이다. dbt는 Published 파일을 직접 고치지 않는다.
+
+```text
+data/warehouse/warehouse.duckdb ──copy──→ data/warehouse/build/{publish_run_id}.duckdb
+                                                  │ sync_bronze_catalog + dbt build
+                                                  ↓ 성공
+data/warehouse/warehouse.duckdb ←──os.replace──── (같은 파일)
+                                                  ↓ 실패
+                                     data/warehouse/failed/{publish_run_id}.duckdb (최신 3개 보존)
+```
+
+### 10.1 Publish Run 상태
+
+`pipeline_metadata.mart_publish_runs`가 Publish의 권한 기록이다.
+
+| 상태 | 의미 | 진입 지점 |
+| --- | --- | --- |
+| `BUILDING` | Build 파일 준비와 dbt 실행 중 | `prepare_warehouse_build`의 `start_publish_run` |
+| `PUBLISHING` | Hash·파일 Identity를 기록했고 교체 직전 | `publish_build`의 `mark_publishing` |
+| `PUBLISHED` | 교체와 Directory fsync 완료 | `mark_published` |
+| `FAILED` | `error_type`, `error_message`, `failed_path` 기록 | `_fail`, 회수 |
+
+전이는 `BUILDING → PUBLISHING → PUBLISHED`, `BUILDING/PUBLISHING → FAILED`, 그리고 만료 회수 때 Published 파일 Identity가 일치하는 `PUBLISHING → PUBLISHED`(10.2절)뿐이다. `mart_publish_runs_single_active_idx`가 `BUILDING`·`PUBLISHING` Row를 전역 1개로 제한한다. 다른 활성 Run이 있으면 `PublishInProgressError`다.
+
+### 10.2 Heartbeat Lease와 회수
+
+| 장치 | 동작 | 판정 문서 |
+| --- | --- | --- |
+| Heartbeat | 준비·dbt·Publish 단계 동안 30초마다 `heartbeat_at`을 갱신한다. 갱신이 거부되면 소유권 상실로 보고 다음 상태 전이가 막힌다 | [061](../architect-review/061_publish-heartbeat-lease.md) |
+| 만료 회수 | 다음 준비 단계가 마지막 Heartbeat(없으면 시작 시각) 뒤 5분(`PUBLISH_LEASE`)이 지난 활성 Run을 닫는다 | [061](../architect-review/061_publish-heartbeat-lease.md) |
+| 같은 DagRun 회수 | `prepare_warehouse_build` 재시도는 같은 `(pipeline_name, dag_run_id)`의 `BUILDING` Row를 Heartbeat와 무관하게 즉시 `FAILED`로 닫는다. `PUBLISHING` Row와 `dag_run_id`가 없는 CLI Run은 대상이 아니다 | [061](../architect-review/061_publish-heartbeat-lease.md) |
+| 파일 Identity | `PUBLISHING` 진입 때 Build 파일의 inode·`mtime_ns`를 기록한다. 만료된 `PUBLISHING` Run은 Published 파일 Identity가 기록과 같을 때만 `PUBLISHED`로 확정하고, 다르면 `FAILED`로 닫는다. 재Hash 없이 교체 완료 여부를 판정한다 | [058](../architect-review/058_publish-file-identity.md) |
+
+회수로 `FAILED`가 된 Run은 `error_type=UNKNOWN_ERROR`로 남고, Build 파일은 `failed/`로 격리된다. `PUBLISHED`로 확정된 Run은 남은 Build 잔여물만 지운다.
+
+---
+
+## 11. Serving Export: BI 읽기를 Warehouse와 분리하는 구간
+
+[ADR 019](../adr/019-serving-file-visibility-for-metabase.md)가 근거다. Metabase가 Published Warehouse를 직접 열면 Publish 교체와 읽기가 같은 파일에서 충돌하고, Metabase가 이미 연 파일의 옛 내용을 계속 볼 수 있다. 그래서 Mart만 담은 별도 파일을 Export마다 새 경로로 만든다.
+
+`export_serving_mart`(`src/serving/export.py`) 순서:
+
+1. Published 파일의 inode·`mtime_ns`가 `publish_mart` 결과와 같은지 확인한다. 다르면 거부한다.
+2. `data/serving/build/{export_id}.duckdb`에 `dimensions`·`facts`·`metrics`의 모든 Table·View를 Table로 복사한다.
+3. 같은 파일의 `main.serving_manifest`에 `export_id`, `publish_run_id`, `mart_result_hashes`, `row_counts`를 한 행으로 기록한다.
+4. Schema 경계(Mart 3개 + `main.serving_manifest`만)를 확인하고, CHECKPOINT 뒤 WAL 부재를 확인하고, Identity를 한 번 더 확인한다.
+5. `os.link`로 `data/serving/exports/{export_id}.duckdb`를 먼저 만들고, 그다음 `os.replace`로 `data/serving/mart.duckdb`를 교체한다. 두 경로는 같은 inode다. 마지막으로 두 Directory를 fsync한다.
+
+| 실패 지점 | 결과 |
+| --- | --- |
+| 1~4단계 | Build 파일 삭제. `mart.duckdb`·`exports/` 변화 없음 |
+| 5단계 `os.replace` 실패 | 새 `exports/` Link 삭제. `mart.duckdb`는 이전 파일 그대로 |
+| 5단계 `os.replace` 뒤 fsync 실패 | 새 `exports/` Link 삭제. `mart.duckdb`는 이미 새 파일이다. Metabase는 `exports/` 경로를 읽으므로 영향이 없고, 재실행으로 회복한다 |
+| DAG Task 예외 | `AirflowFailException SERVING_EXPORT_FAILED`, 재시도 없음. 재지정 Task는 `upstream_failed` |
+
+Export는 PostgreSQL에 행을 쓰지 않는다. 어느 Publish Run을 담았는지는 파일 안 `serving_manifest`가 유일한 기록이다. CLI `python -m src.serving export`도 같은 두 함수(Export, 재지정·정리)를 같은 순서로 호출한다([059](../architect-review/059_serving-refresh-single-path.md)).
+
+---
+
+## 12. Metabase 재지정과 최신성
+
+`repoint_and_prune_serving`(`src/serving/metabase_repoint.py`) 순서:
+
+1. `METABASE_URL`, `METABASE_API_KEY`, `METABASE_SERVING_DATABASE_ID` 중 하나라도 없으면 `SKIPPED`.
+2. Metabase Database의 `details.database_file`을 `/serving/exports/{export_id}.duckdb`로 바꾼다.
+3. `/api/dataset`으로 `SELECT export_id FROM serving_manifest`를 실행해 새 `export_id`가 보이는지 검증한다.
+4. `sync_schema`를 요청한다. 실패해도 경고만 남기고 결과는 `SUCCESS`다([060](../architect-review/060_metabase-layer-cleanup.md)).
+5. 결과가 `SUCCESS`·`SKIPPED`이면 `exports/`에서 mtime 기준 최신 3개(`SERVING_EXPORT_RETENTION`)만 남긴다.
+
+| 결과 | DAG | 옛 Export 정리 |
+| --- | --- | --- |
+| `SUCCESS` | Task 성공 | 함 |
+| `SKIPPED` | Task 성공 | 함 |
+| `FAILED` | `METABASE_REPOINT_FAILED`, 기본 재시도 | 안 함. Metabase가 아직 옛 Export를 가리킬 수 있기 때문이다([050](../architect-review/050_serving-export-retention-vs-repoint-failure.md), [051](../architect-review/051_metabase-repoint-retry-semantics.md)) |
+
+최신성은 `check_serving_freshness`(`src/serving/freshness.py`)가 판정한다. Metabase를 거쳐 실제 연결된 파일의 `serving_manifest.publish_run_id`를 읽고, `mart_publish_runs`의 최신 `PUBLISHED` Run과 같으면 `fresh=true`다. 파일을 직접 열지 않고 Metabase를 거치므로 Metabase 내부 Connection이 옛 파일을 잡고 있는 경우도 잡힌다([059](../architect-review/059_serving-refresh-single-path.md)). 수동 확인은 `python -m src.serving status`이고, 최신이면 종료 코드 0, 아니면 1이다.
+
+---
+
+## 13. 운영 기록: DagRun마다 한 행
+
+`publish_run_summary`는 `trigger_rule=all_done`이고 `release_source_snapshot_lease` 뒤에 실행되므로, 앞 Task가 실패해도 실행된다. 기존 Summary(Bronze 검증 수, Publish 상태, Export·재지정 상태)에 운영 값을 더해 두 곳에 남긴다.
+
+- Task Log: `RUN_REPORT {JSON}` 한 줄
+- `pipeline_metadata.warehouse_run_reports`: `dag_run_id` 기준 Upsert 한 행(`ok`, `failures`, `report`)
+
+`src/observability/run_report.py`의 `collect_run_report`는 DagRun 경과 시간, Task 상태, Ingestion 결과, Lease 잔존, Bronze Object, 활성 Publish Run, 최신성, 파일 개수·크기를 각각 독립적으로 수집한다. 한 수집이 실패하면 `PROBE_ERROR:<이름>`으로만 남고 나머지는 계속된다. `record_run_report`는 저장 실패를 `RUN_REPORT_WRITE_FAILED` 로그로만 남긴다. 운영 기록 때문에 DAG가 실패하지 않는다.
+
+`failures`에 들어가는 코드:
+
+| 코드 | 조건 |
+| --- | --- |
+| `TASK_NOT_SUCCESS:<task_id>` | 종료 Task 중 `success`가 아닌 것 |
+| `PUBLISH_<status>` | Publish 상태가 `PUBLISHED`가 아님 |
+| `SERVING_EXPORT_FAILED` | Export가 `SUCCESS`가 아님 |
+| `REPOINT_<status>` | 재지정이 `SUCCESS`가 아님. `SKIPPED`도 실패로 본다 |
+| `NOT_FRESH` | 최신성 검사가 `fresh=false` |
+| `EXPORTS_COUNT_<n>` | `exports/` 파일 수가 보존 개수(3)와 다름 |
+| `FAILED_BUILDS_OVER_RETENTION` | `failed/` 파일 수가 보존 개수(3) 초과 |
+| `BUILD_DIR_NOT_EMPTY` | Warehouse 또는 Serving `build/`에 잔여 파일 |
+| `LEASE_HELD` | Table Lease 또는 원천 변경 Lease가 남아 있음 |
+| `SLOW_RUN` | DagRun 경과 600초 이상 |
+| `PROBE_ERROR:<probe>` | 해당 수집 실패 |
+
+일정 기간의 합격 여부는 `sql/validation/warehouse_run_report_window.sql`로 한 번에 본다.
+
+```bash
+docker compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$PIPELINE_METADATA_DB" -P pager=off' \
+  < sql/validation/warehouse_run_report_window.sql
+```
+
+창 길이(`window_size`)와 실행 간격(`slot_size`)은 파일 첫 View에서 정한다. Source DAG 일정을 바꾸면 `slot_size`도 함께 바꾼다. 결과는 기대 Slot 수, 기록 수, 정상·비정상 실행 수, 누락 Slot 수, 경과 시간 p95·최대값, 실패 코드별 건수와 `verdict`다. 누락 Slot 0, 비정상 실행 0, p95 300초 이하이면 `PASS`다. 이어지는 상세 결과는 비정상 실행 목록과, 누락 Slot별 `generator_runs` 상태다. Warehouse DagRun이 시작되지 않은 `source_simulation_dag` 실패는 이 누락 Slot으로 드러난다.
+
+---
+
+## 14. 요약
 
 | 원칙                                       | 내용                                                  |
 | ------------------------------------------ | ----------------------------------------------------- |
@@ -426,6 +585,11 @@ Staging까지의 이름·타입·값 변환을 다루고, Mart 설계는 다루�
 | Catalog가 dbt 입력을 통제한다              | Prefix Glob은 Commit되지 않은 Object를 섞는다         |
 | Grain은 Intermediate에서 맞춘다            | Fan-out 없이 Measure를 계산한다                       |
 | Mutable 원천은 Bronze 누적으로 이력이 된다 | Warehouse가 시점별 유효 값을 복원할 수 있는 전제다    |
+| dbt는 Build 파일에서만 실행한다            | 실패한 Build는 격리되고 Published 파일은 그대로다     |
+| Publish 활성 Run은 하나뿐이다              | Heartbeat Lease와 파일 Identity로 중단된 Run을 회수한다 |
+| BI는 Export마다 새 Serving 파일을 읽는다   | Publish 교체와 BI 읽기가 같은 파일에서 충돌하지 않는다 |
+| 재지정 실패 시 옛 Export를 지우지 않는다   | Metabase가 가리키는 파일이 사라지지 않는다            |
+| DagRun마다 운영 기록 1행을 남긴다          | 기록 실패가 DAG를 실패시키지 않고, 창 단위 SQL 하나로 합격 여부를 본다 |
 
 ---
 
@@ -435,5 +599,12 @@ Staging까지의 이름·타입·값 변환을 다루고, Mart 설계는 다루�
 - [Phase 4. Airflow Orchestration](../phases/phase-04-airflow-orchestration.md) — 각 구간의 실행 경계와 Lease
 - [Phase 5. Bronze Catalog + Staging](../phases/phase-05-bronze-catalog-and-staging.md) — Source에서 Staging까지의 Model 구현
 - [Phase 6. Dimensional Modeling](../phases/phase-06-dimensional-modeling.md) — Staging 이후의 Intermediate와 Mart
+- [Phase 7. Data Quality & Publish](../phases/phase-07-data-quality-publish.md) — Build-then-swap Publish와 품질 Gate
+- [Phase 10. BI](../phases/phase-10-bi.md) — Serving Export와 Metabase 연결
 - [Mart Grain 계약](mart-grain.md) — Mart의 Grain, Unique Key, Measure 계약, 이력 추적 구현
-- [PRD v1.21](../../PRD_v1.21.md) — Section 7.1 상태 Mapping, Section 14 dbt Model, Section 15 이력 추적 요구사항
+- [ADR 016](../adr/016-publish-mart-via-warehouse-file-swap.md) — Warehouse File 교체로 Mart를 Publish한다
+- [ADR 019](../adr/019-serving-file-visibility-for-metabase.md) — Metabase의 Serving 파일 교체 가시성
+- [Warehouse Publish 오류 유형](../troubleshooting/warehouse-publish.md) — Publish Error Type별 원인과 조치
+- [Metabase Serving 연결](../../metabase/README.md) — Metabase 등록, 재지정 CLI, 최신성 확인
+- Architect 판정: [058 Publish 파일 Identity](../architect-review/058_publish-file-identity.md), [059 Serving 갱신 경로 단일화](../architect-review/059_serving-refresh-single-path.md), [060 Metabase 계층 정리](../architect-review/060_metabase-layer-cleanup.md), [061 Publish Heartbeat Lease](../architect-review/061_publish-heartbeat-lease.md)
+- [PRD v1.28](../../PRD_v1.28.md) — Section 7.1 상태 Mapping, Section 14 dbt Model, Section 15 이력 추적, Section 17 Data Quality와 Publish, Section 18 Observability
