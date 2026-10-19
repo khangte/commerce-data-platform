@@ -3,29 +3,29 @@
 > 상태: Reference
 > 기준 문서: [PRD v1.28](../../PRD_v1.28.md), [Phase 3](../phases/phase-03-incremental-ingestion.md), [Phase 4](../phases/phase-04-airflow-orchestration.md), [Phase 5](../phases/phase-05-bronze-catalog-and-staging.md), [Phase 7](../phases/phase-07-data-quality-publish.md), [Phase 10](../phases/phase-10-bi.md)
 
-이 문서는 하나의 주문 레코드가 PostgreSQL 원천에서 Metabase가 읽는 Serving 파일에 도달할 때까지의 전체 경로를 정리한다. 3~8절은 이름, 타입, 값, Grain이 어느 지점에서 왜 바뀌는지와, 그 변환을 다른 지점에서 했을 때 무엇이 깨지는지를 기록한다. 9~13절은 Mart가 만들어진 뒤 Build, Publish, Serving Export, Metabase 재지정, 운영 기록으로 이어지는 구간을 단계별 동작과 실패 시 동작 중심으로 정리한다. 이 구간에서는 데이터 값이 바뀌지 않는다. 바뀌는 것은 파일 위치와 가시성이다.
+이 문서는 하나의 주문 레코드가 PostgreSQL 원천에서 Metabase가 읽는 Serving 파일에 도달할 때까지의 전체 경로를 정리한다. 3-8절은 이름, 타입, 값, Grain이 어느 지점에서 왜 바뀌는지와, 그 변환을 다른 지점에서 했을 때 무엇이 깨지는지를 기록한다. 9-13절은 Mart가 만들어진 뒤 Build, Publish, Serving Export, Metabase 재지정, 운영 기록으로 이어지는 구간을 단계별 동작과 실패 시 동작 중심으로 정리한다. 이 구간에서는 데이터 값이 바뀌지 않는다. 바뀌는 것은 파일 위치와 가시성이다.
 
 ## 1. 전체 흐름
 
 ```text
-PostgreSQL commerce_source          OLTP 원천
-        ↓ ingest_table()            이름 보존, 기술 컬럼만 추가 (Table별 extract_validate_load)
-SeaweedFS bronze/*.parquet          Data Lake (불변 Object)
-        ↓ sync_bronze_catalog()     prepare_warehouse_build가 Build 파일에 실행
-DuckDB control.bronze_files         Commit된 Object 목록 (Build 파일 안)
-        ↓ dbt staging               이름·값 변환이 일어나는 유일한 지점
-DuckDB staging.*                    분석 Naming (View)
-        ↓ dbt intermediate          Join과 사전 집계
-DuckDB intermediate.*               (View)
-        ↓ dbt marts                 Grain 확정
-DuckDB dimensions·facts·metrics.*   Mart (Build 파일 build/{publish_run_id}.duckdb 안)
-        ↓ publish_mart              검증된 Build 파일을 원자 교체
-data/warehouse/warehouse.duckdb     Published Warehouse
-        ↓ export_serving_mart       Mart Schema만 복사, serving_manifest 기록
-data/serving/exports/{export_id}.duckdb   Serving 파일 (mart.duckdb와 같은 inode)
-        ↓ repoint_metabase_serving  Metabase 연결 경로 교체·검증·Schema 동기화
-Metabase                            BI 조회
-        ↓ publish_run_summary       DagRun마다 운영 기록 1행
+PostgreSQL commerce_source               OLTP 원천
+        ↓ ingest_table()                 이름 보존, 기술 컬럼만 추가 (Table별 extract_validate_load)
+SeaweedFS bronze/*.parquet               Data Lake (불변 Object)
+        ↓ sync_bronze_catalog()          prepare_warehouse_build가 Build 파일에 실행
+DuckDB control.bronze_files              Commit된 Object 목록 (Build 파일 안)
+        ↓ dbt staging                    이름·값 변환이 일어나는 유일한 지점
+DuckDB staging.*                         분석 Naming (View)
+        ↓ dbt intermediate               Join과 사전 집계
+DuckDB intermediate.*                    (View)
+        ↓ dbt marts                      Grain 확정
+DuckDB dimensions·facts·metrics.*        Mart (Build 파일 build/{publish_run_id}.duckdb 안)
+        ↓ publish_mart                   검증된 Build 파일을 원자 교체
+data/warehouse/warehouse.duckdb          Published Warehouse
+↓ export_serving_mart                    Mart Schema만 복사, serving_manifest 기록
+data/serving/exports/{export_id}.duckdb  Serving 파일 (mart.duckdb와 같은 inode)
+        ↓ repoint_metabase_serving       Metabase 연결 경로 교체·검증·Schema 동기화
+Metabase                                 BI 조회
+        ↓ publish_run_summary            DagRun마다 운영 기록 1행
 pipeline_metadata.warehouse_run_reports
 ```
 
