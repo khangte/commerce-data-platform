@@ -45,10 +45,10 @@ def test_record_upserts_same_dag_run():
 
 @pytest.mark.parametrize(('scenario', 'verdict', 'missing', 'not_ok'), [
     ('healthy', 'PASS', 0, 0), ('missing', 'FAIL', 1, 0),
-    ('failed', 'FAIL', 0, 1), ('slow', 'FAIL', 0, 0), ('empty', 'FAIL', 144, 0),
+    ('failed', 'FAIL', 0, 1), ('slow', 'FAIL', 0, 0), ('empty', 'FAIL', 18, 0),
 ])
 def test_window_query(scenario, verdict, missing, not_ok):
-    """임시 테이블로 운영 데이터를 보호하며 누락·실패·지연과 원인 상세를 검증한다."""
+    """임시 테이블로 운영 데이터를 보호하며 3시간 창의 18개 슬롯과 원인 상세를 검증한다."""
     settings = PostgresSettings.from_environment()
     sql = (PROJECT_ROOT / 'sql/validation/warehouse_run_report_window.sql').read_text()
     sql = sql.replace('CURRENT_TIMESTAMP', "timestamptz '2000-01-02 00:00:00+00'")
@@ -59,15 +59,15 @@ def test_window_query(scenario, verdict, missing, not_ok):
             connection.execute("""
                 INSERT INTO warehouse_run_reports
                 SELECT slot::text, slot, slot, true, '[]'::jsonb, %s
-                FROM generate_series(timestamptz '2000-01-01', timestamptz '2000-01-01 23:50:00', interval '10 minutes') slot
+                FROM generate_series(timestamptz '2000-01-01 21:00:00', timestamptz '2000-01-01 23:50:00', interval '10 minutes') slot
             """, (Jsonb({'dag_elapsed_s': 301 if scenario == 'slow' else 300,
                          'start_lag_s': 1, 'exports_count': 3, 'failed_builds_count': 0,
                          'disk_free_bytes': 1000, 'probe_errors': {}}),))
         if scenario == 'missing':
-            connection.execute("DELETE FROM warehouse_run_reports WHERE logical_date = '2000-01-01'")
-            connection.execute("INSERT INTO generator_runs VALUES ('2000-01-01', 'FAILED', 'fixture failure', '2000-01-01')")
+            connection.execute("DELETE FROM warehouse_run_reports WHERE logical_date = '2000-01-01 21:00:00+00'")
+            connection.execute("INSERT INTO generator_runs VALUES ('2000-01-01 21:00:00+00', 'FAILED', 'fixture failure', '2000-01-01 21:00:00+00')")
         if scenario == 'failed':
-            connection.execute("UPDATE warehouse_run_reports SET ok = false, failures = '[\"NOT_FRESH\"]' WHERE logical_date = '2000-01-01'")
+            connection.execute("UPDATE warehouse_run_reports SET ok = false, failures = '[\"NOT_FRESH\"]' WHERE logical_date = '2000-01-01 21:00:00+00'")
         cursor = connection.execute(sql)
         results = []
         while True:
@@ -76,8 +76,8 @@ def test_window_query(scenario, verdict, missing, not_ok):
             if not cursor.nextset():
                 break
         aggregate = results[0][0]
-        assert aggregate[:5] == (144, 0 if scenario == 'empty' else 144 - missing,
-                                 0 if scenario == 'empty' else 144 - missing - not_ok, not_ok, missing)
+        assert aggregate[:5] == (18, 0 if scenario == 'empty' else 18 - missing,
+                                 0 if scenario == 'empty' else 18 - missing - not_ok, not_ok, missing)
         assert aggregate[-1] == verdict
         assert aggregate[8] == ({'NOT_FRESH': 1} if scenario == 'failed' else {})
         assert len(results[1]) == not_ok

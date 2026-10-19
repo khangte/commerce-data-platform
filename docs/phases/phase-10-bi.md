@@ -283,7 +283,7 @@ Phase 10에는 별도 AC 번호가 없으므로 ROADMAP의 Connection/Dashboard 
 - [x] architect의 `pipeline-run-report-plan.md`에 따라 `warehouse_run_reports`(실행별 운영 기록) 테이블의 멱등 생성과 DagRun별 갱신을 구현한다.
 - [x] 작업 상태·최신 수집 시도·원시 객체 확정·잠금·게시·서빙 최신 여부·파일 보존·디스크 정보를 단계별로 수집한다. 각 수집 오류는 `probe_errors`(수집 오류)에 남기고 다음 단계를 계속하며 저장 오류도 다시 던지지 않는다.
 - [x] 판정 함수를 한곳에 두고 기존 실패 파일 보존 상수와 공유한 서빙 버전 보존 상수를 사용한다. Summary는 원천 잠금 해제 뒤 실행하고 `RUN_REPORT` JSON 한 줄을 출력하며 기존 XCom 반환값을 보존한다.
-- [x] 최근 24시간의 10분 슬롯·누락·실패 코드·소요 시간·파일 수·여유 공간과 Generator 실패 원인을 조회하는 SQL을 추가한다. 누락 없음·실패 없음·실행 시간 95백분위 300초 이하를 PASS로 판정한다.
+- [x] 최근 3시간의 10분 슬롯·누락·실패 코드·소요 시간·파일 수·여유 공간과 Generator 실패 원인을 조회하는 SQL을 추가한다. 누락 없음·실패 없음·실행 시간 95백분위 300초 이하를 PASS로 판정한다.
 - [x] 단위 테스트로 실패 코드·경계값·모든 수집 단계의 오류 격리·시간 계산·서빙 검사 재사용·파일 잔류·XCom 보존·저장 실패 격리를 확인한다. PostgreSQL 통합 테스트로 같은 실행의 갱신과 정상·누락·실패·지연·빈 창 SQL 결과를 확인한다.
 - [x] Airflow 실행 서비스를 내린 상태에서 전체 pytest와 `RUN_POSTGRES_INTEGRATION=1` 통합 테스트를 완료했다. `RUN_AIRFLOW_SMOKE_TEST`는 사용하지 않았다. reviewer에게 검토를 요청한다.
 
@@ -293,7 +293,9 @@ Phase 10에는 별도 AC 번호가 없으므로 ROADMAP의 Connection/Dashboard 
 
 reviewer 후속 최종 검증: 전체 pytest 494개 통과·140개 생략(89.17초), `RUN_POSTGRES_INTEGRATION=1`의 `tests/integration` 85개 통과·29개 생략(95.80초), Ruff와 공백 검사 통과다. 새 운영 기록 통합 테스트는 총 8개다. Airflow 실행 서비스를 내린 상태를 유지했고 `RUN_AIRFLOW_SMOKE_TEST`는 사용하지 않았다. 재현 로그는 `/tmp/pipeline-run-report-review-red.log`, 재검증 로그는 `/tmp/pipeline-run-report-review-pytest.log`, `/tmp/pipeline-run-report-review-postgres.log`에 남겼다. 설계 이탈·커밋 없이 reviewer에게 재검토를 요청한다.
 
-운영 판독 명령: `docker compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$PIPELINE_METADATA_DB" -P pager=off' < sql/validation/warehouse_run_report_window.sql`. 파일 첫 설정의 창 길이와 슬롯 간격은 현재 24시간·10분이다. 판독 창은 현재 시각을 10분 경계로 내림한 시각 직전까지의 논리 시각을 포함하므로 진행 중인 마지막 실행이 있으면 완료 뒤 다시 판독한다. Metabase 카드 값(C6)은 판독 후 사람이 확인한다.
+운영 판독 명령: `docker compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$PIPELINE_METADATA_DB" -P pager=off' < sql/validation/warehouse_run_report_window.sql`. 파일 첫 설정의 창 길이와 슬롯 간격은 현재 3시간·10분이다. 판독 창은 현재 시각을 10분 경계로 내림한 시각 직전까지의 논리 시각을 포함하므로 진행 중인 마지막 실행이 있으면 완료 뒤 다시 판독한다. Metabase 카드 값(C6)은 판독 후 사람이 확인한다.
+
+- [x] 운영 중 판독 창 변경: `warehouse_run_report_window.sql`의 기본 창을 3시간으로 줄이고 10분 간격은 유지한다. SQL 주석·운영 판독 설명과 통합 테스트의 표본 범위(21:00–23:50)·예상 슬롯 수(18개)를 동기화했다. 이번 검증은 `tests/observability` 단위 pytest 30개 통과·해당 테스트 파일 Ruff·공백 검사 통과다. 공유 DB의 운영 시험을 보호하기 위해 `RUN_*` 통합 테스트와 운영 SQL은 실행하지 않았다. 커밋 없이 reviewer에게 전달한다.
 
 ## 파일·폴더별 변경 요약
 
@@ -303,8 +305,8 @@ reviewer 후속 최종 검증: 전체 pytest 494개 통과·140개 생략(89.17�
 | `src/observability/__init__.py`, `src/observability/run_report.py` | 운영 정보 수집·공통 판정·멱등 저장을 추가한다. 수집 단계별 예외를 격리하고 저장 실패는 로그로 남긴다. reviewer 후속으로 DAG 정보 수집 전에 실행 식별자·논리 시각을 보존해 해당 수집 실패도 저장한다. |
 | `src/serving/metabase_repoint.py` | 기본 버전 보존 수 3을 상수로 올려 기존 정리 함수와 운영 판정이 공유한다. |
 | `airflow/dags/warehouse_pipeline_dag.py` | 기존 Summary 반환값을 보존하면서 운영 기록 수집·JSON 로그·저장을 호출하고 원천 잠금 해제 작업 뒤에 연결한다. |
-| `sql/validation/warehouse_run_report_window.sql` | 기본 24시간의 슬롯별 누락과 실행 실패·시간·파일·디스크 통계 및 Generator 원인 상세를 출력한다. 세션 임시 뷰를 사용하며 운영 데이터는 변경하지 않는다. |
-| `tests/observability/test_run_report.py`, `tests/integration/test_run_report_integration.py` | 판정 경계·단계별 오류 격리·시간·서빙·파일·XCom 보존과 실제 PostgreSQL의 기록 갱신·시간 창 판독을 검증한다. reviewer 후속으로 DAG 정보 수집 실패도 논리 시각 유무에 관계없이 저장됨을 확인한다. |
+| `sql/validation/warehouse_run_report_window.sql` | 기본 3시간의 슬롯별 누락과 실행 실패·시간·파일·디스크 통계 및 Generator 원인 상세를 출력한다. 세션 임시 뷰를 사용하며 운영 데이터는 변경하지 않는다. 운영 시험 중 기본 창을 3시간·18개 슬롯으로 조정하고 테스트·주석을 동기화했다. |
+| `tests/observability/test_run_report.py`, `tests/integration/test_run_report_integration.py` | 판정 경계·단계별 오류 격리·시간·서빙·파일·XCom 보존과 실제 PostgreSQL의 기록 갱신·시간 창 판독을 검증한다. reviewer 후속으로 DAG 정보 수집 실패도 논리 시각 유무에 관계없이 저장됨을 확인한다. 기본 창 변경에 맞춰 시간 창 테스트 표본과 기대값을 3시간·18개 슬롯으로 조정했다. 이번 변경에서는 통합 테스트를 실행하지 않았다. |
 | `src/serving/cli.py`, `src/warehouse/duckdb_files.py`, `docs/architect-review/058_publish-file-identity.md` | `export --publish-run-id`를 제거해 최신 게시 조회만 사용하고 게시 파일명을 공유한다. 058의 과거 사례에는 현재 옵션이 제거됐음을 덧붙였다. |
 | `src/serving/metabase_repoint.py`, `tests/serving/test_metabase_repoint.py` | 재지정 확인을 두 식별자를 읽는 기존 매니페스트 조회로 통합하고 성공·불일치·동기화 요청 테스트를 같은 응답 구조로 맞췄다. 오류 메시지 변경만 허용하며 성공·실패 상태와 정리 조건을 유지한다. |
 | `src/serving/export.py`, `tests/serving/test_export.py`, `tests/test_airflow_dags.py` | 저장 버전 인자·파일 존재 선검사·중복 부모 디렉터리 생성을 정리했다. 다른 테스트가 덮는 버전 보존 테스트와 과거 DAG 구현 문자열 검사를 제거했다. 매니페스트 컬럼·Mart 경계 검증·식별값 재검사·파일 교체는 유지한다. |

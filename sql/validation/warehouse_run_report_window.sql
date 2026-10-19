@@ -1,6 +1,6 @@
--- 기본 창 24시간, 실행 간격 10분. 스케줄 변경 시 두 값을 함께 조정한다.
+-- 기본 창 3시간, 실행 간격 10분. 스케줄 변경 시 두 값을 함께 조정한다.
 CREATE OR REPLACE TEMP VIEW run_report_window AS
-SELECT interval '24 hours' AS window_size, interval '10 minutes' AS slot_size,
+SELECT interval '3 hours' AS window_size, interval '10 minutes' AS slot_size,
        date_bin(interval '10 minutes', CURRENT_TIMESTAMP, timestamptz '2000-01-01') AS window_end;
 
 CREATE OR REPLACE TEMP VIEW run_report_slots AS
