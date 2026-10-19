@@ -96,7 +96,10 @@ def metabase_repoint_summary_status(serving_export: dict | None, status: str | N
     return status or "FAILED"
 
 
-def prune_serving_exports(versions_dir: Path, keep: int = 3) -> None:
+SERVING_EXPORT_RETENTION = 3
+
+
+def prune_serving_exports(versions_dir: Path, keep: int = SERVING_EXPORT_RETENTION) -> None:
     """재지정 결과를 확인한 뒤 오래된 Export 버전 파일을 정리한다."""
     versions = sorted(
         versions_dir.glob("*.duckdb"), key=lambda path: path.stat().st_mtime_ns, reverse=True

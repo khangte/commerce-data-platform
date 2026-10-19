@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import tempfile
 import uuid
@@ -27,6 +28,7 @@ from src.ingestion.bronze.verification import verify_bronze_commit
 from src.ingestion.control.batch import BatchIdentity
 from src.ingestion.errors import classify_error, is_retryable
 from src.ingestion.service import TableIngestionRequest, ingest_table
+from src.observability.run_report import collect_run_report, record_run_report
 from src.serving.export import ServingPaths, export_serving_mart
 from src.serving.metabase_repoint import (
     metabase_repoint_summary_status,
@@ -291,7 +293,12 @@ with DAG(
                 serving_export, metabase_repoint
             ),
         }
-        print(summary)
+        settings = PostgresSettings.from_environment()
+        report = collect_run_report(
+            settings, summary, get_current_context(), WAREHOUSE_PATHS, SERVING_PATHS
+        )
+        print("RUN_REPORT", json.dumps(report, default=str))
+        record_run_report(settings, report)
         return summary
 
     run_info = initialize_run()
@@ -324,4 +331,5 @@ with DAG(
 
     extract_results >> release_task
     extract_results >> verification >> build >> dbt_result >> publish >> serving_export >> metabase_repoint
-    publish_run_summary(run_info, verification, build, publish, serving_export, metabase_repoint)
+    summary = publish_run_summary(run_info, verification, build, publish, serving_export, metabase_repoint)
+    release_task >> summary
