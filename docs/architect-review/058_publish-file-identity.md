@@ -50,7 +50,7 @@ Published 복사 → Build File에 dbt build → CHECKPOINT → Hash → os.repl
   - Export가 Identity 검사를 하는 실제 이유는 하나다. Mutex는 `PUBLISHED`에서 풀린다. 그래서 `publish_mart`와 `export_serving_mart` 사이에 CLI Publish가 파일을 바꿀 수 있다.
   - Swap 직전 재검사는 복사 도중 교체(TOCTOU)를 막는다.
 - **inode 단독은 반려한다.** ext4는 해제된 inode를 재사용한다.
-  - 예: 이후 Publish가 두 번 있었다. 그 뒤 오래된 Run을 `--publish-run-id`로 지정해 CLI Export를 한다. 이 경우 inode만 같은 다른 파일이 통과할 수 있다.
+  - 예: 이후 Publish가 두 번 있었다. 그 뒤 오래된 Run을 `--publish-run-id`로 지정해 CLI Export를 한다(당시 지원한 옵션이며 현재는 제거되어 최신 게시 실행만 내보낸다). 이 경우 inode만 같은 다른 파일이 통과할 수 있다.
   - mtime_ns를 함께 비교하면 이 경우를 거부한다.
 - Fail-closed 성질:
   - 읽기 전용 DuckDB 연결과 `shutil.copyfile`은 mtime을 바꾸지 않는다.
