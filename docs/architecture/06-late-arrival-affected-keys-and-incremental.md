@@ -1,7 +1,7 @@
 # 06. Late Arrival 영향 Key와 Affected 기반 Incremental 설계
 
 > 대상 Task: `P6-10` Late Arrival 영향 범위 계산, `P6-22` 영향 Key/Business Date 재계산
-> 기준 문서: [PRD v1.12](../../PRD_v1.12.md) Section 14.4 / Section 16, [Mart Grain 계약](../reference/mart-grain.md), [Phase 6](../phases/phase-06-dimensional-modeling.md)
+> 기준 문서: [PRD v1.12](../../PRD.bak/PRD_v1.12.md) Section 14.4 / Section 16, [Mart Grain 계약](../reference/mart-grain.md), [Phase 6](../phases/phase-06-dimensional-modeling.md)
 > 브랜치: `feature/phase6-remaining`
 > 상태: lead 승인 완료 (2026-09-18)
 

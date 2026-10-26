@@ -457,7 +457,7 @@ EOF
   - Generator DAG가 새 구독 Profile과 만료 스캔을 호출하도록 Task 인자를 넓힌다.
   - DAG Parse Smoke Test를 9개 Table 기준으로 다시 통과시킨다.
 
-  세부 순서는 [전환 계획](../architecture/02-subscription-membership-transition-plan.md) 5절에
+  세부 순서는 [전환 계획](../../architecture/02-subscription-membership-transition-plan.md) 5절에
   있다.
 + new: ## 구독·등급 전환 반영 완료
 
@@ -467,7 +467,7 @@ EOF
   Profile 인자 확장 없이 기존 Param 구조를 유지한다. DAG Parse Smoke Test는 9개 Table
   기준으로 통과한다.
 
-  전환 세부 배경은 [전환 계획](../architecture/02-subscription-membership-transition-plan.md)
+  전환 세부 배경은 [전환 계획](../../architecture/02-subscription-membership-transition-plan.md)
   5절에 있다.
 ```
 

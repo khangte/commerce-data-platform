@@ -6,7 +6,7 @@
 > [구독 생명주기 요구사항](03-subscription-lifecycle-requirements.md),
 > [구독·등급 테이블 분리 비교](04-membership-table-split-comparison.md),
 > [Membership Grain 분리 기획안](01-membership-grain-separation.md),
-> [PRD v1.11](../../PRD_v1.11.md),
+> [PRD v1.11](../../PRD.bak/PRD_v1.11.md),
 > [데이터 변환 흐름](../reference/data-transformation-flow.md),
 > [Phase 1](../phases/phase-01-source-environment.md),
 > [Phase 2](../phases/phase-02-deterministic-generator.md),

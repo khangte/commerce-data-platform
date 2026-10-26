@@ -3,7 +3,7 @@
 > 상태: Done  
 > Milestone: 1 — Source Foundation  
 > 선행 Phase: 없음  
-> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.22](../../PRD_v1.22.md)
+> 기준 문서: [ROADMAP](ROADMAP.md), [PRD v1.22](../../PRD.bak/PRD_v1.22.md)
 
 ## 목표
 
@@ -35,6 +35,7 @@
 - [x] `P0-10` README에 사전 조건, 설치, 검증 명령 작성
 - [x] `P0-11` Repository 작업 규칙을 담은 `AGENTS.md` 작성
 - [x] `P0-12` 최소 pytest Smoke Test와 Ruff 설정 구성
+- [x] 2026-10-26 README와 `docs/**/*.md`의 상대 링크 대상 존재 여부를 pytest로 검사하고, 보관된 PRD와 전환 계획의 명확한 경로 오류 20건을 수정했다.
 
 ### Repository 기준 구조
 
@@ -102,6 +103,18 @@ AC-16의 전체 E2E/dbt 검증은 Phase 7 이후 완료하며, 이 Phase에서�
 | Bootstrap README     | 새 Clone 재현 가능           |
 
 ## 파일·폴더별 변경 요약
+
+문서 상대 링크 검증 추가(2026-10-26):
+
+| 경로 | 변경 | 요약 |
+| --- | --- | --- |
+| `tests/test_doc_links.py` | 생성 | README와 모든 docs Markdown 문서를 매개변수화해 상대 링크의 경로 존재 여부를 검사한다. `path#anchor`는 경로만 확인하고 HTTP(S)·메일·문서 내 제목 링크와 코드 예시는 제외한다. 누락 파일·상위 경로·제목·외부 링크·코드 예시 등 17개 사례로 검사 자체도 검증한다. |
+| `docs/architecture/01-membership-grain-separation.md`, `docs/architecture/02-subscription-membership-transition-plan.md`, `docs/architecture/05-fact-layer-responsibility-refactoring-plan.md`, `docs/architecture/06-late-arrival-affected-keys-and-incremental.md` | 수정 | 과거 PRD 링크를 같은 버전의 `PRD.bak/` 보관 파일로 연결했다. |
+| `docs/phases/ROADMAP.md`, `docs/phases/phase-00-bootstrap.md`, `docs/phases/phase-01-source-environment.md`, `docs/phases/phase-02-deterministic-generator.md`, `docs/phases/phase-03-incremental-ingestion.md`, `docs/phases/phase-04-airflow-orchestration.md`, `docs/phases/phase-05-bronze-catalog-and-staging.md`, `docs/phases/phase-06-dimensional-modeling.md`, `docs/phases/phase-07-data-quality-publish.md`, `docs/phases/phase-08-reliability.md`, `docs/phases/phase-09-benchmark.md`, `docs/phases/phase-10-bi.md` | 수정 | 기준 PRD의 버전을 유지하며 보관 파일 경로를 반영했다. Phase 0에는 검사 추가의 체크리스트·변경 파일·검증 결과도 기록했다. |
+| `docs/reference/mart-grain.md` | 수정 | PRD v1.21을 참조하는 두 링크의 보관 경로를 수정했다. |
+| `docs/superpowers/plans/2026-09-11-generator-warehouse-dag-trigger.md` | 수정 | 전환 계획 문서를 참조하는 두 링크를 실제 `docs/architecture/` 위치에 맞췄다. |
+
+검증: 누락 파일 사례 2건의 실패를 먼저 확인한 뒤 검사를 구현했다. `uv run pytest -q tests/test_doc_links.py tests/test_bootstrap.py`는 175건 통과했고 `uv run ruff check .`와 `git diff --check`도 통과했다. 수정 대상이 불명확하거나 남아 있는 깨진 상대 링크는 없다.
 
 | 경로                                                           | 변경              | 요약                                                                           |
 | -------------------------------------------------------------- | ----------------- | ------------------------------------------------------------------------------ |
