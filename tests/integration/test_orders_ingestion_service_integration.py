@@ -12,7 +12,7 @@ import pytest
 from psycopg.types.json import Jsonb
 
 from src.common.database import PostgresSettings
-from src.generator.core.lease import (
+from src.common.lease import (
     GENERATOR_OWNER_TYPE,
     LeaseUnavailableError,
     acquire_source_mutation_lease,

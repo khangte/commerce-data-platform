@@ -10,6 +10,14 @@ from datetime import datetime
 import psycopg
 
 from src.common.database import PostgresSettings
+from src.common.lease import (
+    GENERATOR_OWNER_TYPE,
+    SourceMutationLease,
+    acquire_source_mutation_lease,
+    ensure_source_mutation_lease_metadata,
+    fenced_source_commit,
+    release_source_mutation_lease,
+)
 from src.generator.core.commits import (
     committed_result,
     ensure_generator_commits,
@@ -18,14 +26,6 @@ from src.generator.core.commits import (
 from src.generator.core.config import GeneratorConfig
 from src.generator.core.errors import SourceCursorRegressionError
 from src.generator.core.ids import logical_hash
-from src.generator.core.lease import (
-    GENERATOR_OWNER_TYPE,
-    SourceMutationLease,
-    acquire_source_mutation_lease,
-    ensure_source_mutation_lease_metadata,
-    fenced_source_commit,
-    release_source_mutation_lease,
-)
 from src.generator.core.metadata import (
     ensure_generator_metadata,
     record_finished_run,

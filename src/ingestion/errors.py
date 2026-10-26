@@ -5,8 +5,8 @@ from __future__ import annotations
 import psycopg
 from botocore.exceptions import BotoCoreError, ClientError
 
+from src.common.lease import LeaseOwnershipLostError, LeaseUnavailableError
 from src.generator.core.errors import SourceCursorRegressionError
-from src.generator.core.lease import LeaseOwnershipLostError, LeaseUnavailableError
 from src.ingestion.bronze.verification import BronzeCommitVerificationError
 from src.ingestion.contract.schema import SourceContractError as BronzeSchemaContractError
 from src.ingestion.control.batch import BatchIdentityConflictError

@@ -10,7 +10,7 @@ from threading import Event, Thread
 from typing import Self
 
 from src.common.database import PostgresSettings
-from src.generator.core.lease import (
+from src.common.lease import (
     WAREHOUSE_OWNER_TYPE,
     SourceMutationLease,
     acquire_source_mutation_lease,

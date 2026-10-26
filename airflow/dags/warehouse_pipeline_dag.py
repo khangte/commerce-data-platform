@@ -15,7 +15,7 @@ from airflow.sdk.definitions.param import Param
 from airflow.sdk.exceptions import AirflowException, AirflowFailException
 
 from src.common.database import PROJECT_ROOT, PostgresSettings
-from src.generator.core.lease import (
+from src.common.lease import (
     WAREHOUSE_OWNER_TYPE,
     LeaseOwnershipLostError,
     LeaseUnavailableError,

@@ -11,10 +11,10 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from src.common.lease import LeaseOwnershipLostError
 from src.generator.core.commits import CommittedResult
 from src.generator.core.config import GENERATOR_VERSION, GeneratorConfig
 from src.generator.core.errors import SourceCursorRegressionError
-from src.generator.core.lease import LeaseOwnershipLostError
 from src.generator.service import GeneratorResult, run_generator
 from src.ingestion.errors import SOURCE_CONTRACT_ERROR, classify_error, is_retryable
 

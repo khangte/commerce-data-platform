@@ -9,7 +9,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from src.common.database import PostgresSettings
-from src.generator.core.lease import (
+from src.common.lease import (
     WAREHOUSE_OWNER_TYPE,
     SourceMutationLease,
     acquire_source_mutation_lease,

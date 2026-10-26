@@ -5,8 +5,8 @@ from __future__ import annotations
 import psycopg
 
 from src.common.database import PostgresSettings
+from src.common.lease import SourceMutationLease, assert_source_mutation_lease
 from src.generator.core.config import GeneratorConfig
-from src.generator.core.lease import SourceMutationLease, assert_source_mutation_lease
 from src.generator.orders.order_progress import plan_order_progress
 from src.generator.orders.transitions import (
     fetch_order_state,

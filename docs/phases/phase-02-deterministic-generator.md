@@ -98,6 +98,7 @@ Payment: pending → completed → refunded
 - [x] `P2-20` Lease 획득 실패 시 Source 변경 전 안전하게 종료
 - [x] `P2-21` Generator Transaction 종료 후 Lease 해제
 - [x] `P2-22` 만료/소유권 상실 시 변경을 중단하는 Fencing 검증
+- [x] 2026-10-26 원천 데이터 변경 잠금을 `src/common/lease.py`로 이동하고 Generator·수집·Airflow·테스트의 import를 갱신했다. 잠금 동작과 공개 함수는 유지하며 common에서 generator를 참조하지 않는다.
 
 ### 실행 통합
 
@@ -182,6 +183,20 @@ AC-20과 AC-21의 전체 E2E 판정은 Phase 3의 Ingestion과 결합해 완료�
 - 결정성, Transaction, 원천 변경 시각 자동 테스트
 
 ## 파일·폴더별 변경 요약
+
+공유 원천 데이터 변경 잠금 이동(2026-10-26):
+
+| 경로 | 변경 | 요약 |
+| --- | --- | --- |
+| `src/generator/core/lease.py` → `src/common/lease.py` | 이동 | `git mv`로 공유 잠금을 이동했다. 획득·갱신·소유권 검증·커밋 보호·해제 로직은 그대로 유지하며 기존 의존성은 `common.database`뿐이다. |
+| `src/generator/core/__init__.py` | 수정 | 재노출이 없음을 확인하고 패키지 설명에서 이동한 잠금을 제외했다. |
+| `src/generator/service.py`, `src/generator/orders/existing_orders.py`, `src/generator/orders/new_orders.py` | 수정 | Generator의 잠금 import를 `src.common.lease`로 변경했다. |
+| `src/ingestion/service.py`, `src/ingestion/control/lease.py`, `src/ingestion/errors.py`, `airflow/dags/warehouse_pipeline_dag.py` | 수정 | 수집 서비스·잠금 갱신·예외·Warehouse DAG가 공유 잠금을 직접 참조한다. |
+| `tests/generator/test_cursor_regression.py`, `tests/ingestion/test_lease.py`, `tests/integration/test_generator_service_integration.py`, `tests/integration/test_orders_ingestion_service_integration.py`, `tests/integration/test_source_mutation_lease_integration.py` | 수정 | 기존 테스트의 잠금 import를 이동 경로로 변경하고 동일 검증을 유지한다. |
+| `docs/phases/phase-02-deterministic-generator.md` | 수정 | 이동 체크리스트, 변경 파일과 검증 결과를 기록한다. |
+
+검증: `uv run ruff check .`와 `git diff --check`가 통과했다. Generator·수집 단위 테스트, `tests/test_airflow_dags.py`, 잠금·Generator 서비스·주문 수집 서비스 통합 테스트 파일을 함께 실행해 이동 전후 모두 183건 통과·22건 생략이었다. 생략 항목은 Airflow 컨테이너 검사 5건과 PostgreSQL·SeaweedFS 통합 검사 17건으로, 실행 환경 변수가 설정되지 않았다. 이동 전후 잠금 파일의 바이트가 동일하고 `src/common`에 generator import가 없으며 요청 범위 전체에 이전 잠금 import 및 `generator.core` 직접 import가 없음을 확인했다. 최상위 `benchmark/`는 없고 `src/benchmark/`는 검색 범위에 포함된다.
+
 
 057 구현(2026-10-12):
 
