@@ -13,7 +13,7 @@
 > **증분 수집 → Bronze(Parquet) → dbt Star Schema → 품질 Gate → Dashboard**까지 이어지는
 > 배치 파이프라인의 **신뢰성**과 **분석 모델 정합성**을 설계·검증한 프로젝트다.
 
-기준 문서: [PRD v1.21](PRD_v1.21.md) · 단계별 기록: [`docs/phases/`](docs/phases/ROADMAP.md)
+기준 문서: [PRD v1.28](PRD_v1.28.md) · 단계별 기록: [`docs/phases/`](docs/phases/ROADMAP.md)
 
 ---
 
