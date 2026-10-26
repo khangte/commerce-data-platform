@@ -28,6 +28,8 @@ Published Warehouse에 직접 dbt build를 실행하면 Test 실패 후에도 �
 
 매 Publish마다 Warehouse 파일 복사가 발생하며, Rebaseline은 활성 Publish가 있으면 거부된다. 실패 원인 분석을 위해 실패 Build는 최대 3개 보관한다.
 
+Publish 비용은 변경량이 아니라 Warehouse 전체 크기에 비례한다(O(Warehouse 크기), 디스크는 Published·Build·`failed/` 3개로 최대 약 5배 점유). 현재 42MB(`data/warehouse/warehouse.duckdb`)에서는 무시할 수준이지만 수 GB 규모에서는 병목이 된다. Warehouse 파일이 1GB를 넘거나 Build 파일 복사 단계가 Publish당 60초를 넘으면 전체 파일 복사 대신 Snapshot 기반 Table Format(DuckLake·Iceberg 등)으로 전환해 Snapshot Commit으로 원자 Publish를 대체하는 새 ADR을 작성한다.
+
 ## Validation
 
 | 근거 | 결과 |
