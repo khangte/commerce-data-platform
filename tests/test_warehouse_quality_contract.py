@@ -70,6 +70,9 @@ def test_non_negative_and_singular_gate_tests_exist() -> None:
         "fct_order_item_status_matches_order.sql",
         "fct_order_payment_date_matches_order.sql",
         "fct_order_payment_customer_matches_order.sql",
+        "rpt_customer_order_activity_matches_fct_order.sql",
+        "rpt_membership_tier_matches_fct_order.sql",
+        "rpt_subscription_payment_outcomes_matches_fact.sql",
         "publish_gate_canary.sql",
     ):
         assert (DBT_DIR / "tests" / path).is_file()

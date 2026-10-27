@@ -301,7 +301,26 @@ Normal E2E Unknown Key = 0
 
 - [x] 잔여 정리(A1~A3·B1~B4·C1~C4·C6~C7) 검증: 전체 `uv run pytest -q` 464개 통과·132개 건너뜀, PostgreSQL 통합 77개 통과·47개 건너뜀(통합 디렉터리 77개 통과·29개 건너뜀, 디렉터리 밖 integration 표식 18개 건너뜀). 관련 집중 검증 119개 통과·5개 건너뜀, Ruff·diff 검사 통과. C5와 D 항목을 보존했고 커밋하지 않았다.
 
+## 집계 Report와 Fact 정합성 검사 (2026-10-27)
+
+- [x] 주문 활동 Report는 날짜별 고객 수·주문 수·배송 완료 금액과 신규 고객의 단일 집계를 주문 Fact에 대조한다. 등급별 Report는 주문·금액 전체 합계와 배송 완료 평균 주문 금액을 검증하며 등급 간 고객 수는 합산 비교하지 않는다. 구독 결제 결과 Report는 결제일·상태별 건수·고객 수·완료 금액을 결제 Fact에 대조한다.
+- [x] 날짜·상태별 누락과 초과는 `full outer join`(양쪽 전체 외부 결합)으로 검출한다. 건수는 정확히 비교하고 금액은 0.01 초과 차이만 실패한다. 양쪽 실패 결제 금액 NULL은 일치로 처리하고 배송 완료 0건의 평균 금액은 NULL이어야 한다. 빈 Fact·Report의 합계도 확인했다.
+- [x] 존재 계약 실패를 먼저 확인하고 SQL 3개를 추가했다. `tests/test_warehouse_quality_contract.py`, `tests/test_dbt_cleanup.py` 회귀 7개 통과를 확인했다.
+- [x] 운영 Warehouse 복사본에서 dbt `PASS=3`을 확인했다. 정상 원본에서 다시 복사한 뒤 계획의 각 불일치를 독립 주입해 배송 완료 금액 변경 1행, 신규 고객 삭제 6행, 평균 주문 금액 변경 3행, 주문 수 변경 1행, 실패 결제 삭제 5행으로 해당 검사 실패를 확인했다.
+- [x] 추가 SQL 검증으로 초과 날짜, 실패 결제 금액의 NULL 불일치, 배송 완료 0건의 NULL·비NULL 평균, 양수 건수의 NULL 평균, Fact·Report 모두 빈 상태를 확인했다. `rpt_subscription_funnel_daily`(구독 전이 Report)는 차원 Version을 다시 계산하는 중복 검사가 되므로 제외한다. 기존 `dim_subscription_transition_valid.sql`과 재가입 Fixture 검사를 유지한다.
+- [x] 모델 SQL·`schema.yml`·저장소 Hook은 변경하지 않고 운영 파일 체크섬 `3425e864211cdf17449262d40ee78e61b50ea9f374e6f92a12715413ea9a8516`을 보존했다. 커밋 없이 reviewer에게 검토를 요청한다.
+
+최종 검사: 지정 회귀·문서 링크 검사 총 180개 통과, `uv run ruff check src tests airflow`와 `git diff --check` 통과.
+
+검증 환경: 저장소 프로젝트 그대로 수행한 첫 dbt 실행에서는 검사 SQL 3개가 통과했지만 기존 실행 종료 Hook이 복사본 View의 원래 빌드 카탈로그를 참조해 종료 코드 2가 발생했다. 이를 검사 SQL의 실패로 세지 않았다. 임시 dbt 프로젝트에서만 실행 전후 Hook을 제외하고 같은 모델·스키마·매크로·테스트를 사용해 독립 검사 3개 통과와 주입별 실패를 검증했다. 운영 데이터와 저장소 설정은 변경하지 않았다. 증적은 `/tmp/rpt-reconciliation-eo39ei34/results.json`, 개별 dbt 로그, `/tmp/rpt-reconciliation-contract-red.log`, `/tmp/rpt-reconciliation-verification-isolated.log`, `/tmp/rpt-reconciliation-edges.log`에 남겼다.
+
 ## 파일·폴더별 변경 요약
+
+- `dbt/tests/rpt_customer_order_activity_matches_fct_order.sql`: 날짜별 집계 대조와 신규 고객 전체 합계 불변식을 추가한다.
+- `dbt/tests/rpt_membership_tier_matches_fct_order.sql`: Fact 전체 합계와 등급별 배송 완료 평균 주문 금액을 대조한다.
+- `dbt/tests/rpt_subscription_payment_outcomes_matches_fact.sql`: 결제일·상태별 건수·고객 수·완료 금액과 NULL 일치를 대조한다.
+- `tests/test_warehouse_quality_contract.py`: 위 세 Singular Test의 파일 존재 계약을 추가한다.
+- `docs/phases/phase-07-data-quality-publish.md`, `docs/superpowers/plans/2026-10-27-rpt-reconciliation-tests.md`: 구현 체크리스트·검증 방법·통과 및 실패 주입 증적과 Hook 격리 사유를 기록한다.
 
 - `src/warehouse/publish.py`, `src/warehouse/publish_metadata.py`: 같은 실행 회수를 단일 조건부 갱신으로 합치고, 만료 종료 인자를 게시 여부로 바꾸며 두 회수 메시지를 기록 모듈에서 공유한다. 사용하지 않는 시각 인자를 제거했다. 상태 전이·행 종료 후 파일 처리 순서는 보존한다.
 - `src/warehouse/publish_heartbeat.py`, `src/warehouse/duckdb_files.py`: 상수로만 전달하는 갱신 주기의 방어 검사를 제거하고 게시 파일명을 공유 모듈로 옮겼다. 소유권 상실 감지·종료 갱신은 유지한다.
