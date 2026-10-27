@@ -558,7 +558,7 @@ Export는 PostgreSQL에 행을 쓰지 않는다. 어느 Publish Run을 담았는
 | `SERVING_EXPORT_FAILED` | Export가 `SUCCESS`가 아님 |
 | `REPOINT_<status>` | 재지정이 `SUCCESS`가 아님. `SKIPPED`도 실패로 본다 |
 | `NOT_FRESH` | 최신성 검사가 `fresh=false` |
-| `DATA_STALE` | 게시 파일의 최신 주문 구매 시각이 수집 시각보다 원천 DAG 간격의 2배 넘게 뒤처짐 |
+| `DATA_STALE` | 게시 파일의 최신 주문 구매 시각이 수집 시각보다 원천 DAG 간격의 2배 넘게 뒤처짐. 지난 `logical_date`로 원천을 보충 실행하면 데이터가 정상이어도 날 수 있다([R-11](../runbooks/r11-missing-schedule.md)) |
 | `ROW_COUNT_DROP:<relation>` | 이번 PUBLISHED Run의 행 수가 직전 PUBLISHED Run보다 1% 넘게 감소. Full Refresh Run은 제외. Publish는 막지 않는다 |
 | `EXPORTS_COUNT_<n>` | `exports/` 파일 수가 보존 개수(3)와 다름 |
 | `FAILED_BUILDS_OVER_RETENTION` | `failed/` 파일 수가 보존 개수(3) 초과 |

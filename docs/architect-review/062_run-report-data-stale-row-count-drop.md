@@ -59,3 +59,14 @@
 | `docs/reference/mart-grain.md` §3.1 | `fct_order.purchase_at` 행 추가 |
 | `sql/validation/warehouse_run_report_window.sql` | 변경 없음(코드 일반 집계) |
 | PRD | 실패 코드 목록 없음. 변경 없음 |
+
+## 후속 (2026-10-27): 보충 실행 시 DATA_STALE 오탐
+
+- **현상**: 원천 DAG를 지난 `logical_date` T로 수동 실행하면 신규 주문이 T로 찍혀 `max(purchase_at) = T`가 되고, `recorded_at − T > stale_after_s`이면 데이터가 정상이어도 `DATA_STALE`이 난다.
+- **범위 정정**: 이미 성공한 `logical_date`의 재실행·Warehouse Task 재실행은 Generator가 성공 결과를 재사용해 새 주문을 만들지 않으므로 해당하지 않는다. 원천 Cursor 최대값 이하 시각은 `SourceCursorRegressionError`로 거부되므로, 오탐은 마지막 생성 시각 이후의 지난 구간을 채우는 보충 실행에서만 생긴다.
+- **판정: 문서만 보완, 코드 표식은 넣지 않는다.**
+  1. 보충 Run을 코드로 가르려면 `recorded_at − logical_date` 기준의 새 판정 규칙과 테스트가 필요하다. 문서 한 절보다 비싸다.
+  2. 판별에 필요한 값(`logical_date`, `recorded_at`, `max_purchase_at`, `stale_after_s`)은 이미 운영 기록에 있다. 조회 한 번으로 가릴 수 있다.
+  3. 오탐은 일시적이다. 보충을 마친 뒤 다음 정기 Run에서 풀린다.
+  4. 억제 규칙을 넣으면 보충 중 실제 정체도 함께 가려진다.
+- **반영**: `docs/runbooks/r11-missing-schedule.md`에 판별 조회·기준·해소 시점 절 추가, `docs/reference/data-transformation-flow.md` §13 `DATA_STALE` 행에 R-11 링크.

@@ -58,6 +58,53 @@ C 구간까지 함께 쓸어 담는 것은 정상이며 막을 필요가 없다 
 복구 후에는 B 구간 Row가 B의 `ingestion_date` Partition으로 옮겨졌는지, Mart Hash가 회복 전과 여전히
 같은지 확인한다.
 
+## 운영 기록 영향: 지난 시각 보충 실행의 `DATA_STALE`
+
+빠진 Slot의 원천 변경을 만들려고 `source_simulation_dag`를 지난 시각 Param `logical_date`로 수동
+실행하면, 이어지는 `warehouse_pipeline_dag` Run의 운영 기록에 `DATA_STALE`이 남을 수 있다. 데이터는
+정상이고 조치할 것이 없다([architect-review 062](../architect-review/062_run-report-data-stale-row-count-drop.md) 후속).
+
+원인은 판정식이다. `data_lag_s = recorded_at − max(facts.fct_order.purchase_at)`인데 Generator는 신규
+주문의 구매 시각을 그 Run의 `logical_date`로 찍는다(`src/generator/orders/orders.py`). 지난 시각 T로
+보충하면 게시 파일의 최신 구매 시각이 T가 되고, `recorded_at − T`가 `stale_after_s`(원천 주기의 2배)를
+넘으면 `DATA_STALE`이 된다.
+
+이미 성공한 `logical_date`를 다시 실행하거나 Warehouse Task만 다시 실행하는 경우는 해당하지 않는다.
+Generator가 성공 결과를 재사용해 새 주문을 만들지 않으므로 최신 구매 시각이 바뀌지 않는다. 원천 Cursor
+최대값 이하의 `logical_date`는 `SourceCursorRegressionError`로 거부되므로, 보충 실행은 마지막 생성
+시각 이후 구간을 오름차순으로만 채울 수 있다.
+
+보충 실행 때문인지는 다음 조회로 가린다.
+
+```bash
+docker compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$PIPELINE_METADATA_DB" -P pager=off' <<'SQL'
+SELECT dag_run_id, logical_date, recorded_at,
+       report->>'max_purchase_at' AS max_purchase_at,
+       extract(epoch FROM recorded_at - logical_date) AS logical_gap_s,
+       (report->>'stale_after_s')::double precision AS stale_after_s,
+       failures
+FROM warehouse_run_reports
+WHERE failures ? 'DATA_STALE'
+ORDER BY logical_date DESC
+LIMIT 20;
+SQL
+```
+
+| 확인 항목 | 보충 실행으로 인한 판정이면 |
+| --- | --- |
+| `logical_gap_s` | `stale_after_s`보다 크다. 지난 시각으로 실행한 Run이다 |
+| `max_purchase_at` | 그 Run의 `logical_date`와 같다. 보충 Run의 주문 수가 0이면 그보다 이르다 |
+| `failures` | `DATA_STALE` 하나뿐이다 |
+
+세 항목을 모두 만족하면 조치하지 않는다. `logical_gap_s`가 작은 정기 Run에서 `DATA_STALE`이 나면 실제
+정체다. `generator_runs`의 `result_counts`와 `SOURCE_DAG_ORDERS` 설정을 확인한다.
+
+보충을 마친 뒤 다음 정기 Run이 돌면 판정이 풀린다. `catchup=False`라 정기 Run은 현재 시각 Slot으로
+실행되고, 현재 시각으로 찍힌 주문이 게시되면 `data_lag_s`가 실행 경과 시간 수준으로 돌아온다. 그
+사이에 보충 Run의 `logical_date`가 창 판정 SQL(`sql/validation/warehouse_run_report_window.sql`)의
+창 안에 들면, 그 Run은 `not_ok_runs`와 `failure_counts`의 `DATA_STALE`로 집계되어 창이 `FAIL`이 된다.
+위 기준으로 보충 Run임을 확인했으면 그 창의 실패 사유로 기록한다.
+
 ## 재검증 명령과 결과
 
 위 pytest 명령이 통과하는지 확인한다. `write_evidence("r11", ...)` 증적에서
