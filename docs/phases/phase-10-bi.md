@@ -297,10 +297,25 @@ reviewer 후속 최종 검증: 전체 pytest 494개 통과·140개 생략(89.17�
 
 - [x] 운영 중 판독 창 변경: `warehouse_run_report_window.sql`의 기본 창을 3시간으로 줄이고 10분 간격은 유지한다. SQL 주석·운영 판독 설명과 통합 테스트의 표본 범위(21:00–23:50)·예상 슬롯 수(18개)를 동기화했다. 이번 검증은 `tests/observability` 단위 pytest 30개 통과·해당 테스트 파일 Ruff·공백 검사 통과다. 공유 DB의 운영 시험을 보호하기 위해 `RUN_*` 통합 테스트와 운영 SQL은 실행하지 않았다. 커밋 없이 reviewer에게 전달한다.
 
+## 062 운영 기록 데이터 품질 판정 (2026-10-27)
+
+- [x] `DATA_STALE`(게시 데이터 지연)은 수집 시각과 게시 파일 최신 구매 시각의 차이가 원천 주기 2배를 초과할 때 표시한다. 게시 파일 없음·빈 Fact는 측정을 생략하고 지원하지 않는 주기는 `PROBE_ERROR:staleness`(지연 수집 오류)로 남긴다.
+- [x] `ROW_COUNT_DROP:<relation>`(관계별 행 수 급감)은 이번 게시가 참조하는 직전 게시보다 1% 넘게 감소할 때 정렬해 표시한다. 미게시 실행·첫 실행·공통 관계 없음·직전 0행·전체 재구축은 제외하며 게시 경로는 변경하지 않는다.
+- [x] 원천 DAG와 지연 수집이 `src/common/schedule.py`의 기본 주기·고정 간격 해석을 공유한다. 새 의존성은 추가하지 않았다.
+- [x] 실패 테스트를 먼저 확인하고 수집·판정을 구현했다. 관측성 단위 테스트 54개와 실제 PostgreSQL 운영 기록 통합 테스트 11개가 통과했다.
+- [x] 전체 pytest 710개 통과·143개 생략(121.21초), 집중 검사 268개 통과·5개 생략(문서 링크 172개 포함), Ruff와 공백 검사 통과를 확인했다. 커밋 없이 reviewer에게 리뷰를 요청한다.
+- [x] 실제 전체 새로고침 Run `ceddd951-b9e2-4aee-b0d5-dad6e2ceaf6a`: `PUBLISHED`, dbt 검사 144개 통과·0개 실패. `facts.fct_order`만 변경됐고 주문 99,829행의 구매 시각 NULL 0건·최신 시각 `2026-10-19T11:50:00Z`를 확인했다. 실제 지연 수집과 직전 게시 행 수 조회도 확인했다. 기존 원천이 오래되어 지연이 크며, 신규 주문 생성은 수행하지 않았다.
+
+환경 복구·검증 이력: Docker 엔진과 PostgreSQL·SeaweedFS가 중단되어 초기 통합 검사는 연결 거부였다. Docker Desktop과 기존 두 컨테이너를 시작한 뒤 통합 검사가 통과했다. 첫 전체 새로고침 Run `a6f27a29-f753-4248-b5b2-87294cc805ca`는 SeaweedFS 볼륨 등록 전 HTTP 500으로 실패했고, 등록 후 재실행해 성공했다. Airflow·Metabase 서비스 시작과 Serving 내보내기·재지정은 수행하지 않았다. 검증 로그는 `/tmp/dq-judgments-*.log`에 남겼다. 설계 이탈은 없다.
+
 ## 파일·폴더별 변경 요약
 
 | 경로 | 변경 내용 |
 | ---- | --------- |
+| `src/common/schedule.py`, `airflow/dags/source_simulation_dag.py`, `tests/test_schedule.py`, `tests/test_airflow_dags.py` | 062: 원천 주기 기본값과 지원하는 고정 간격 해석을 공통화하고 환경 변수·지원 범위·잘못된 주기·DAG 연결을 검증한다. |
+| `src/observability/run_report.py`, `tests/observability/test_run_report.py`, `tests/integration/test_run_report_integration.py` | 062: 게시 파일의 UTC 최신 구매 시각·지연·임계값과 이번·직전 게시 행 수·전체 재구축 여부를 독립 수집한다. 지연·감소 경계, 빈 데이터, 주기 오류 격리, 실제 PostgreSQL 게시 이력 조회를 검증한다. |
+| `dbt/models/intermediate/int_order_fact_ready.sql`, `dbt/models/marts/facts/fct_order.sql`, `dbt/models/marts/facts/schema.yml`, `tests/test_fact_layer_contract.py` | 062: 승인된 `purchase_at` 추가와 필수값 검사를 구현한다. 전체 새로고침 1회가 필요하며 Phase 6에도 기록한다. |
+| `docs/reference/data-transformation-flow.md`, `docs/reference/mart-grain.md`, `docs/phases/phase-06-dimensional-modeling.md`, `docs/phases/phase-10-bi.md`, `docs/superpowers/plans/2026-10-27-run-report-dq-judgments.md` | 062: 수집·판정 코드, 구매 시각 계약, 구현 체크리스트·검증 이력·변경 요약을 동기화한다. |
 | `sql/metadata/006_create_warehouse_run_reports.sql` | 실행 식별자를 기본 키로 배치·논리 시각·기록 시각·판정·실패 배열·상세 JSON 객체를 저장한다. |
 | `src/observability/__init__.py`, `src/observability/run_report.py` | 운영 정보 수집·공통 판정·멱등 저장을 추가한다. 수집 단계별 예외를 격리하고 저장 실패는 로그로 남긴다. reviewer 후속으로 DAG 정보 수집 전에 실행 식별자·논리 시각을 보존해 해당 수집 실패도 저장한다. |
 | `src/serving/metabase_repoint.py` | 기본 버전 보존 수 3을 상수로 올려 기존 정리 함수와 운영 판정이 공유한다. |

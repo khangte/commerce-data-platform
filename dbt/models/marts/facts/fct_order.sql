@@ -9,6 +9,7 @@
 -- dbt unique_key는 교체 단위다. Grain 유일성은 schema.yml의 unique Test가 강제한다.
 select
     order_id,
+    purchase_at,
     customer_key,
     purchase_date_key,
     order_status,

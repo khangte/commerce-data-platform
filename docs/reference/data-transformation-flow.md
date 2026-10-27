@@ -547,7 +547,7 @@ Export는 PostgreSQL에 행을 쓰지 않는다. 어느 Publish Run을 담았는
 - Task Log: `RUN_REPORT {JSON}` 한 줄
 - `pipeline_metadata.warehouse_run_reports`: `dag_run_id` 기준 Upsert 한 행(`ok`, `failures`, `report`)
 
-`src/observability/run_report.py`의 `collect_run_report`는 DagRun 경과 시간, Task 상태, Ingestion 결과, Lease 잔존, Bronze Object, 활성 Publish Run, 최신성, 파일 개수·크기를 각각 독립적으로 수집한다. 한 수집이 실패하면 `PROBE_ERROR:<이름>`으로만 남고 나머지는 계속된다. `record_run_report`는 저장 실패를 `RUN_REPORT_WRITE_FAILED` 로그로만 남긴다. 운영 기록 때문에 DAG가 실패하지 않는다.
+`src/observability/run_report.py`의 `collect_run_report`는 DagRun 경과 시간, Task 상태, Ingestion 결과, Lease 잔존, Bronze Object, 활성 Publish Run, 최신성, 게시 데이터 지연, 직전 게시 대비 행 수, 파일 개수·크기를 각각 독립적으로 수집한다. 한 수집이 실패하면 `PROBE_ERROR:<이름>`으로만 남고 나머지는 계속된다. `record_run_report`는 저장 실패를 `RUN_REPORT_WRITE_FAILED` 로그로만 남긴다. 운영 기록 때문에 DAG가 실패하지 않는다.
 
 `failures`에 들어가는 코드:
 
@@ -558,6 +558,8 @@ Export는 PostgreSQL에 행을 쓰지 않는다. 어느 Publish Run을 담았는
 | `SERVING_EXPORT_FAILED` | Export가 `SUCCESS`가 아님 |
 | `REPOINT_<status>` | 재지정이 `SUCCESS`가 아님. `SKIPPED`도 실패로 본다 |
 | `NOT_FRESH` | 최신성 검사가 `fresh=false` |
+| `DATA_STALE` | 게시 파일의 최신 주문 구매 시각이 수집 시각보다 원천 DAG 간격의 2배 넘게 뒤처짐 |
+| `ROW_COUNT_DROP:<relation>` | 이번 PUBLISHED Run의 행 수가 직전 PUBLISHED Run보다 1% 넘게 감소. Full Refresh Run은 제외. Publish는 막지 않는다 |
 | `EXPORTS_COUNT_<n>` | `exports/` 파일 수가 보존 개수(3)와 다름 |
 | `FAILED_BUILDS_OVER_RETENTION` | `failed/` 파일 수가 보존 개수(3) 초과 |
 | `BUILD_DIR_NOT_EMPTY` | Warehouse 또는 Serving `build/`에 잔여 파일 |

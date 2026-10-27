@@ -319,6 +319,7 @@ Business Key가 계약이므로 해지 뒤 재가입한 사람은 `subscription_
 | ----------------------- | ----------- | --------------------------------- | ---- | ------------------------------------------------------------------------------------------------------------------------------------ |
 | `order_id`              | VARCHAR     | Degenerate Dimension / Unique Key | N    | 주문 식별자. Olist 원본 `order_id` / `unique`, `not_null`                                                                            |
 | `customer_key`          | VARCHAR     | Dimension FK                      | N    | 주문 당시 유효한 고객 버전의 `dim_customer.customer_key` / `not_null`, `relationships → dim_customer.customer_key`                   |
+| `purchase_at` | TIMESTAMPTZ | Fact Attribute | N | 주문 구매 시각. Olist 원본 `order_purchase_timestamp` / `not_null`. 운영 기록 데이터 지연 판정의 기준 |
 | `purchase_date_key`     | INTEGER     | Dimension FK                      | N    | 주문 발생일에 해당하는 `dim_date.date_key` / `not_null`, `relationships → dim_date.date_key`                                         |
 | `customer_city`         | VARCHAR     | Fact Attribute                    | N    | 주문 당시 고객 도시 스냅샷 / `not_null`                                                                                              |
 | `customer_state`        | VARCHAR     | Fact Attribute                    | N    | 주문 당시 고객 주(State) 스냅샷 / `not_null`                                                                                         |

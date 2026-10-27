@@ -25,19 +25,8 @@ _SMOKE_SKIP = pytest.mark.skipif(
 )
 
 
-@pytest.mark.parametrize(
-    ("configured_schedule", "expected_schedule"),
-    [(None, "@hourly"), ("", "@hourly"), ("*/10 * * * *", "*/10 * * * *")],
-)
-def test_source_dag_schedule_from_environment(
-    monkeypatch: pytest.MonkeyPatch, configured_schedule: str | None, expected_schedule: str
-) -> None:
-    """원천 DAG 주기는 환경 변수 값 또는 기본 매시간 주기를 사용한다."""
-    if configured_schedule is None:
-        monkeypatch.delenv("SOURCE_DAG_SCHEDULE", raising=False)
-    else:
-        monkeypatch.setenv("SOURCE_DAG_SCHEDULE", configured_schedule)
-
+def test_source_dag_schedule_uses_common_default() -> None:
+    """원천 DAG 주기는 공통 주기 함수를 호출한다."""
     dag_source = (PROJECT_ROOT / "airflow/dags/source_simulation_dag.py").read_text(
         encoding="utf-8"
     )
@@ -51,10 +40,10 @@ def test_source_dag_schedule_from_environment(
         and node.items[0].context_expr.func.id == "DAG"
     )
     schedule = next(keyword.value for keyword in dag_call.keywords if keyword.arg == "schedule")
-    actual_schedule = eval(
-        compile(ast.Expression(schedule), "source_simulation_dag.py", "eval"), {"os": os}
-    )
-    assert actual_schedule == expected_schedule
+    assert isinstance(schedule, ast.Call)
+    assert isinstance(schedule.func, ast.Name)
+    assert schedule.func.id == "source_dag_schedule"
+    assert not schedule.args and not schedule.keywords
 
 
 def _source_dag_param_default(name: str) -> ast.expr:

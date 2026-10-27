@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from datetime import UTC, datetime, timedelta
 
 from airflow.providers.standard.operators.trigger_dagrun import TriggerDagRunOperator
@@ -11,6 +10,7 @@ from airflow.sdk.definitions.param import Param
 from airflow.sdk.exceptions import AirflowFailException
 
 from src.common.database import PostgresSettings
+from src.common.schedule import source_dag_schedule
 from src.generator.core.config import (
     GENERATOR_VERSION,
     SUPPORTED_ANOMALY_PROFILES,
@@ -30,7 +30,7 @@ DEFAULT_TASK_ARGS = {
 
 with DAG(
     dag_id="source_simulation_dag",
-    schedule=os.environ.get("SOURCE_DAG_SCHEDULE") or "@hourly",
+    schedule=source_dag_schedule(),
     start_date=datetime(2026, 1, 1, tzinfo=UTC),
     catchup=False,
     max_active_runs=1,

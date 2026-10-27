@@ -8,14 +8,18 @@ import shutil
 from datetime import UTC, datetime
 from pathlib import Path
 
+import duckdb
 from psycopg.types.json import Jsonb
 
 from src.common.database import PostgresSettings, apply_sql_file
+from src.common.schedule import schedule_interval, source_dag_schedule
 from src.serving.freshness import check_serving_freshness
 from src.serving.metabase_repoint import SERVING_EXPORT_RETENTION
 from src.warehouse.publish import FAILED_BUILD_RETENTION
 
 RUN_LIMIT_SECONDS = 600
+STALE_AFTER_INTERVALS = 2
+ROW_COUNT_DROP_TOLERANCE = 0.01
 
 
 def judge_run_report(report: dict) -> list[str]:
@@ -32,6 +36,14 @@ def judge_run_report(report: dict) -> list[str]:
         failures.append(f"REPOINT_{report.get('metabase_repoint_status', 'UNKNOWN')}")
     if report.get("fresh") is False:
         failures.append("NOT_FRESH")
+    lag, threshold = report.get("data_lag_s"), report.get("stale_after_s")
+    if lag is not None and threshold is not None and lag > threshold:
+        failures.append("DATA_STALE")
+    previous, current = report.get("previous_mart_row_counts"), report.get("mart_row_counts")
+    if not report.get("full_refresh", False) and previous is not None and current is not None:
+        for relation in sorted(previous.keys() & current.keys()):
+            if current[relation] < previous[relation] * (1 - ROW_COUNT_DROP_TOLERANCE):
+                failures.append(f"ROW_COUNT_DROP:{relation}")
     if "exports_count" in report and report["exports_count"] != SERVING_EXPORT_RETENTION:
         failures.append(f"EXPORTS_COUNT_{report['exports_count']}")
     if report.get("failed_builds_count", 0) > FAILED_BUILD_RETENTION:
@@ -64,7 +76,8 @@ def collect_run_report(
     for name, probe in (
         ("dag", _probe_dag), ("tasks", _probe_tasks), ("ingestion", _probe_ingestion),
         ("leases", _probe_leases), ("bronze", _probe_bronze), ("publish", _probe_publish),
-        ("freshness", _probe_freshness), ("files", _probe_files),
+        ("freshness", _probe_freshness), ("staleness", _probe_staleness),
+        ("row_counts", _probe_row_counts), ("files", _probe_files),
     ):
         try:
             report.update(probe(settings, summary, context, warehouse_paths, serving_paths, now))
@@ -172,6 +185,42 @@ def _probe_freshness(settings, summary, context, warehouse_paths, serving_paths,
         return {"fresh": None, "live_export_id": None}
     freshness = check_serving_freshness(settings, url, key, int(database_id))
     return {"fresh": freshness.fresh, "live_export_id": freshness.live_export_id}
+
+
+def _probe_staleness(settings, summary, context, warehouse_paths, serving_paths, now) -> dict:
+    """게시 파일의 최신 주문 구매 시각으로 데이터 지연과 허용 간격을 수집한다."""
+    threshold = STALE_AFTER_INTERVALS * schedule_interval(source_dag_schedule())
+    result = {"max_purchase_at": None, "data_lag_s": None,
+              "stale_after_s": threshold.total_seconds()}
+    if not warehouse_paths.published.exists():
+        return result
+    with duckdb.connect(str(warehouse_paths.published), read_only=True) as connection:
+        epoch = connection.execute('SELECT epoch(max(purchase_at)) FROM facts.fct_order').fetchone()[0]
+    if epoch is not None:
+        result.update(max_purchase_at=datetime.fromtimestamp(epoch, UTC).isoformat(),
+                      data_lag_s=now.timestamp() - epoch)
+    return result
+
+
+def _probe_row_counts(settings, summary, context, warehouse_paths, serving_paths, now) -> dict:
+    """이번 게시와 이 실행이 참조하는 직전 게시의 행 수를 수집한다."""
+    result = {"mart_row_counts": None, "previous_mart_row_counts": None,
+              "full_refresh": bool(context.get("params", {}).get("full_refresh", False))}
+    publish_run_id = summary.get("publish_run_id")
+    if not publish_run_id:
+        return result
+    with settings.pipeline_connection() as connection:
+        row = connection.execute(
+            """SELECT cur.mart_row_counts, prev.mart_row_counts
+               FROM mart_publish_runs cur
+               LEFT JOIN mart_publish_runs prev
+                 ON prev.publish_run_id = cur.previous_publish_run_id
+               WHERE cur.publish_run_id = %s AND cur.status = 'PUBLISHED'""",
+            (publish_run_id,),
+        ).fetchone()
+    if row:
+        result.update(mart_row_counts=row[0], previous_mart_row_counts=row[1])
+    return result
 
 
 def _bytes(path: Path) -> int:

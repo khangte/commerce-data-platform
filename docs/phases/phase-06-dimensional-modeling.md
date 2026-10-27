@@ -183,6 +183,12 @@ Report Model은 Mart 위에서 파생된다. BI가 Source·Bronze·Staging을 �
 - Grain, Measure, 이력, Full Refresh 비교 Test
 - Affected Key/Date 기반 Incremental 재계산
 
+## 062 주문 구매 시각 보존 (2026-10-27)
+
+- [x] 승인된 범위 변경에 따라 `int_order_fact_ready`(주문 Fact 입력 준비)와 `fct_order`(주문 Fact)에 원본 구매 시각 `purchase_at`을 그대로 투영하고 `not_null`(필수값) 검사를 추가했다.
+- [x] 실패 테스트를 먼저 확인한 뒤 구현했고, Fact·품질 계약 테스트와 원천 주기·DAG 테스트 42개 통과·5개 생략을 확인했다. Mart Grain 계약에 타입·의미·지연 판정 용도를 반영했다.
+- [x] 전체 새로고침 Run `ceddd951-b9e2-4aee-b0d5-dad6e2ceaf6a`가 `PUBLISHED`로 완료됐다. dbt 검사 144개 통과·0개 실패, 주문 99,829행의 구매 시각 NULL 0건, 최신 시각 `2026-10-19T11:50:00Z`를 확인했다. 변경된 관계는 `facts.fct_order` 하나다.
+
 ## 파일·폴더별 변경 요약
 
 - [x] 주문 변경 이력 계획 Task 5: 현재 상태 Fact 네 개의 `incremental_strategy='delete+insert'`(교체 단위 삭제 후 삽입)를 계약 테스트로 고정했다.
@@ -209,6 +215,7 @@ Report Model은 Mart 위에서 파생된다. BI가 Source·Bronze·Staging을 �
 
 | 경로                                                                                                    | 변경 내용                                                                                                                                  |
 | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `dbt/models/intermediate/int_order_fact_ready.sql`, `dbt/models/marts/facts/fct_order.sql`, `dbt/models/marts/facts/schema.yml`, `tests/test_fact_layer_contract.py`, `docs/reference/mart-grain.md` | 062: 주문 구매 시각을 Fact까지 보존하고 필수값·투영 계약과 컬럼 설명을 추가했다. 기존 증분 테이블은 `on_schema_change=ignore`이므로 전체 새로고침 1회가 필요하다. |
 | `dbt/models/intermediate/int_customer_history.sql`                                                      | 고객 SCD2 입력을 거래 실적 등급 축만으로 축소했다.                                                                                         |
 | `dbt/models/intermediate/int_subscription_history.sql`                                                  | 계약별 상태 관측을 SCD2 유효 구간으로 변환했다.                                                                                            |
 | `dbt/models/marts/dimensions/dim_customer.sql`                                                          | 구독 상태·재가입 파생 컬럼을 제거하고 등급 Version만 투영하도록 축소했다.                                                                  |

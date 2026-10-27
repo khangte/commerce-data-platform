@@ -40,6 +40,7 @@ def test_healthy_and_nonterminal_tasks_pass(healthy):
     ({"serving_export_status": "NOT_REQUESTED"}, "SERVING_EXPORT_FAILED"),
     ({"metabase_repoint_status": "SKIPPED"}, "REPOINT_SKIPPED"),
     ({"fresh": False}, "NOT_FRESH"),
+    ({"data_lag_s": 7200.1, "stale_after_s": 7200.0}, "DATA_STALE"),
     ({"exports_count": 2}, "EXPORTS_COUNT_2"),
     ({"exports_count": 4}, "EXPORTS_COUNT_4"),
     ({"failed_builds_count": 4}, "FAILED_BUILDS_OVER_RETENTION"),
@@ -56,11 +57,11 @@ def test_failure_codes(healthy, changes, expected):
     assert module.judge_run_report(healthy) == [expected]
 
 
-@pytest.mark.parametrize("failed_probe", ["dag", "tasks", "ingestion", "leases", "bronze", "publish", "freshness", "files"])
+@pytest.mark.parametrize("failed_probe", ["dag", "tasks", "ingestion", "leases", "bronze", "publish", "freshness", "staleness", "row_counts", "files"])
 def test_each_probe_failure_preserves_other_probes(monkeypatch, failed_probe):
     """각 수집 실패 뒤에도 나머지 수집과 판정을 끝낸다."""
     probes = {}
-    for name in ("dag", "tasks", "ingestion", "leases", "bronze", "publish", "freshness", "files"):
+    for name in ("dag", "tasks", "ingestion", "leases", "bronze", "publish", "freshness", "staleness", "row_counts", "files"):
         probe = Mock(return_value={f"collected_{name}": True})
         if name == failed_probe:
             probe.side_effect = RuntimeError("offline")
@@ -193,3 +194,101 @@ def test_files_probe_counts_sizes_and_build_residue(tmp_path):
     assert report['warehouse_build_empty'] is True
     assert report['serving_build_empty'] is False
     assert report['disk_free_bytes'] > 0
+
+
+@pytest.mark.parametrize('changes', [
+    {'data_lag_s': 7200.0, 'stale_after_s': 7200.0},
+    {'data_lag_s': None, 'stale_after_s': 7200.0},
+    {'data_lag_s': 7201.0, 'stale_after_s': None},
+])
+def test_data_stale_not_raised(healthy, changes):
+    """경계값과 측정 불가는 데이터 지연으로 판정하지 않는다."""
+    healthy.update(changes)
+    assert module.judge_run_report(healthy) == []
+
+
+@pytest.mark.parametrize('column_type', ['TIMESTAMPTZ', 'TIMESTAMP'])
+def test_staleness_measures_published_fact(tmp_path, monkeypatch, column_type):
+    """게시 주문의 최신 시각과 수집 시각 차이를 UTC로 수집한다."""
+    import duckdb
+
+    from src.warehouse.publish import WarehousePaths
+
+    monkeypatch.setenv('SOURCE_DAG_SCHEDULE', '*/10 * * * *')
+    paths = WarehousePaths.under(tmp_path)
+    with duckdb.connect(str(paths.published)) as connection:
+        connection.execute('CREATE SCHEMA facts')
+        connection.execute(f'CREATE TABLE facts.fct_order (purchase_at {column_type})')
+        connection.execute("INSERT INTO facts.fct_order VALUES ('2026-01-01 00:00:00+00'), ('2026-01-01 01:00:00+00')")
+    result = module._probe_staleness(None, {}, {}, paths, None,
+                                     datetime(2026, 1, 1, 1, 30, tzinfo=UTC))
+    assert result == {'max_purchase_at': '2026-01-01T01:00:00+00:00',
+                      'data_lag_s': 1800.0, 'stale_after_s': 1200.0}
+
+
+@pytest.mark.parametrize('empty_fact', [False, True])
+def test_staleness_without_data(tmp_path, monkeypatch, empty_fact):
+    """게시 파일이 없거나 주문이 비어 있으면 지연을 측정하지 않는다."""
+    import duckdb
+
+    from src.warehouse.publish import WarehousePaths
+
+    monkeypatch.delenv('SOURCE_DAG_SCHEDULE', raising=False)
+    paths = WarehousePaths.under(tmp_path)
+    if empty_fact:
+        with duckdb.connect(str(paths.published)) as connection:
+            connection.execute('CREATE SCHEMA facts')
+            connection.execute('CREATE TABLE facts.fct_order (purchase_at TIMESTAMPTZ)')
+    assert module._probe_staleness(None, {}, {}, paths, None, datetime.now(UTC)) == {
+        'max_purchase_at': None, 'data_lag_s': None, 'stale_after_s': 7200.0,
+    }
+    assert paths.published.exists() is empty_fact
+
+
+def test_staleness_unsupported_schedule_is_probe_error(tmp_path, monkeypatch):
+    """지원하지 않는 주기는 게시 파일이 없어도 수집 오류로 기록한다."""
+    from src.warehouse.publish import WarehousePaths
+
+    monkeypatch.setenv('SOURCE_DAG_SCHEDULE', '0 9 * * 1-5')
+    for name in ('dag', 'tasks', 'ingestion', 'leases', 'bronze', 'publish',
+                 'freshness', 'row_counts', 'files'):
+        monkeypatch.setattr(module, f'_probe_{name}', Mock(return_value={}), raising=False)
+    report = module.collect_run_report(None, {}, {}, WarehousePaths.under(tmp_path), None)
+    assert 'PROBE_ERROR:staleness' in report['failures']
+
+
+P = 'facts.fct_order_item'
+
+
+@pytest.mark.parametrize(('previous', 'current', 'full_refresh', 'expected'), [
+    ({P: 100}, {P: 98}, False, [f'ROW_COUNT_DROP:{P}']),
+    ({P: 100}, {P: 99}, False, []),
+    ({P: 100}, {P: 0}, False, [f'ROW_COUNT_DROP:{P}']),
+    ({P: 0}, {P: 0}, False, []),
+    ({P: 100}, {P: 50}, True, []),
+    (None, {P: 50}, False, []),
+    ({P: 100}, None, False, []),
+    ({}, {P: 50}, False, []),
+    ({P: 100, 'x.gone': 5}, {P: 100}, False, []),
+    ({'b.t': 100, 'a.t': 100}, {'b.t': 1, 'a.t': 1}, False,
+     ['ROW_COUNT_DROP:a.t', 'ROW_COUNT_DROP:b.t']),
+])
+def test_row_count_drop(healthy, previous, current, full_refresh, expected):
+    """직전 게시 대비 1% 넘는 감소만 판정하고 전체 재구축은 제외한다."""
+    healthy.update(previous_mart_row_counts=previous, mart_row_counts=current,
+                   full_refresh=full_refresh)
+    assert module.judge_run_report(healthy) == expected
+
+
+@pytest.mark.parametrize(('context', 'expected'), [
+    ({}, False), ({'params': {'full_refresh': False}}, False),
+    ({'params': {'full_refresh': True}}, True),
+])
+def test_row_counts_probe_skips_without_publish_run(context, expected):
+    """게시 실행이 없으면 DB를 열지 않고 전체 재구축 여부만 반환한다."""
+    settings = Mock()
+    assert module._probe_row_counts(settings, {'publish_run_id': None}, context,
+                                    None, None, None) == {
+        'mart_row_counts': None, 'previous_mart_row_counts': None, 'full_refresh': expected,
+    }
+    settings.pipeline_connection.assert_not_called()

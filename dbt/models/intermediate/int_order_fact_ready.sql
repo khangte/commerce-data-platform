@@ -1,6 +1,7 @@
 -- 주문 Fact가 투영할 주문 1건 Grain의 금액·날짜·배송 측정값을 준비한다.
 select
     int_orders_enriched.order_id,
+    int_orders_enriched.purchase_at,
     int_orders_enriched.customer_key,
     cast(strftime(date_trunc('day', int_orders_enriched.purchase_at), '%Y%m%d') as integer)
         as purchase_date_key,

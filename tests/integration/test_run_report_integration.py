@@ -99,7 +99,7 @@ def test_dag_probe_failure_is_recorded(monkeypatch, logical_date):
     run_id = f'test_report_{uuid.uuid4().hex}'
     # run_after가 없어서 실제 DAG 수집 단계가 실패하는 상황을 재현한다.
     run = SimpleNamespace(run_id=run_id, logical_date=logical_date)
-    for probe in ('tasks', 'ingestion', 'leases', 'bronze', 'publish', 'freshness', 'files'):
+    for probe in ('tasks', 'ingestion', 'leases', 'bronze', 'publish', 'freshness', 'staleness', 'row_counts', 'files'):
         monkeypatch.setattr(module, f'_probe_{probe}', Mock(return_value={}))
     summary = {'batch_id': run_id, 'publish_status': 'PUBLISHED',
                'serving_export_status': 'SUCCESS', 'metabase_repoint_status': 'SUCCESS'}
@@ -124,3 +124,42 @@ def test_dag_probe_failure_is_recorded(monkeypatch, logical_date):
     finally:
         with settings.pipeline_connection() as connection:
             connection.execute('DELETE FROM warehouse_run_reports WHERE dag_run_id = %s', (run_id,))
+
+
+@pytest.mark.parametrize(('status', 'has_previous'), [
+    ('PUBLISHED', True), ('FAILED', True), ('PUBLISHED', False),
+])
+def test_row_counts_probe_reads_publish_history(status, has_previous):
+    """실제 게시 이력에서 직전 행 수를 읽고 미게시 실행과 첫 실행을 구분한다."""
+    from src.observability.run_report import _probe_row_counts
+
+    settings = PostgresSettings.from_environment()
+    previous, current = uuid.uuid4(), uuid.uuid4()
+    pipeline = f'test_row_counts_{current.hex}'
+    relation = 'facts.fct_order_item'
+    try:
+        with settings.pipeline_connection() as connection:
+            for run_id, state, counts, prior in [
+                (previous, 'PUBLISHED', {relation: 100}, None),
+                (current, status, {relation: 90}, previous if has_previous else None),
+            ]:
+                connection.execute(
+                    """INSERT INTO mart_publish_runs
+                       (publish_run_id, pipeline_name, status, mart_hashes, mart_row_counts,
+                        previous_publish_run_id, error_type, started_at, finished_at)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, now(), now())""",
+                    (run_id, pipeline, state, Jsonb({}) if state == 'PUBLISHED' else None,
+                     Jsonb(counts) if state == 'PUBLISHED' else None, prior,
+                     'DBT_TEST_FAILED' if state == 'FAILED' else None),
+                )
+        result = _probe_row_counts(settings, {'publish_run_id': str(current)},
+                                   {'params': {'full_refresh': False}}, None, None, None)
+        assert result == {
+            'mart_row_counts': {relation: 90} if status == 'PUBLISHED' else None,
+            'previous_mart_row_counts': {relation: 100}
+                if status == 'PUBLISHED' and has_previous else None,
+            'full_refresh': False,
+        }
+    finally:
+        with settings.pipeline_connection() as connection:
+            connection.execute('DELETE FROM mart_publish_runs WHERE pipeline_name = %s', (pipeline,))

@@ -6,6 +6,8 @@ models:
     columns:
       - name: order_id
         data_tests: [not_null, unique]
+      - name: purchase_at
+        data_tests: [not_null]
       - name: customer_key
         data_tests:
           - not_null
