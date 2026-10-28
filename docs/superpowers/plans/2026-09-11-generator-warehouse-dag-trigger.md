@@ -8,7 +8,7 @@
 
 **Tech Stack:** Apache Airflow 3.3.1 (`airflow.providers.standard.operators.trigger_dagrun.TriggerDagRunOperator`), pytest, Docker Compose `airflow` profile
 
-**Spec:** [docs/superpowers/specs/2026-09-11-generator-warehouse-dag-trigger-design.md](../specs/2026-09-11-generator-warehouse-dag-trigger-design.md)
+**Spec:** `docs/superpowers/specs/2026-09-11-generator-warehouse-dag-trigger-design.md`
 
 ## Global Constraints
 

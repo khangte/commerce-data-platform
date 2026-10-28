@@ -66,7 +66,7 @@ Harness와 Ingestion 계층 장애 Scenario는 Mart 구성과 독립적이다. �
 | `R-06` | Orphan Object          | 일치 Object만 Reconcile, 불일치는 거부           |
 | `R-07` | Broken Manifest        | Checksum/Range/Version 불일치 자동 Commit 금지   |
 
-- [x] `P8-06` R-01 Duplicate Batch 실행 및 문서화 — 증거: `RUN_POSTGRES_INTEGRATION=1 RUN_SEAWEEDFS_INTEGRATION=1 RUN_DBT_PUBLISH_INTEGRATION=1 uv run pytest tests/reliability -v` → PASSED. `batch_id=r01-c4b415b4970443a596b2d45637ddf440__20260920T000000Z`, `run_ids` 3회, `object_key_count=2`, `row_count=5`([데이터](../../data/reliability/r01/), [Runbook](../runbooks/r01-duplicate-batch.md))
+- [x] `P8-06` R-01 Duplicate Batch 실행 및 문서화 — 증거: `RUN_POSTGRES_INTEGRATION=1 RUN_SEAWEEDFS_INTEGRATION=1 RUN_DBT_PUBLISH_INTEGRATION=1 uv run pytest tests/reliability -v` → PASSED. `batch_id=r01-c4b415b4970443a596b2d45637ddf440__20260920T000000Z`, `run_ids` 3회, `object_key_count=2`, `row_count=5`(`data/reliability/r01/`, [Runbook](../runbooks/r01-duplicate-batch.md))
 - [x] `P8-07` R-02 Upload Failure 실행 및 문서화 — 증거: 위 명령 → PASSED. `batch_id=r02-ffef5f01baf64bb39f740f01c6bc91fc__20260920T000000Z`, `classified=OBJECT_STORAGE_ERROR`, `http_status=503`, `is_retryable=true`, Watermark 불변([Runbook](../runbooks/r02-upload-failure.md))
 - [x] `P8-08` R-03 Metadata Failure 실행 및 문서화 — 증거: 위 명령 → PASSED. `batch_id=r03-handled-600b862273044ce588a1db919ee40db1__20260920T000000Z`, `classified=UNKNOWN_ERROR`, Orphan 후보 1건, 수동 재조정 거부됨([Runbook](../runbooks/r03-metadata-failure.md))
 - [x] `P8-09` R-04 Watermark CAS Conflict 실행 및 문서화 — 증거: 위 명령 → PASSED. `pipeline_name=r04-cf5c5444257c418482dcba736ed41770`, 승자 `run_id=b754a3db-09bc-4a7d-8faf-13decfe04ee9`(COMMITTED), 패자 `run_id=add6933a-faac-4a76-88de-21946eb4d919`(FAILED, WATERMARK_CONFLICT)([Runbook](../runbooks/r04-watermark-cas-conflict.md))
@@ -176,10 +176,19 @@ AC-07은 동일 범위 Full Refresh와 Key별 값/Logical Hash가 같아야 한�
 - Backfill/Full Refresh Hash 비교
 - 정상 복귀 후 E2E 재검증 기록
 
+## 새 Clone에서 재현되는 문서 링크 (2026-10-28)
+
+- [x] `P8-06`의 로컬 증적 디렉터리 링크를 인라인 코드 경로로 변경했다. `data/reliability/r01/`은 Git 제외 산출물이므로 새 Clone에 포함되지 않는다.
+- [x] README·docs의 상대 링크는 대상 존재 여부뿐 아니라 Git 추적·제외 여부도 검사한다. 추적 파일이 있는 폴더 링크는 허용하고 미추적·제외·삭제된 대상과 저장소 외부 경로는 거부한다. 추적 파일이 무시 규칙과 일치하는 경우도 거부한다.
+- [x] 임시 Git 저장소 기반 회귀 테스트 11개를 추가했다. 기존 파서 테스트를 유지하고 Git 목록은 전체 문서 검사에서 한 번만 수집한다. 강화한 검사로 로컬에서도 문제 링크 6곳을 재현한 뒤, R-01 증적과 미추적 계획·설계 문서 링크를 인라인 코드 경로로 바꿨다. 미추적·제외된 심볼릭 링크가 추적 파일을 가리켜도 허용되지 않도록 경로 자체를 검사한다. 집중 검사 184개가 통과했다.
+- [x] 최종 전체 pytest 722개 통과·143개 생략(111.07초), 집중 문서 링크 검사 184개 통과, `uv run ruff check .`와 `git diff --check` 통과를 확인했다. 커밋 없이 reviewer에게 전달한다. 메인 스택 중지가 필요한 `verify_clean_clone.sh`는 재실행하지 않았으며 PostgreSQL·SeaweedFS 모두 healthy임을 확인했다. 최종 로그는 `/tmp/doc-links-tracking-pytest-final.log`, 문제 링크 6곳 재현 로그는 `/tmp/doc-links-tracking-scan.log`, 심볼릭 링크 실패 재현 로그는 `/tmp/doc-links-tracking-symlink-red.log`다.
+
 ## 파일·폴더별 변경 요약
 
 | 경로                                  | 변경 내용                                                                                                       |
 | ------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `tests/test_doc_links.py` | Git 추적·제외 파일을 한 번 조회해 재현 가능한 파일·폴더 대상만 허용한다. 임시 Git 저장소로 추적·미추적·무시·강제 추가·삭제·외부 대상 회귀를 검증한다. |
+| `docs/phases/phase-08-reliability.md`, `docs/architect-review/014_ingestion-error-type-vocabulary.md`, `docs/architect-review/015_r07-schema-version-variant.md`, `docs/architect-review/016_commit-table-run-lease-fencing.md`, `docs/architect-review/018_r11-missing-schedule-premise.md`, `docs/superpowers/plans/2026-09-11-generator-warehouse-dag-trigger.md` | 새 Clone에 없는 로컬 증적·미추적 계획·설계 문서의 링크 6곳을 인라인 코드 경로로 바꿨다. Phase 8에 구현·검증 이력을 기록한다. |
 | `docs/phases/phase-08-reliability.md` | `P8-01`~`P8-20` 체크리스트에 명령·결과·식별자 증거 라인을 채우고, R-11 행을 명시 Batch 실행과 다음 실행의 자동 회복 정의로 고치고, Definition of Done·Portfolio Evidence를 실측 근거로 채웠다. 2026-09-28 Source 매시간 예약에 따른 Scheduler 누락 주석과 완료 체크를 추가했다. |
 | `tests/reliability/` | 읽기 전용 플랫폼 상태 수집기, 상태 비교 도우미, JSON 증적 저장기를 추가했다. |
 | `tests/reliability/faults.py` | 기존 업로드·Commit·Source 연결 함수에 monkeypatch로 장애를 주입하고 Manifest 변조를 재현한다. |

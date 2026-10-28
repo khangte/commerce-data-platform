@@ -1,7 +1,7 @@
 # 014. Ingestion 실패 경로가 Error Type 계약을 쓰지 않는다
 
 > 판정: architect, 2026-09-20 (Phase 8 Task 5 검수 중 발견)
-> 관련: PRD v1.13 §18 Observability와 오류, AC-13, [Phase 8 계획](../superpowers/plans/2026-09-20-phase8-reliability-scenarios.md)
+> 관련: PRD v1.13 §18 Observability와 오류, AC-13, Phase 8 계획 `docs/superpowers/plans/2026-09-20-phase8-reliability-scenarios.md`
 
 ## 발견
 

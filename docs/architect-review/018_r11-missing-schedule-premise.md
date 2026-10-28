@@ -1,7 +1,7 @@
 # 018. R-11의 전제가 틀렸다 — Watermark 연속성은 누락 창을 스스로 메운다
 
 > 판정: architect, 2026-09-21 (Phase 8 Task 9 착수 중 developer 질의)
-> 관련: AC-11, R-11, [Phase 8 계획](../superpowers/plans/2026-09-20-phase8-reliability-scenarios.md) Task 9
+> 관련: AC-11, R-11, Phase 8 계획 `docs/superpowers/plans/2026-09-20-phase8-reliability-scenarios.md` Task 9
 
 ## 질의
 

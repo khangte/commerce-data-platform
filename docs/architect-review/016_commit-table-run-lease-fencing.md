@@ -1,7 +1,7 @@
 # 016. commit_table_run이 Lease 소유권을 확인하지 않는다
 
 > 판정: architect, 2026-09-21 (Phase 8 Task 7 R-05 추가 실측 중 발견)
-> 관련: PRD Table Lease Fencing, AC-11, [Phase 8 계획](../superpowers/plans/2026-09-20-phase8-reliability-scenarios.md) Task 7, [014 판정](014_ingestion-error-type-vocabulary.md)
+> 관련: PRD Table Lease Fencing, AC-11, Phase 8 계획 `docs/superpowers/plans/2026-09-20-phase8-reliability-scenarios.md` Task 7, [014 판정](014_ingestion-error-type-vocabulary.md)
 
 ## 발견
 

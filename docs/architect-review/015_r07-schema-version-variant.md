@@ -1,7 +1,7 @@
 # 015. R-07 SCHEMA_VERSION 변형은 미지원 Version 경로로 재현한다
 
 > 판정: architect, 2026-09-21 (Phase 8 Task 8 착수 전 developer 질의)
-> 관련: AC-24, [Phase 8 계획](../superpowers/plans/2026-09-20-phase8-reliability-scenarios.md) Task 8, [014 판정](014_ingestion-error-type-vocabulary.md)
+> 관련: AC-24, Phase 8 계획 `docs/superpowers/plans/2026-09-20-phase8-reliability-scenarios.md` Task 8, [014 판정](014_ingestion-error-type-vocabulary.md)
 
 ## 질의
 
