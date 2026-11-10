@@ -326,7 +326,21 @@ Normal E2E Unknown Key = 0
 - [x] PostgreSQL 통합: `RUN_POSTGRES_INTEGRATION=1`로 `test_publish_metadata_integration.py`(17개), `test_warehouse_publish_integration.py`, `test_run_report_integration.py`를 합쳐 47개 통과·실패 0개(17.25초, reviewer 직접 실행). `tests_warned=2` 기록·조회와 없는 Run의 `0` 반환을 실제 DB로 확인했다.
 - [x] 실제 dbt 검증(Phase 2): 완료조건 2(`warn` Build의 `PUBLISHED`·`tests_warned = 1`)와 4(`error` + rpt Canary의 `FAILED`/`DBT_TEST_ERROR`)를 `tests/reliability/test_gate_split_experiment.py`로 확인했다. 같은 Bronze에서 v1은 실패 노드가 rpt Canary 하나인데도 주문 5행(600초)을 묶었고, v2는 같은 주문을 게시했다. 결과는 `docs/benchmarks/07-publish-gate-split.md`에 있다. R-14·Canary Gate 회귀 2개도 통과했다.
 
+## Publish Gate 도메인 분리 2단계 (2026-11-10)
+
+계획: `docs/superpowers/plans/2026-11-10-publish-gate-domain-split.md` Phase 1. 모듈만 추가했고 Publish 경로에는 아직 연결하지 않았다. 동작 변경은 Phase 2에서 일어난다.
+
+- [x] 귀속 `attribute_failure`: `run_results.json`의 `error`·`fail`·`skipped` Node와 Manifest 의존성으로 실패를 도메인 하나에 귀속한다. Model `error`, 공유 Model만 건너뜀, 두 도메인 실패, 도메인 표에 없는 Mart, 해석할 수 없는 산출물은 `None`(전체 차단)이다.
+- [x] Phase 0 판단 반영: `dim_subscription` 실패에서 intermediate와 구독 경계 Test가 `skipped`로 빠지는 것을 실제 dbt로 확인했다. architect 판단에 따라 `skipped`인 staging·intermediate Model과 Mart를 참조하지 않는 `skipped` Test는 귀속에서 제외한다. `skipped`는 결과이고 원인 Node는 따로 귀속되기 때문이다.
+- [x] 되돌림 `revert_domain`: 도메인 Relation을 Published 값으로 교체하고 이번 Invocation의 해당 `control.affected_keys` 행을 지우는 작업을 한 Transaction에서 수행한다. Published 파일이나 Relation이 없으면 예외를 내고 Build는 되돌림 전 그대로다. `control.dbt_processed_batch`는 건드리지 않는다.
+- [x] 재검증 `boundary_failures`: 보류 도메인과 공유 Model을 함께 참조하는 `error` Test를 다시 실행한다. `relationships` Test는 Manifest로 SQL을 만들어 `skipped`였던 것도 검증한다. 나머지와 `config.where`가 있는 Test는 `compiled_code`를 실행하고, 없으면 실패로 센다.
+- [x] 승인된 변경: 계획의 `NOT IN` 대신 `NOT EXISTS`를 쓴다. 부모 컬럼에 NULL이 있으면 `NOT IN`은 위반을 놓치기 때문이다. `metrics_test_severity=error`에서 `orders` 실패가 전체 차단으로 가는 것은 의도된 동작이며 단위 Case로 고정했다.
+- [x] 검증: 신규 단위 테스트 45개 통과, 단위 전체 777개 통과·144개 건너뜀, Ruff·`git diff --check` 통과. Phase 0 실제 dbt 산출물 4종의 귀속 결과가 기대와 같고, `dim_subscription` 실패 Build 사본에서 되돌림 후 경계 Test 실패 0건을 확인했다.
+- [ ] 미연결: `build_warehouse`·DAG·CLI·`held_domains` 기록은 Phase 2, 도메인 Canary와 실측은 Phase 3 범위다.
+
 ## 파일·폴더별 변경 요약
+
+- `src/warehouse/domain_gate.py`, `tests/test_warehouse_domain_gate.py`: 도메인 귀속·되돌림·경계 Test 재검증 모듈과 합성 DuckDB 기반 단위 테스트를 추가했다. Publish 경로에는 아직 연결하지 않았다.
 
 - `tests/reliability/test_gate_split_experiment.py`, `docs/benchmarks/07-publish-gate-split.md`: v1·v2를 같은 Bronze·Canary로 비교하는 재현 실험과 측정값·가정 시나리오 결과 문서를 추가했다.
 
