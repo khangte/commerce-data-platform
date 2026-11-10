@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import shutil
 import sys
@@ -18,9 +19,10 @@ import yaml
 
 from src.common.database import PostgresSettings
 from src.ingestion.bronze.catalog import sync_bronze_catalog
-from src.ingestion.errors import classify_error
+from src.ingestion.errors import DBT_TEST_ERROR, classify_error
 from src.warehouse.dbt_runner import DbtRunResult, run_dbt_build
 from src.warehouse.dbt_vars import dbt_vars_json
+from src.warehouse.domain_gate import attribute_failure, boundary_failures, revert_domain
 from src.warehouse.duckdb_files import (
     DEFAULT_WAREHOUSE_ROOT,
     PUBLISHED_FILE_NAME,
@@ -50,12 +52,14 @@ from src.warehouse.publish_metadata import (
     close_dag_run_building,
     close_stale_run,
     ensure_publish_metadata,
+    get_held_domains,
     get_publish_run,
     mark_failed,
     mark_published,
     mark_publishing,
     record_dbt_result,
     record_failed_path,
+    record_held_domains,
     stale_active_runs,
     start_publish_run,
 )
@@ -66,6 +70,8 @@ PUBLISH_HEARTBEAT_INTERVAL = timedelta(seconds=30)
 FAILED_NODE_LIMIT = 20
 
 DbtRunner = Callable[[Path, Path], DbtRunResult]
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -109,6 +115,7 @@ class PublishOutcome:
     mart_row_counts: dict[str, int]
     changed_relations: tuple[str, ...]
     published_identity: FileIdentity
+    held_domains: tuple[str, ...] = ()
 
 
 def recover_incomplete_publishes(
@@ -173,8 +180,15 @@ def build_warehouse(
     publish_run_id: uuid.UUID,
     *,
     dbt_runner: DbtRunner = run_dbt_build,
+    partial_publish: bool = True,
 ) -> DbtRunResult:
-    """Build 파일에 dbt build를 실행하고 실패하면 격리 후 WarehouseBuildError를 낸다."""
+    """Build 파일에 dbt build를 실행하고 실패하면 격리 후 WarehouseBuildError를 낸다.
+
+    partial_publish가 참이고 Test 실패가 한 도메인에 귀속되면 그 도메인만 직전 게시 값으로
+    되돌려 예외 없이 반환한다. 되돌리기·재검증이 실패하면 전체 차단으로 물러난다.
+    """
+    held_domains: tuple[str, ...] = ()
+    fallback_reason: str | None = None
     try:
         with publish_heartbeat(settings, publish_run_id, interval=PUBLISH_HEARTBEAT_INTERVAL):
             result = dbt_runner(paths.build_file(publish_run_id), paths.target_dir(publish_run_id))
@@ -186,12 +200,30 @@ def build_warehouse(
                 tests_failed=result.tests_failed,
                 tests_warned=result.tests_warned,
             )
+            domain = None
+            if partial_publish and result.error_type == DBT_TEST_ERROR and result.invocation_id:
+                domain = attribute_failure(paths.target_dir(publish_run_id))
+            if domain is not None:
+                fallback_reason = _hold_domain(settings, paths, publish_run_id, domain, result)
+                held_domains = () if fallback_reason else (domain,)
     except Exception as error:
         _fail(settings, paths, publish_run_id, classify_error(error), str(error))
         raise
+    if result.warned_nodes or held_domains:
+        logger.warning(
+            "dbt warned_nodes=%s failed_nodes=%s held_domains=%s",
+            list(result.warned_nodes),
+            list(result.failed_nodes) if held_domains else [],
+            list(held_domains),
+        )
+    if held_domains:
+        return result
     if not result.succeeded:
         error_type = result.error_type or DBT_BUILD_ERROR
         summary = _failure_summary(error_type, result)
+        if fallback_reason:
+            # 오류 메시지는 뒤가 잘리므로 물러난 사유를 dbt 출력보다 앞에 둔다.
+            summary = f"{error_type}: partial publish fallback: {fallback_reason}\n{summary}"
         _fail(settings, paths, publish_run_id, error_type, summary)
         raise WarehouseBuildError(error_type, summary)
     return result
@@ -208,6 +240,7 @@ def publish_build(
     record = get_publish_run(settings, publish_run_id)
     if record is None:
         raise PublishStateError(f"Publish run {publish_run_id} does not exist")
+    held_domains = get_held_domains(settings, publish_run_id)
     build_path = paths.build_file(publish_run_id)
     try:
         with publish_heartbeat(settings, publish_run_id, interval=PUBLISH_HEARTBEAT_INTERVAL):
@@ -235,6 +268,7 @@ def publish_build(
         mart_row_counts=counts,
         published_identity=identity,
         changed_relations=mismatched_relations(_previous_hashes(settings, record), hashes),
+        held_domains=held_domains,
     )
 
 
@@ -245,10 +279,13 @@ def publish_warehouse(
     *,
     dbt_runner: DbtRunner = run_dbt_build,
     targets: tuple[MartTarget, ...] = MART_HASH_TARGETS,
+    partial_publish: bool = True,
 ) -> PublishOutcome:
     """준비·dbt build·Publish를 한 Process에서 순서대로 실행한다."""
     prepare_warehouse_build(settings, paths, run)
-    build_warehouse(settings, paths, run.publish_run_id, dbt_runner=dbt_runner)
+    build_warehouse(
+        settings, paths, run.publish_run_id, dbt_runner=dbt_runner, partial_publish=partial_publish,
+    )
     return publish_build(settings, paths, run.publish_run_id, targets=targets)
 
 
@@ -314,6 +351,52 @@ def _isolate_build(
     return target
 
 
+def _copy_build_to_failed(paths: WarehousePaths, publish_run_id: uuid.UUID) -> Path:
+    """Build 파일과 WAL을 failed/로 복사하고 mtime을 복사 시각으로 맞춘다."""
+    source = paths.build_file(publish_run_id)
+    target = paths.failed_file(publish_run_id)
+    paths.failed_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(source, target)
+    if wal_path(source).exists():
+        shutil.copyfile(wal_path(source), wal_path(target))
+    os.utime(target)
+    return target
+
+
+def _hold_domain(
+    settings: PostgresSettings,
+    paths: WarehousePaths,
+    publish_run_id: uuid.UUID,
+    domain: str,
+    result: DbtRunResult,
+) -> str | None:
+    """실패 도메인을 직전 게시 값으로 되돌리고, 전체 차단해야 하면 그 사유를 반환한다.
+
+    복사 전에 실패하면 Build가 유일한 증거이므로 남겨서 기존 격리 경로로 옮기게 한다.
+    되돌리기를 시작한 뒤 실패하면 failed/의 원본을 덮지 않도록 Build를 지운다.
+    """
+    build_path = paths.build_file(publish_run_id)
+    target_dir = paths.target_dir(publish_run_id)
+    try:
+        failed_path = _copy_build_to_failed(paths, publish_run_id)
+        record_failed_path(settings, publish_run_id, str(failed_path))
+        _prune_failed_builds(paths.failed_dir)
+    except Exception as error:  # noqa: BLE001 - 어떤 실패든 전체 차단으로 물러나는 경계다.
+        return f"{domain}: pre-revert copy failed: {error}"
+    try:
+        revert_domain(build_path, paths.published, domain, target_dir, result.invocation_id)
+        failures = boundary_failures(build_path, domain, target_dir)
+        if not failures:
+            record_held_domains(settings, publish_run_id, [domain])
+            return None
+        reason = f"{domain}: boundary tests failed: {', '.join(failures[:FAILED_NODE_LIMIT])}"
+    except Exception as error:  # noqa: BLE001 - 어떤 실패든 전체 차단으로 물러나는 경계다.
+        reason = f"{domain}: revert failed: {error}"
+    build_path.unlink(missing_ok=True)
+    wal_path(build_path).unlink(missing_ok=True)
+    return reason
+
+
 def _prune_failed_builds(failed_dir: Path, keep: int = FAILED_BUILD_RETENTION) -> None:
     """mtime 기준 최신 keep개만 남기고 오래된 실패 Build와 WAL을 지운다."""
     if not failed_dir.is_dir():
@@ -343,6 +426,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="dbt build에 --full-refresh를 전달한다",
     )
+    parser.add_argument(
+        "--no-partial-publish",
+        action="store_true",
+        help="도메인 부분 게시를 끄고 Test 실패를 전체 차단한다",
+    )
     parser.add_argument("--recover-only", action="store_true")
     args = parser.parse_args(argv)
     variables = None
@@ -371,7 +459,9 @@ def main(argv: list[str] | None = None) -> int:
         runner = partial(run_dbt_build, extra_args=tuple(extra_args), dbt_vars=variables)
     run = PublishRun(uuid.uuid4(), args.pipeline_name)
     try:
-        outcome = publish_warehouse(settings, paths, run, dbt_runner=runner)
+        outcome = publish_warehouse(
+            settings, paths, run, dbt_runner=runner, partial_publish=not args.no_partial_publish,
+        )
     except WarehouseBuildError as error:
         print(
             json.dumps(
@@ -395,6 +485,7 @@ def main(argv: list[str] | None = None) -> int:
                 ),
                 "changed_relations": list(outcome.changed_relations),
                 "mart_row_counts": outcome.mart_row_counts,
+                "held_domains": list(outcome.held_domains),
             }
         )
     )

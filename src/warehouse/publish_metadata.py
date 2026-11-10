@@ -146,8 +146,9 @@ def mark_failed(
         settings,
         publish_run_id,
         ACTIVE_STATUSES,
-        "status = 'FAILED', error_type = %s, error_message = %s, failed_path = %s,"
-        " finished_at = %s",
+        # 전체 차단으로 물러난 Run은 되돌리기 전 복사본 경로가 이미 있으므로 None으로 지우지 않는다.
+        "status = 'FAILED', error_type = %s, error_message = %s,"
+        " failed_path = COALESCE(%s, failed_path), finished_at = %s",
         (error_type, error_message[:ERROR_MESSAGE_LIMIT], failed_path, now),
     )
 
@@ -174,6 +175,28 @@ def get_tests_warned(settings: PostgresSettings, publish_run_id: uuid.UUID) -> i
             (publish_run_id,),
         ).fetchone()
     return 0 if row is None else row[0]
+
+
+def record_held_domains(
+    settings: PostgresSettings, publish_run_id: uuid.UUID, held_domains: list[str]
+) -> None:
+    """부분 게시로 보류한 도메인을 BUILDING Run에 기록한다."""
+    _transition(
+        settings, publish_run_id, (BUILDING,), "held_domains = %s", (Jsonb(held_domains),),
+    )
+
+
+def get_held_domains(settings: PostgresSettings, publish_run_id: uuid.UUID) -> tuple[str, ...]:
+    """보류 도메인을 조회하고 Run이 없으면 빈 Tuple을 반환한다.
+
+    get_tests_warned와 같은 이유로 공용 Record 조회에 넣지 않는다.
+    """
+    with settings.pipeline_connection() as connection:
+        row = connection.execute(
+            "SELECT held_domains FROM mart_publish_runs WHERE publish_run_id = %s",
+            (publish_run_id,),
+        ).fetchone()
+    return () if row is None else tuple(row[0])
 
 
 def get_latest_publish_run(settings: PostgresSettings) -> PublishRecord | None:
@@ -253,8 +276,8 @@ def close_dag_run_building(
 
 
 def record_failed_path(settings: PostgresSettings, publish_run_id: uuid.UUID, failed_path: str) -> None:
-    """종료된 실패 행에 격리 경로만 기록한다."""
-    _transition(settings, publish_run_id, (FAILED,), "failed_path = %s", (failed_path,))
+    """실패 행이나 부분 게시를 시도하는 BUILDING 행에 격리 경로만 기록한다."""
+    _transition(settings, publish_run_id, (BUILDING, FAILED), "failed_path = %s", (failed_path,))
 
 
 def assert_no_active_publish(settings: PostgresSettings) -> None:

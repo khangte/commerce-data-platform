@@ -38,6 +38,7 @@ def judge_run_report(report: dict) -> list[str]:
         failures.append("NOT_FRESH")
     if report.get("tests_warned", 0) > 0:
         failures.append("DBT_TEST_WARN")
+    failures.extend(f"PUBLISH_PARTIAL:{domain}" for domain in report.get("held_domains", ()))
     lag, threshold = report.get("data_lag_s"), report.get("stale_after_s")
     if lag is not None and threshold is not None and lag > threshold:
         failures.append("DATA_STALE")

@@ -42,6 +42,7 @@ def test_healthy_and_nonterminal_tasks_pass(healthy):
     ({"metabase_repoint_status": "SKIPPED"}, "REPOINT_SKIPPED"),
     ({"fresh": False}, "NOT_FRESH"),
     ({"tests_warned": 1}, "DBT_TEST_WARN"),
+    ({"held_domains": ["orders"]}, "PUBLISH_PARTIAL:orders"),
     ({"data_lag_s": 7200.1, "stale_after_s": 7200.0}, "DATA_STALE"),
     ({"exports_count": 2}, "EXPORTS_COUNT_2"),
     ({"exports_count": 4}, "EXPORTS_COUNT_4"),
@@ -131,7 +132,7 @@ def test_summary_keeps_xcom_and_emits_json(healthy, capsys):
         'publish_status': 'SKIPPED', 'publish_error_type': None, 'changed_relations': [],
         'serving_export_status': 'NOT_REQUESTED', 'serving_export_id': None,
         'serving_row_counts': {}, 'metabase_repoint_status': 'NOT_REQUESTED',
-        'tests_warned': 0,
+        'tests_warned': 0, 'held_domains': [],
     }
     collector.assert_called_once_with('settings', result, {'context': True}, 'warehouse', 'serving')
     recorder.assert_called_once_with('settings', healthy)
@@ -145,8 +146,11 @@ def test_summary_keeps_xcom_and_emits_json(healthy, capsys):
         return_value=SimpleNamespace(status='PUBLISHED', error_type=None)
     )
     namespace['get_tests_warned'] = Mock(return_value=1)
+    namespace['get_held_domains'] = Mock(return_value=('orders',))
     build = {'publish_run_id': str(uuid.uuid4())}
-    assert namespace['publish_run_summary']({'batch_id': 'b'}, None, build, None, None, None)['tests_warned'] == 1
+    summary = namespace['publish_run_summary']({'batch_id': 'b'}, None, build, None, None, None)
+    assert summary['tests_warned'] == 1
+    assert summary['held_domains'] == ['orders']
 
 
 def test_dag_timing_uses_run_after():

@@ -413,7 +413,7 @@ def test_repoint_task_fails_when_repoint_result_is_failed(tmp_path: Path) -> Non
     assert type(error.value) is StubAirflowException
 
 
-def _warehouse_dbt_runner(full_refresh: bool):
+def _warehouse_dbt_runner(full_refresh: bool, partial_publish: bool = True):
     """Airflow 없이 실제 dbt 작업 본문을 실행하고 선택된 실행기를 반환한다."""
     source = (PROJECT_ROOT / "airflow/dags/warehouse_pipeline_dag.py").read_text()
     block = next(node for node in ast.parse(source).body if isinstance(node, ast.With))
@@ -431,10 +431,11 @@ def _warehouse_dbt_runner(full_refresh: bool):
     def build(*args, **kwargs):
         """실제 작업이 전달한 실행기를 기록한다."""
         captured["runner"] = kwargs.get("dbt_runner")
+        captured["partial_publish"] = kwargs.get("partial_publish")
         return SimpleNamespace(tests_passed=1, tests_failed=0)
 
     namespace = {
-        "get_current_context": lambda: {"params": {"full_refresh": full_refresh}},
+        "get_current_context": lambda: {"params": {"full_refresh": full_refresh, "partial_publish": partial_publish}},
         "PostgresSettings": SimpleNamespace(from_environment=lambda: object()),
         "WAREHOUSE_PATHS": object(), "uuid": uuid, "partial": partial,
         "run_dbt_build": runner, "build_warehouse": build,
@@ -445,6 +446,7 @@ def _warehouse_dbt_runner(full_refresh: bool):
     assert namespace["dbt_build_task"]({"publish_run_id": str(uuid.uuid4())}) == {
         "tests_passed": 1, "tests_failed": 0,
     }
+    assert captured["partial_publish"] is partial_publish
     return captured["runner"], runner
 
 
@@ -460,6 +462,17 @@ def test_dbt_build_uses_plain_runner_by_default() -> None:
     """기본값에서는 부분 실행기나 전체 새로고침 인자를 사용하지 않는다."""
     selected, plain = _warehouse_dbt_runner(False)
     assert selected is plain
+
+
+def test_dbt_build_passes_partial_publish_switch() -> None:
+    """DAG Param을 끄면 build_warehouse에 그대로 전달한다."""
+    _warehouse_dbt_runner(False, partial_publish=False)
+
+
+def test_warehouse_partial_publish_param_defaults_to_true() -> None:
+    """conf가 없는 원천 DAG 트리거에서도 부분 게시 스위치는 켜져 있다."""
+    source = (PROJECT_ROOT / "airflow/dags/warehouse_pipeline_dag.py").read_text()
+    assert '"partial_publish": Param(\n            True, type="boolean"' in source
 
 
 def test_warehouse_full_refresh_param_defaults_to_false() -> None:

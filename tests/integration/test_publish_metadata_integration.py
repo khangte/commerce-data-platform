@@ -241,6 +241,46 @@ def test_close_stale_run_skips_refreshed_heartbeat(settings):
     assert get_publish_run(settings, record.publish_run_id).status == BUILDING
 
 
+def test_held_domains_round_trip_stays_published(settings):
+    """보류 도메인은 PUBLISHED 행에 남고, 없는 Run은 빈 Tuple을 돌려준다."""
+    base = _after_latest_publish(settings)
+    record = start_publish_run(settings, _run(), now=base)
+    assert metadata.get_held_domains(settings, record.publish_run_id) == ()
+    metadata.record_failed_path(settings, record.publish_run_id, "failed/pre-revert.duckdb")
+    metadata.record_held_domains(settings, record.publish_run_id, ["orders"])
+    assert metadata.get_held_domains(settings, record.publish_run_id) == ("orders",)
+    assert metadata.get_held_domains(settings, uuid.uuid4()) == ()
+    mark_publishing(
+        settings, record.publish_run_id, mart_hashes={}, mart_row_counts={},
+        published_identity=FileIdentity(123, 456),
+    )
+    mark_published(settings, record.publish_run_id, now=base + timedelta(seconds=1))
+    assert get_publish_run(settings, record.publish_run_id).status == PUBLISHED
+    assert metadata.get_held_domains(settings, record.publish_run_id) == ("orders",)
+    with settings.pipeline_connection() as connection:
+        row = connection.execute(
+            "SELECT failed_path FROM mart_publish_runs WHERE publish_run_id = %s",
+            (record.publish_run_id,),
+        ).fetchone()
+    assert row == ("failed/pre-revert.duckdb",)
+
+
+def test_mark_failed_without_path_keeps_recorded_pre_revert_path(settings):
+    """전체 차단으로 물러나도 되돌리기 전 복사본 경로는 지워지지 않는다."""
+    record = start_publish_run(settings, _run(), now=NOW)
+    metadata.record_failed_path(settings, record.publish_run_id, "failed/pre-revert.duckdb")
+    mark_failed(
+        settings, record.publish_run_id, error_type="DBT_TEST_ERROR", error_message="x",
+        failed_path=None, now=NOW,
+    )
+    with settings.pipeline_connection() as connection:
+        row = connection.execute(
+            "SELECT status, failed_path FROM mart_publish_runs WHERE publish_run_id = %s",
+            (record.publish_run_id,),
+        ).fetchone()
+    assert row == (FAILED, "failed/pre-revert.duckdb")
+
+
 def test_close_stale_run_failed_sets_abandoned(settings):
     """만료된 행을 먼저 닫고 격리 경로는 실패 행에만 기록한다."""
     record = start_publish_run(settings, _run(), now=NOW - timedelta(hours=2))

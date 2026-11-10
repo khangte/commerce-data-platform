@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -56,6 +57,34 @@ def test_main_passes_full_refresh_and_dbt_vars_to_build_runner(monkeypatch, tmp_
     assert "python -m src.serving export" in capsys.readouterr().err
     assert captured["extra_args"] == ("--full-refresh",)
     assert captured["dbt_vars"] == {"bronze_as_of": "2026-09-23T00:00:00Z"}
+
+
+@pytest.mark.parametrize(("flags", "expected"), [([], True), (["--no-partial-publish"], False)])
+def test_main_passes_partial_publish_switch_and_prints_held_domains(
+    monkeypatch, tmp_path: Path, capsys, flags: list[str], expected: bool
+) -> None:
+    """--no-partial-publish는 스위치를 끄고, 출력 JSON에는 보류 도메인이 들어간다."""
+    captured: dict[str, object] = {}
+
+    def _publish(*_: object, **kwargs: object) -> publish.PublishOutcome:
+        """CLI가 넘긴 스위치를 기록하고 부분 게시 결과를 돌려준다."""
+        captured["partial_publish"] = kwargs["partial_publish"]
+        return publish.PublishOutcome(
+            publish_run_id=publish.uuid.uuid4(),
+            previous_publish_run_id=None,
+            mart_hashes={},
+            mart_row_counts={},
+            changed_relations=(),
+            published_identity=FileIdentity(123, 456),
+            held_domains=("orders",),
+        )
+
+    monkeypatch.setattr(publish.PostgresSettings, "from_environment", staticmethod(lambda: object()))
+    monkeypatch.setattr(publish, "publish_warehouse", _publish)
+
+    assert publish.main(["--warehouse-root", str(tmp_path), *flags]) == 0
+    assert captured["partial_publish"] is expected
+    assert json.loads(capsys.readouterr().out)["held_domains"] == ["orders"]
 
 
 @pytest.mark.parametrize("value", ["[]", "null", "key: [", "{bronze_schemas: {}}"])

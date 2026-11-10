@@ -43,7 +43,12 @@ from src.warehouse.publish import (
     prepare_warehouse_build,
     publish_build,
 )
-from src.warehouse.publish_metadata import PublishRun, get_publish_run, get_tests_warned
+from src.warehouse.publish_metadata import (
+    PublishRun,
+    get_held_domains,
+    get_publish_run,
+    get_tests_warned,
+)
 
 LOCAL_DIRECTORY = Path(tempfile.gettempdir()) / "commerce-data-platform" / "warehouse-pipeline-dag"
 WAREHOUSE_PATHS = WarehousePaths.under(DEFAULT_WAREHOUSE_ROOT)
@@ -107,6 +112,9 @@ with DAG(
     default_args=DEFAULT_TASK_ARGS,
     params={
         "full_refresh": Param(False, type="boolean", description="dbt build에 --full-refresh를 전달한다."),
+        "partial_publish": Param(
+            True, type="boolean", description="귀속 가능한 dbt Test 실패 때 해당 도메인만 보류하고 게시한다.",
+        ),
     },
 ) as dag:
 
@@ -206,13 +214,15 @@ with DAG(
         """Build 파일에만 dbt build를 실행한다. 실패 Build는 격리되고 Published 파일은 그대로다."""
         settings = PostgresSettings.from_environment()
         try:
-            full_refresh = get_current_context()["params"]["full_refresh"]
+            params = get_current_context()["params"]
+            full_refresh = params["full_refresh"]
             runner = (
                 partial(run_dbt_build, extra_args=("--full-refresh",))
                 if full_refresh else run_dbt_build
             )
             result = build_warehouse(
                 settings, WAREHOUSE_PATHS, uuid.UUID(build["publish_run_id"]), dbt_runner=runner,
+                partial_publish=params["partial_publish"],
             )
         except Exception as error:
             _reraise_classified(error)
@@ -271,6 +281,7 @@ with DAG(
         publish_status = "SKIPPED"
         publish_error_type = None
         tests_warned = 0
+        held_domains: list[str] = []
         if build:
             record = get_publish_run(
                 PostgresSettings.from_environment(), uuid.UUID(build["publish_run_id"])
@@ -279,6 +290,11 @@ with DAG(
             publish_error_type = record.error_type if record else None
             tests_warned = get_tests_warned(
                 PostgresSettings.from_environment(), uuid.UUID(build["publish_run_id"])
+            )
+            held_domains = list(
+                get_held_domains(
+                    PostgresSettings.from_environment(), uuid.UUID(build["publish_run_id"])
+                )
             )
         serving_export_status = "NOT_REQUESTED"
         if publish:
@@ -297,6 +313,7 @@ with DAG(
                 serving_export, metabase_repoint
             ),
             "tests_warned": tests_warned,
+            "held_domains": held_domains,
         }
         settings = PostgresSettings.from_environment()
         report = collect_run_report(

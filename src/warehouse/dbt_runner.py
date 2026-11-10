@@ -32,6 +32,7 @@ class DbtRunResult:
     failed_nodes: tuple[str, ...]
     output: str
     tests_warned: int = 0
+    warned_nodes: tuple[str, ...] = ()
 
     @property
     def succeeded(self) -> bool:
@@ -101,6 +102,7 @@ def parse_run_results(path: Path, returncode: int, output: str) -> DbtRunResult:
         failed_nodes=failed_nodes,
         output=output[-OUTPUT_LIMIT:],
         tests_warned=tests_warned,
+        warned_nodes=tuple(item["unique_id"] for item in tests if item["status"] == "warn"),
     )
 
 
