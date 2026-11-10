@@ -324,8 +324,11 @@ Normal E2E Unknown Key = 0
 - [x] Reader 호환(`docs/architect-review/063_publish-gate-split-tests-warned-reader-compat.md`): `tests_warned`를 공용 `_RECORD_COLUMNS`·`PublishRecord`에서 빼고 전용 조회 `get_tests_warned`를 추가했다. `publish_run_summary`는 Build가 있을 때만 호출하고 없으면 `0`을 쓴다. Serving Reader의 조회문은 변경 전과 같아 마이그레이션 전 DB에서도 깨지지 않으며, 단위 가드가 이를 고정한다.
 - [x] 회귀: `tests/test_dbt_runner.py`, `tests/observability`, `tests/test_warehouse_quality_contract.py`, `tests/test_airflow_dags.py`, `tests/test_warehouse_publish.py`, `tests/test_warehouse_publish_cli.py`, `tests/serving/test_cli.py` 115개 통과·5개 건너뜀·실패 0개, `tests/test_doc_links.py` 포함 301개 통과·5개 건너뜀, `uv run ruff check .`와 `git diff --check` 통과.
 - [x] PostgreSQL 통합: `RUN_POSTGRES_INTEGRATION=1`로 `test_publish_metadata_integration.py`(17개), `test_warehouse_publish_integration.py`, `test_run_report_integration.py`를 합쳐 47개 통과·실패 0개(17.25초, reviewer 직접 실행). `tests_warned=2` 기록·조회와 없는 Run의 `0` 반환을 실제 DB로 확인했다.
-- [ ] 미검증: 완료조건 2(`warn` Build의 `PUBLISHED`·`tests_warned = 1`)와 4(`error` + rpt Canary의 `FAILED`/`DBT_TEST_ERROR`)의 실제 dbt 검증은 계획대로 Phase 2 실험이 겸한다.
+- [x] 실제 dbt 검증(Phase 2): 완료조건 2(`warn` Build의 `PUBLISHED`·`tests_warned = 1`)와 4(`error` + rpt Canary의 `FAILED`/`DBT_TEST_ERROR`)를 `tests/reliability/test_gate_split_experiment.py`로 확인했다. 같은 Bronze에서 v1은 실패 노드가 rpt Canary 하나인데도 주문 5행(600초)을 묶었고, v2는 같은 주문을 게시했다. 결과는 `docs/benchmarks/07-publish-gate-split.md`에 있다. R-14·Canary Gate 회귀 2개도 통과했다.
+
 ## 파일·폴더별 변경 요약
+
+- `tests/reliability/test_gate_split_experiment.py`, `docs/benchmarks/07-publish-gate-split.md`: v1·v2를 같은 Bronze·Canary로 비교하는 재현 실험과 측정값·가정 시나리오 결과 문서를 추가했다.
 
 - `dbt/dbt_project.yml`, `dbt/tests/rpt_customer_order_activity_matches_fct_order.sql`, `dbt/tests/rpt_membership_tier_matches_fct_order.sql`, `dbt/tests/rpt_subscription_payment_outcomes_matches_fact.sql`, `dbt/tests/rpt_publish_gate_canary.sql`: 지표 계층 Generic·Singular Test의 심각도를 `metrics_test_severity`로 지정하고 지표 계층 Gate 검증용 Canary를 추가했다.
 - `sql/metadata/005_create_mart_publish_runs.sql`, `src/warehouse/publish_metadata.py`, `src/warehouse/publish.py`, `src/warehouse/dbt_runner.py`: `warn` 건수를 분리 집계해 `mart_publish_runs.tests_warned`에 기록·조회한다. `_FAILED_STATUSES`와 `succeeded` 판정은 그대로다.
