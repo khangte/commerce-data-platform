@@ -75,6 +75,9 @@ def test_non_negative_and_singular_gate_tests_exist() -> None:
         "rpt_subscription_payment_outcomes_matches_fact.sql",
         "publish_gate_canary.sql",
         "rpt_publish_gate_canary.sql",
+        "subscriptions_publish_gate_canary.sql",
+        "orders_publish_gate_canary.sql",
+        "dim_subscription_publish_gate_canary.sql",
     ):
         assert (DBT_DIR / "tests" / path).is_file()
     assert "var('publish_gate_canary', false)" in (DBT_DIR / "tests/publish_gate_canary.sql").read_text(encoding="utf-8")

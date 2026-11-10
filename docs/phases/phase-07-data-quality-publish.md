@@ -328,7 +328,7 @@ Normal E2E Unknown Key = 0
 
 ## Publish Gate 도메인 분리 2단계 (2026-11-10)
 
-계획: `docs/superpowers/plans/2026-11-10-publish-gate-domain-split.md`. Phase 1은 모듈 추가, Phase 2는 Publish 경로 연결과 기록이다.
+계획: `docs/superpowers/plans/2026-11-10-publish-gate-domain-split.md`. Phase 1은 모듈 추가, Phase 2는 Publish 경로 연결과 기록, Phase 3은 재현 실험이다.
 
 - [x] 귀속 `attribute_failure`: `run_results.json`의 `error`·`fail`·`skipped` Node와 Manifest 의존성으로 실패를 도메인 하나에 귀속한다. Model `error`, 공유 Model만 건너뜀, 두 도메인 실패, 도메인 표에 없는 Mart, 해석할 수 없는 산출물은 `None`(전체 차단)이다.
 - [x] Phase 0 판단 반영: `dim_subscription` 실패에서 intermediate와 구독 경계 Test가 `skipped`로 빠지는 것을 실제 dbt로 확인했다. architect 판단에 따라 `skipped`인 staging·intermediate Model과 Mart를 참조하지 않는 `skipped` Test는 귀속에서 제외한다. `skipped`는 결과이고 원인 Node는 따로 귀속되기 때문이다.
@@ -341,10 +341,13 @@ Normal E2E Unknown Key = 0
 - [x] Phase 2 기록: `held_domains` 컬럼과 전용 조회 `get_held_domains`를 추가했고 공용 `_RECORD_COLUMNS`에는 넣지 않았다. 상태는 `PUBLISHED`, `tests_failed`는 실제 건수다. 계획의 복사 시점 기록을 위해 `record_failed_path`가 `BUILDING` 행도 받고, `mark_failed`는 경로가 `None`이면 기존 경로를 유지한다.
 - [x] Phase 2 진입점: DAG Param `partial_publish`(기본 켬), CLI `--no-partial-publish`와 출력 `held_domains`, Run report 판정 `PUBLISH_PARTIAL:<domain>`, `warned_nodes`와 경고·실패 Node·보류 도메인 로그 한 줄을 추가했다.
 - [x] Phase 2 검증: 단위 전체 794개 통과·146개 건너뜀, Ruff·`git diff --check` 통과. `RUN_POSTGRES_INTEGRATION=1`을 포함한 3개 Flag로 Publish 메타데이터·Warehouse Publish 통합 38개, R-14·Publish Gate dbt 통합·1단계 실험 3개가 테스트 파일 수정 없이 통과했다.
-- [ ] 미완료: 실제 dbt로 도메인 부분 게시를 확인하는 도메인 Canary와 실측은 Phase 3 범위다. `publish_build`가 되돌린 뒤 실패하거나 Process가 중단되어 복구되면 되돌린 Build가 `failed/` 복사본을 덮으며, 계획이 보장하는 것은 전체 차단 경로의 원본 보존까지다.
+- [x] Phase 3 실험: 도메인 Canary 3개와 `tests/reliability/test_domain_gate_experiment.py`를 추가해 실제 dbt로 측정했다. 시나리오 A는 묶인 주문이 끔 5행, 켬 0행이고 복구 Hash(D)가 기준 파일과 같다. 측정값은 `docs/benchmarks/08-publish-gate-domain-split.md` 초안에 있다.
+- [x] Phase 3 계획 보완: 시나리오 E를 위해 `dim_subscription` Canary를 추가했다(계획 Task 1은 2개). 마지막 Batch에 구독 변화가 없어 D만으로는 복구가 검증되지 않아, `orders`를 보류한 뒤 복구하는 D-orders를 추가했다.
+- [ ] 알려진 한계: `publish_build`가 되돌린 뒤 실패하거나 Process가 중단되어 복구되면 되돌린 Build가 `failed/` 복사본을 덮는다. 계획이 보장하는 것은 전체 차단 경로의 원본 보존까지다. `08`의 해석은 Phase 4 범위다.
 
 ## 파일·폴더별 변경 요약
 
+- `dbt/tests/subscriptions_publish_gate_canary.sql`, `dbt/tests/orders_publish_gate_canary.sql`, `dbt/tests/dim_subscription_publish_gate_canary.sql`, `tests/test_warehouse_quality_contract.py`, `tests/reliability/test_domain_gate_experiment.py`, `docs/benchmarks/08-publish-gate-domain-split.md`: 도메인 Canary와 스위치 끔·켬 재현 실험, 측정값 초안을 추가했다.
 - `src/warehouse/publish.py`, `src/warehouse/dbt_runner.py`, `tests/test_warehouse_partial_publish.py`: `build_warehouse`에 도메인 부분 게시와 전체 차단 복귀를 연결하고 `warned_nodes`와 Node 로그를 추가했다. CLI는 `--no-partial-publish`와 출력 `held_domains`를 지원한다.
 - `sql/metadata/005_create_mart_publish_runs.sql`, `src/warehouse/publish_metadata.py`, `tests/integration/test_publish_metadata_integration.py`: `held_domains` 컬럼·기록·전용 조회를 추가하고 `failed_path`가 부분 게시와 전체 차단 복귀에서 유지되게 했다.
 - `airflow/dags/warehouse_pipeline_dag.py`, `src/observability/run_report.py`, `tests/test_airflow_dags.py`, `tests/observability/test_run_report.py`, `tests/test_dbt_runner.py`, `tests/test_warehouse_publish_cli.py`: DAG Param `partial_publish`, summary `held_domains`, 판정 `PUBLISH_PARTIAL:<domain>`과 그 검증을 추가했다.
