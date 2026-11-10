@@ -120,6 +120,16 @@ flowchart LR
 | Metadata DB | 제어 상태와 실행 증적 (커밋 여부의 단일 기준) | 대용량 Payload 저장 |
 | Metabase | 검증 완료된 Mart 소비 | Raw Source 직접 조회 |
 
+### Medallion 용어 매핑
+
+구조는 Medallion(Bronze → Silver → Gold)과 같고, dbt 모델은 dbt 관례 이름을 쓴다. 코드·디렉터리는 dbt 이름을 유지하고 설명할 때만 아래로 대응한다.
+
+| Medallion | 이 프로젝트 | 위치 |
+| --------- | ----------- | ---- |
+| Bronze | Bronze (불변 Parquet) | SeaweedFS + `control.bronze_files` (`COMMITTED`만 공식 Bronze) |
+| Silver | `staging` → `intermediate` | `dbt/models/staging`, `dbt/models/intermediate` |
+| Gold | `marts` (Star Schema, metrics) | `dbt/models/marts` |
+
 ### Airflow DAG
 
 - `source_simulation_dag` (`@hourly`): Generator가 Source를 변경한 뒤 `warehouse_pipeline_dag`를 Trigger
