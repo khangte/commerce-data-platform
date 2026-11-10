@@ -1,5 +1,6 @@
 """운영 기록의 판정·수집 격리·저장 실패 처리를 검증한다."""
 
+import uuid
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -40,6 +41,7 @@ def test_healthy_and_nonterminal_tasks_pass(healthy):
     ({"serving_export_status": "NOT_REQUESTED"}, "SERVING_EXPORT_FAILED"),
     ({"metabase_repoint_status": "SKIPPED"}, "REPOINT_SKIPPED"),
     ({"fresh": False}, "NOT_FRESH"),
+    ({"tests_warned": 1}, "DBT_TEST_WARN"),
     ({"data_lag_s": 7200.1, "stale_after_s": 7200.0}, "DATA_STALE"),
     ({"exports_count": 2}, "EXPORTS_COUNT_2"),
     ({"exports_count": 4}, "EXPORTS_COUNT_4"),
@@ -129,12 +131,22 @@ def test_summary_keeps_xcom_and_emits_json(healthy, capsys):
         'publish_status': 'SKIPPED', 'publish_error_type': None, 'changed_relations': [],
         'serving_export_status': 'NOT_REQUESTED', 'serving_export_id': None,
         'serving_row_counts': {}, 'metabase_repoint_status': 'NOT_REQUESTED',
+        'tests_warned': 0,
     }
     collector.assert_called_once_with('settings', result, {'context': True}, 'warehouse', 'serving')
     recorder.assert_called_once_with('settings', healthy)
     line = capsys.readouterr().out.strip()
     assert json.loads(line.removeprefix('RUN_REPORT ')) == healthy
     assert 'release_task >> summary' in source
+
+    # Build가 있으면 warn 건수는 상태 Table 기록에서 온다.
+    namespace['uuid'] = uuid
+    namespace['get_publish_run'] = Mock(
+        return_value=SimpleNamespace(status='PUBLISHED', error_type=None)
+    )
+    namespace['get_tests_warned'] = Mock(return_value=1)
+    build = {'publish_run_id': str(uuid.uuid4())}
+    assert namespace['publish_run_summary']({'batch_id': 'b'}, None, build, None, None, None)['tests_warned'] == 1
 
 
 def test_dag_timing_uses_run_after():
@@ -204,6 +216,13 @@ def test_files_probe_counts_sizes_and_build_residue(tmp_path):
 def test_data_stale_not_raised(healthy, changes):
     """경계값과 측정 불가는 데이터 지연으로 판정하지 않는다."""
     healthy.update(changes)
+    assert module.judge_run_report(healthy) == []
+
+
+def test_zero_warned_tests_not_raised(healthy):
+    """warn 0건과 값 누락(이전 기록)은 판정 코드를 만들지 않는다."""
+    assert module.judge_run_report(healthy) == []
+    healthy['tests_warned'] = 0
     assert module.judge_run_report(healthy) == []
 
 

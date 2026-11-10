@@ -74,9 +74,30 @@ def test_non_negative_and_singular_gate_tests_exist() -> None:
         "rpt_membership_tier_matches_fct_order.sql",
         "rpt_subscription_payment_outcomes_matches_fact.sql",
         "publish_gate_canary.sql",
+        "rpt_publish_gate_canary.sql",
     ):
         assert (DBT_DIR / "tests" / path).is_file()
     assert "var('publish_gate_canary', false)" in (DBT_DIR / "tests/publish_gate_canary.sql").read_text(encoding="utf-8")
+
+
+def test_only_metric_layer_tests_are_downgraded_to_warn() -> None:
+    """지표 계층 Test만 var로 warn이 되고, 나머지 Singular Test는 차단을 유지한다."""
+    metric_tests = {
+        "rpt_customer_order_activity_matches_fct_order.sql",
+        "rpt_membership_tier_matches_fct_order.sql",
+        "rpt_subscription_payment_outcomes_matches_fact.sql",
+        "rpt_publish_gate_canary.sql",
+    }
+    for path in sorted((DBT_DIR / "tests").glob("*.sql")):
+        source = path.read_text(encoding="utf-8")
+        if path.name in metric_tests:
+            assert "config(severity=var('metrics_test_severity', 'warn'))" in source, path.name
+        else:
+            assert "severity" not in source, path.name
+    project = yaml.safe_load((DBT_DIR / "dbt_project.yml").read_text(encoding="utf-8"))
+    assert "metrics_test_severity" in (
+        project["data_tests"]["commerce_data_platform"]["marts"]["metrics"]["+severity"]
+    )
 
 
 def test_mart_build_session_timezone_is_utc() -> None:

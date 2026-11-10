@@ -22,6 +22,7 @@ from src.warehouse.publish_metadata import (
     assert_no_active_publish,
     ensure_publish_metadata,
     get_publish_run,
+    get_tests_warned,
     mark_failed,
     mark_published,
     mark_publishing,
@@ -75,8 +76,11 @@ def test_full_success_transition_links_previous_published_run(settings: Postgres
     first = start_publish_run(settings, _run(), now=base)
     assert first.status == BUILDING
     record_dbt_result(
-        settings, first.publish_run_id, invocation_id="inv-1", tests_passed=10, tests_failed=0
+        settings, first.publish_run_id, invocation_id="inv-1", tests_passed=10, tests_failed=0,
+        tests_warned=2,
     )
+    assert get_tests_warned(settings, first.publish_run_id) == 2
+    assert get_tests_warned(settings, uuid.uuid4()) == 0
     mark_publishing(
         settings,
         first.publish_run_id,

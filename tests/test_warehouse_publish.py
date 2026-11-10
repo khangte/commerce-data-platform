@@ -13,8 +13,14 @@ from src.warehouse.publish import (
     _isolate_build,
     _prune_failed_builds,
 )
+from src.warehouse.publish_metadata import _RECORD_COLUMNS
 
 NOW = datetime(2026, 9, 18, tzinfo=UTC)
+
+
+def test_shared_record_columns_exclude_tests_warned() -> None:
+    """마이그레이션 없이 조회하는 Serving Reader가 새 컬럼 때문에 깨지면 안 된다."""
+    assert "tests_warned" not in _RECORD_COLUMNS
 
 
 def test_paths_under_root_follow_the_spec_layout(tmp_path: Path) -> None:

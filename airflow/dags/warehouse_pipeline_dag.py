@@ -43,7 +43,7 @@ from src.warehouse.publish import (
     prepare_warehouse_build,
     publish_build,
 )
-from src.warehouse.publish_metadata import PublishRun, get_publish_run
+from src.warehouse.publish_metadata import PublishRun, get_publish_run, get_tests_warned
 
 LOCAL_DIRECTORY = Path(tempfile.gettempdir()) / "commerce-data-platform" / "warehouse-pipeline-dag"
 WAREHOUSE_PATHS = WarehousePaths.under(DEFAULT_WAREHOUSE_ROOT)
@@ -270,12 +270,16 @@ with DAG(
         """DagRun의 Bronze 검증과 Mart Publish 결과를 작은 JSON Summary로 남긴다."""
         publish_status = "SKIPPED"
         publish_error_type = None
+        tests_warned = 0
         if build:
             record = get_publish_run(
                 PostgresSettings.from_environment(), uuid.UUID(build["publish_run_id"])
             )
             publish_status = record.status if record else "UNKNOWN"
             publish_error_type = record.error_type if record else None
+            tests_warned = get_tests_warned(
+                PostgresSettings.from_environment(), uuid.UUID(build["publish_run_id"])
+            )
         serving_export_status = "NOT_REQUESTED"
         if publish:
             serving_export_status = "SUCCESS" if serving_export else "SERVING_EXPORT_FAILED"
@@ -292,6 +296,7 @@ with DAG(
             "metabase_repoint_status": metabase_repoint_summary_status(
                 serving_export, metabase_repoint
             ),
+            "tests_warned": tests_warned,
         }
         settings = PostgresSettings.from_environment()
         report = collect_run_report(

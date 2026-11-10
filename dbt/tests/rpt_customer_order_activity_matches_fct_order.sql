@@ -1,4 +1,5 @@
 -- 날짜별 고객·주문·배송 완료 금액과 신규 고객의 단일 집계를 주문 Fact와 대조한다.
+{{ config(severity=var('metrics_test_severity', 'warn')) }}
 with orders_with_customer as (
     select fct_order.*, dim_customer.customer_id
     from {{ ref('fct_order') }} as fct_order

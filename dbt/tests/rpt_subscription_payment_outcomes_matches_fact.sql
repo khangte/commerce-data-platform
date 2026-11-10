@@ -1,4 +1,5 @@
 -- 결제일·상태별 구독 결제 건수·고객 수·완료 금액을 결제 Fact와 대조한다.
+{{ config(severity=var('metrics_test_severity', 'warn')) }}
 with expected as (
     select
         payment_date_key,

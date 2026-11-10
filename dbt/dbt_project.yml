@@ -19,6 +19,12 @@ on-run-end:
   - "-- depends_on: {{ ref('int_affected_order_keys') }}\n-- depends_on: {{ ref('int_affected_subscription_payment_keys') }}\n{{ record_affected_keys() }}"
   - "-- depends_on: {{ ref('stg_orders') }}\n-- depends_on: {{ ref('stg_order_items') }}\n-- depends_on: {{ ref('stg_payments') }}\n-- depends_on: {{ ref('stg_products') }}\n-- depends_on: {{ ref('stg_sellers') }}\n-- depends_on: {{ ref('stg_customer_tier_observations') }}\n-- depends_on: {{ ref('stg_customer_subscription_observations') }}\n-- depends_on: {{ ref('stg_subscription_payments') }}\n{{ advance_processed_batch_watermark() }}"
 
+data_tests:
+  commerce_data_platform:
+    marts:
+      metrics:
+        +severity: "{{ var('metrics_test_severity', 'warn') }}"
+
 models:
   commerce_data_platform:
     staging:

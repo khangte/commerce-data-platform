@@ -314,7 +314,24 @@ Normal E2E Unknown Key = 0
 
 검증 환경: 저장소 프로젝트 그대로 수행한 첫 dbt 실행에서는 검사 SQL 3개가 통과했지만 기존 실행 종료 Hook이 복사본 View의 원래 빌드 카탈로그를 참조해 종료 코드 2가 발생했다. 이를 검사 SQL의 실패로 세지 않았다. 임시 dbt 프로젝트에서만 실행 전후 Hook을 제외하고 같은 모델·스키마·매크로·테스트를 사용해 독립 검사 3개 통과와 주입별 실패를 검증했다. 운영 데이터와 저장소 설정은 변경하지 않았다. 증적은 `/tmp/rpt-reconciliation-eo39ei34/results.json`, 개별 dbt 로그, `/tmp/rpt-reconciliation-contract-red.log`, `/tmp/rpt-reconciliation-verification-isolated.log`, `/tmp/rpt-reconciliation-edges.log`에 남겼다.
 
+## Publish Gate 심각도 분리 1단계 (2026-11-10)
+
+계획: `docs/superpowers/plans/2026-11-10-publish-gate-split.md` Phase 1.
+
+- [x] 심각도 정책: 지표 계층(`marts/metrics`, `rpt_*`)에 붙은 Test만 dbt var `metrics_test_severity`(기본 `warn`)를 따르고, Staging·Intermediate·Dimension·Fact Test와 기존 `publish_gate_canary`는 `error`를 유지한다. `metrics_test_severity=error`면 v1과 같은 전체 Gate로 돌아간다.
+- [x] 실제 `dbt ls --select config.severity:warn`로 기본 13개(Generic 9·rpt Singular 3·rpt Canary 1), `metrics_test_severity=error` 0개를 확인했다. 경로 설정이 Generic 9개에 적용되어 `schema.yml` 대체안은 쓰지 않았다.
+- [x] `tests_warned` 전파: `parse_run_results`가 `warn`을 `tests_passed`와 분리해 세고, `build_warehouse` → `record_dbt_result` → `mart_publish_runs.tests_warned` → `get_tests_warned` → `publish_run_summary` → `judge_run_report` 순서로 전달해 1건 이상이면 run report에 `DBT_TEST_WARN`·`ok=false`를 남긴다. 게시는 막지 않는다.
+- [x] Reader 호환(`docs/architect-review/063_publish-gate-split-tests-warned-reader-compat.md`): `tests_warned`를 공용 `_RECORD_COLUMNS`·`PublishRecord`에서 빼고 전용 조회 `get_tests_warned`를 추가했다. `publish_run_summary`는 Build가 있을 때만 호출하고 없으면 `0`을 쓴다. Serving Reader의 조회문은 변경 전과 같아 마이그레이션 전 DB에서도 깨지지 않으며, 단위 가드가 이를 고정한다.
+- [x] 회귀: `tests/test_dbt_runner.py`, `tests/observability`, `tests/test_warehouse_quality_contract.py`, `tests/test_airflow_dags.py`, `tests/test_warehouse_publish.py`, `tests/test_warehouse_publish_cli.py`, `tests/serving/test_cli.py` 115개 통과·5개 건너뜀·실패 0개, `tests/test_doc_links.py` 포함 301개 통과·5개 건너뜀, `uv run ruff check .`와 `git diff --check` 통과.
+- [x] PostgreSQL 통합: `RUN_POSTGRES_INTEGRATION=1`로 `test_publish_metadata_integration.py`(17개), `test_warehouse_publish_integration.py`, `test_run_report_integration.py`를 합쳐 47개 통과·실패 0개(17.25초, reviewer 직접 실행). `tests_warned=2` 기록·조회와 없는 Run의 `0` 반환을 실제 DB로 확인했다.
+- [ ] 미검증: 완료조건 2(`warn` Build의 `PUBLISHED`·`tests_warned = 1`)와 4(`error` + rpt Canary의 `FAILED`/`DBT_TEST_ERROR`)의 실제 dbt 검증은 계획대로 Phase 2 실험이 겸한다.
 ## 파일·폴더별 변경 요약
+
+- `dbt/dbt_project.yml`, `dbt/tests/rpt_customer_order_activity_matches_fct_order.sql`, `dbt/tests/rpt_membership_tier_matches_fct_order.sql`, `dbt/tests/rpt_subscription_payment_outcomes_matches_fact.sql`, `dbt/tests/rpt_publish_gate_canary.sql`: 지표 계층 Generic·Singular Test의 심각도를 `metrics_test_severity`로 지정하고 지표 계층 Gate 검증용 Canary를 추가했다.
+- `sql/metadata/005_create_mart_publish_runs.sql`, `src/warehouse/publish_metadata.py`, `src/warehouse/publish.py`, `src/warehouse/dbt_runner.py`: `warn` 건수를 분리 집계해 `mart_publish_runs.tests_warned`에 기록·조회한다. `_FAILED_STATUSES`와 `succeeded` 판정은 그대로다.
+- `airflow/dags/warehouse_pipeline_dag.py`, `src/observability/run_report.py`: summary에 `tests_warned`를 넣고 run report 판정 `DBT_TEST_WARN`을 추가했다.
+- `tests/test_warehouse_quality_contract.py`, `tests/test_dbt_runner.py`, `tests/observability/test_run_report.py`, `tests/test_warehouse_publish.py`, `tests/integration/test_publish_metadata_integration.py`: 심각도 계약·`warn` 분리 집계·판정 코드·summary 전달·공용 Record 제외 가드·DB 왕복 테스트를 추가했다.
+- `docs/phases/phase-07-data-quality-publish.md`, `docs/superpowers/plans/2026-11-10-publish-gate-split.md`: 1단계 진행 기록과 Step 상태를 동기화했다.
 
 - `dbt/tests/rpt_customer_order_activity_matches_fct_order.sql`: 날짜별 집계 대조와 신규 고객 전체 합계 불변식을 추가한다.
 - `dbt/tests/rpt_membership_tier_matches_fct_order.sql`: Fact 전체 합계와 등급별 배송 완료 평균 주문 금액을 대조한다.

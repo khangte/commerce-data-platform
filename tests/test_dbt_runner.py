@@ -58,7 +58,7 @@ def test_parse_success_counts_tests(tmp_path: Path) -> None:
     result = parse_run_results(path, 0, "ok")
     assert result.succeeded
     assert result.invocation_id == "inv-1"
-    assert (result.tests_passed, result.tests_failed) == (3, 0)
+    assert (result.tests_passed, result.tests_failed, result.tests_warned) == (2, 0, 1)
     assert result.failed_nodes == ()
 
 

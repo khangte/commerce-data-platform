@@ -1,4 +1,5 @@
 -- 등급별 주문·금액 합계와 배송 완료 평균 주문 금액을 주문 Fact와 대조한다.
+{{ config(severity=var('metrics_test_severity', 'warn')) }}
 with expected as (
     select
         count(*) as order_count,

@@ -48,3 +48,4 @@ CREATE INDEX IF NOT EXISTS mart_publish_runs_batch_started_idx
 ALTER TABLE mart_publish_runs ADD COLUMN IF NOT EXISTS published_inode BIGINT;
 ALTER TABLE mart_publish_runs ADD COLUMN IF NOT EXISTS published_mtime_ns BIGINT;
 ALTER TABLE mart_publish_runs ADD COLUMN IF NOT EXISTS heartbeat_at TIMESTAMPTZ;
+ALTER TABLE mart_publish_runs ADD COLUMN IF NOT EXISTS tests_warned INTEGER NOT NULL DEFAULT 0;

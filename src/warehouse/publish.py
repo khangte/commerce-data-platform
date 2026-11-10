@@ -184,6 +184,7 @@ def build_warehouse(
                 invocation_id=result.invocation_id,
                 tests_passed=result.tests_passed,
                 tests_failed=result.tests_failed,
+                tests_warned=result.tests_warned,
             )
     except Exception as error:
         _fail(settings, paths, publish_run_id, classify_error(error), str(error))

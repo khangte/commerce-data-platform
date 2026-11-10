@@ -94,14 +94,15 @@ def record_dbt_result(
     invocation_id: str | None,
     tests_passed: int,
     tests_failed: int,
+    tests_warned: int = 0,
 ) -> None:
-    """BUILDING Run에 dbt Invocation ID와 Test 통과·실패 수를 기록한다."""
+    """BUILDING Run에 dbt Invocation ID와 Test 통과·실패·경고 수를 기록한다."""
     _transition(
         settings,
         publish_run_id,
         (BUILDING,),
-        "dbt_invocation_id = %s, tests_passed = %s, tests_failed = %s",
-        (invocation_id, tests_passed, tests_failed),
+        "dbt_invocation_id = %s, tests_passed = %s, tests_failed = %s, tests_warned = %s",
+        (invocation_id, tests_passed, tests_failed, tests_warned),
     )
 
 
@@ -159,6 +160,20 @@ def get_publish_run(settings: PostgresSettings, publish_run_id: uuid.UUID) -> Pu
             (publish_run_id,),
         ).fetchone()
     return None if row is None else _record(row)
+
+
+def get_tests_warned(settings: PostgresSettings, publish_run_id: uuid.UUID) -> int:
+    """dbt warn 건수를 조회하고 Run이 없으면 0을 반환한다.
+
+    공용 Record 조회에 넣으면 마이그레이션 전 DB의 Serving Reader가 깨지므로, 스키마 준비가
+    끝난 Publish 경로에서만 쓰도록 분리했다.
+    """
+    with settings.pipeline_connection() as connection:
+        row = connection.execute(
+            "SELECT tests_warned FROM mart_publish_runs WHERE publish_run_id = %s",
+            (publish_run_id,),
+        ).fetchone()
+    return 0 if row is None else row[0]
 
 
 def get_latest_publish_run(settings: PostgresSettings) -> PublishRecord | None:

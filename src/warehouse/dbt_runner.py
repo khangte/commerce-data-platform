@@ -31,6 +31,7 @@ class DbtRunResult:
     error_type: str | None
     failed_nodes: tuple[str, ...]
     output: str
+    tests_warned: int = 0
 
     @property
     def succeeded(self) -> bool:
@@ -86,6 +87,7 @@ def parse_run_results(path: Path, returncode: int, output: str) -> DbtRunResult:
         results = payload.get("results", [])
     tests = [item for item in results if item["unique_id"].startswith(_TEST_NODE_PREFIXES)]
     tests_failed = sum(item["status"] in _FAILED_STATUSES for item in tests)
+    tests_warned = sum(item["status"] == "warn" for item in tests)
     failed_nodes = tuple(
         item["unique_id"] for item in results if item["status"] in _FAILED_STATUSES
     )
@@ -93,11 +95,12 @@ def parse_run_results(path: Path, returncode: int, output: str) -> DbtRunResult:
     return DbtRunResult(
         returncode=returncode,
         invocation_id=invocation_id,
-        tests_passed=len(tests) - tests_failed,
+        tests_passed=len(tests) - tests_failed - tests_warned,
         tests_failed=tests_failed,
         error_type=classify_dbt_failure(results) if failed else None,
         failed_nodes=failed_nodes,
         output=output[-OUTPUT_LIMIT:],
+        tests_warned=tests_warned,
     )
 
 
