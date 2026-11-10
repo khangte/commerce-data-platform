@@ -65,6 +65,46 @@ airflow dags trigger warehouse_pipeline_dag --conf '{"full_refresh": true}'
 모든 결제 행을 `COMPLETED`·`FAILED`로 재계산한 뒤, 이후 게시부터 증분 실행을 사용한다.
 전환 검증 결과는 [Phase 7 검증 기록](../phases/phase-07-data-quality-publish.md)에 정리했다.
 
+## 지표 계층 Test 경고 (`DBT_TEST_WARN`)
+
+지표 계층(`marts/metrics`, `rpt_*`) Test는 `severity: warn`이라 실패해도 게시를 막지 않는다
+([ADR 020](../adr/020-split-publish-gate-by-severity.md)). 위 격리 절차는 `error` 등급 Test에만
+해당한다. 경고가 있는 게시는 정상 `PUBLISHED`이고, Fact·Dimension은 검증된 상태다. 어긋났을 수
+있는 것은 `rpt_*`뿐이다.
+
+확인:
+
+```sql
+SELECT dag_run_id, recorded_at FROM warehouse_run_reports
+WHERE failures ? 'DBT_TEST_WARN' ORDER BY recorded_at DESC;
+
+SELECT publish_run_id, tests_warned, finished_at FROM mart_publish_runs
+WHERE tests_warned > 0 ORDER BY started_at DESC;
+```
+
+어떤 Test인지는 저장되지 않는다(건수만 남는다). Published 파일 **복사본**에서 지표 Test만 다시
+돌려 식별한다. 복사본에서는 Test 결과가 출력된 뒤 종료 Hook이 Catalog 오류로 끝날 수 있다. Test
+결과 줄만 본다.
+
+```bash
+cp data/warehouse/warehouse.duckdb /tmp/w.duckdb
+WAREHOUSE_PATH=/tmp/w.duckdb .venv/bin/dbt test --project-dir dbt --profiles-dir dbt \
+  --select config.severity:warn --vars "$(.venv/bin/python -m src.warehouse.dbt_vars)"
+```
+
+조치: 원인이 지표 Model이면 Model을 고친 뒤 다음 게시에서 경고가 사라지는지 확인한다. Fact가
+원인으로 보이면 Fact Test가 그 경우를 잡지 못한 것이므로 `error` 등급 Test를 보강한다.
+
+전체 Gate(v1)로 되돌리기: 경고 상태의 지표를 게시하면 안 되는 기간에는 `metrics_test_severity`를
+`error`로 준다.
+
+```bash
+uv run python -m src.warehouse.publish --dbt-vars "{metrics_test_severity: error}"
+```
+
+DAG에는 dbt var Param이 없다. DAG 게시까지 되돌리려면 `dbt/dbt_project.yml`의
+`metrics_test_severity` 기본값을 `error`로 바꿔 배포한다.
+
 ## 재검증 명령과 결과
 
 위 pytest 명령이 통과하는지 확인한다. `write_evidence("r14", ...)` 증적에서
