@@ -4,7 +4,7 @@
 > 대상: [ADR 021](../../adr/021-split-publish-gate-by-domain.md) "도메인 경계 기준" 절
 > 선행: `docs/superpowers/plans/2026-11-10-publish-gate-domain-split.md`
 > 커밋은 lead가 한다. backend·frontend·reviewer는 커밋하지 않는다.
-> **상태: 범위 확정(2026-11-11).** Phase 1~4는 lead가 배분한다. Phase 5는 차단 상태다(§4).
+> **상태: 범위 확정(2026-11-11).** Phase 1~4는 lead가 배분한다. Phase 5는 사용자 결정으로 uiux가 구현·검수했고 reviewer 승인, architect 완료조건 대조를 마쳤다(§4).
 
 ## 1. 결론
 
@@ -49,7 +49,7 @@ Mart 13개를 `ref`와 `error` Test 공동 참조로 이으면 한 덩어리다.
 | ---- | ---- | ---- |
 | 도메인 구성 | 2도메인 유지(선택지 A) | 사용자 확정 |
 | 기본 CI | 하지 않는다. GitHub Actions를 만들지 않고 범위 밖으로 적는다 | 사용자 확정 |
-| Phase 구성 | 아래 §4의 5개. Phase 5는 uiux·frontend 역할이 켜질 때까지 차단 | 사용자 확정 |
+| Phase 구성 | 아래 §4의 5개. Phase 5는 2026-11-12 사용자 결정으로 uiux가 명세·구현·검수를 담당 | 사용자 확정 |
 | 도메인 선언 수단 | dbt `group` + `owner` | lead 선택 |
 | 알림 | 하지 않고 이유를 적는다 | lead 선택 |
 | 공유 Model Contract | dbt-duckdb 1.11이 지원할 때만 Phase 1에 포함 | lead 선택 |
@@ -64,7 +64,7 @@ graph LR
   P1 --> P3["3 도메인별 지연"]
   P2 --> P4["4 SLO 문서·ADR 마감"]
   P3 --> P4
-  P3 -.-> P5["5 Dashboard 표시 (차단)"]
+  P3 --> P5["5 Dashboard 표시"]
 ```
 
 ### Phase 1. dbt `group`으로 도메인 선언 (backend)
@@ -213,15 +213,34 @@ Dashboard(Metabase)는 Serving 파일(`Commerce Mart Serving`) 하나만 읽는�
 
 ### Phase 5. Dashboard 지연·보류 표시 (uiux → frontend → uiux 검수 → reviewer)
 
-**차단: uiux·frontend 역할이 이 팀에 없다(현재 구성: architect, backend, reviewer).** 두 역할이 켜질 때까지 시작하지 않는다. backend에 화면 작업을 맡기지 않는다.
+**담당 변경 (2026-11-12):** 사용자 결정으로 uiux가 명세·구현·화면 검수를 맡고, 완료 후 reviewer가 코드 리뷰한다.
 
-- 차단 중에도 끝나는 것: Phase 3의 `serving_domain_status`. 화면이 읽을 데이터는 Serving 파일에 이미 있게 된다.
-- 차단 중에 남는 것: Metabase Card 배치와 문구(보류 표시 방식, 어느 Dashboard에 둘지), `docs/bi/dashboards.md`와 Snapshot 갱신, 화면 검수.
-- 재개 조건: lead가 uiux·frontend를 켠다. 그때 화면에서 도메인별 "기준 시각"과 보류 여부가 보이게 한다.
-- 순서: uiux 명세 → frontend 구현 → uiux 화면 검수 → reviewer 코드 리뷰.
-- Phase 4 마감 시점에도 차단이면 ADR 021의 "미보완"에 "데이터는 Serving에 있고 화면 표시는 없다"로 적는다.
+**화면 명세**
 
-**완료조건**: 보류 상태와 정상 상태의 화면 캡처가 증거로 남는다. 세부 조건은 uiux 명세가 나온 뒤 이 절에 추가한다.
+- Sales·Product·Customer 세 Dashboard의 맨 위에 같은 `도메인 게시 상태` 표를 배치한다. Customer는 두 도메인을 함께 사용하고 나머지 화면에서도 데이터의 부분 게시 여부를 확인할 수 있어야 한다. 기존 필터와 연결하지 않는다.
+- 데이터는 `Commerce Mart Serving`의 `serving_domain_status`만 읽는다. `orders`(주문), `subscriptions`(구독)를 각각 한 행으로 표시한다.
+- 열은 `도메인`, `게시 상태`, `마지막 정상 게시 시각 (UTC)`, `연속 보류 횟수`다. `held=true`는 `보류`, `false`는 `정상`으로 문자 표시한다. 보류 시 이전 게시 데이터가 표시된다는 설명을 카드에 둔다. 색상만으로 상태를 구분하지 않는다.
+- 시각은 `refreshed_at`(마지막 비보류 게시 시각)이며 `as_of`(마지막 사건 시각)가 아니다. 시각이 없으면 `확인 불가`로 표시하고 정상 게시 시각을 추측하지 않는다. 이 표는 임계값에 따른 지연 판정을 제공하지 않는다.
+- 표의 빈 결과나 질의 오류가 정상으로 보이지 않아야 한다. 좁은 화면에서도 도메인·상태와 시각을 읽을 수 있어야 하며 필요하면 표를 가로 스크롤한다.
+
+**완료조건**
+
+- [x] 세 Dashboard의 첫 화면에서 상태 표가 기존 카드와 겹치지 않는다. 카드에 필터 매핑이 없고 Sales에서 날짜 필터 적용 후에도 같은 보류 상태를 확인했다.
+- [x] 정상 상태는 격리된 카드 응답 대역으로 두 도메인의 상태·시각·횟수를 확인했다. 실제 Serving이 정상 상태인 실행은 아니며 대역 값은 BI 문서에 적었다.
+- [x] 실제 Serving에서 구독 `보류`·이전 정상 게시 시각·2회 및 주문 `정상`·0회가 일치한다. 검증용 데이터는 격리하고 실제 Serving 게시 파일을 변조하지 않았다.
+- [x] 정상·보류 화면을 각각 Playwright MCP로 캡처하고 증적과 출처를 BI 문서에 기록했다. 390px 화면의 가로 스크롤, 빈 결과·HTTP 500·시각 없음 표시도 확인했다.
+- [x] Metabase 카드·Dashboard Snapshot과 `docs/bi/dashboards.md`를 실제 적용 결과에 맞춰 갱신했다.
+- [x] 화면 검수 후 변경 파일과 테스트 결과를 reviewer에 전달한다.
+
+**진행 (2026-11-12):** Metabase 기동 후 최신 게시를 Serving으로 내보내 재지정했다. card 60을 세 Dashboard에 배치하고 Playwright MCP로 화면을 검수했다. 실제 보류 및 응답 대역 정상 화면의 출처는 `docs/bi/dashboards.md`에 기록했다. NULL 상태·시각·횟수의 `확인 불가`와 정상 상태는 DuckDB 임시 테이블로 카드 SQL을 실행해 확인했다. 문서 링크 테스트는 새 PNG를 임시 Git index에 넣어 실행해 202개 통과했다(실제 index에는 추가하지 않았다).
+
+**판정 (2026-11-12, architect):** reviewer 승인(지적 없음) 후 완료조건 6개를 산출물과 대조해 충족으로 판정했다. 화면 증적은 Customer Dashboard 기준이며 Sales·Product는 Snapshot의 같은 배치(row 0, 24×4, 필터 매핑 없음)로 확인했다. ADR 021의 "미보완"·"검증하지 못한 것"을 화면 표시 반영 상태로 고쳤다.
+
+**파일·폴더별 변경 요약**
+
+- `metabase/export/card-60.json`, `metabase/export/dashboard-{2,3,4}.json`: 상태 카드 SQL·문구와 세 Dashboard 배치를 저장했다.
+- `docs/bi/dashboards.md`, `docs/bi/screenshots/domain-status-{held,mobile,normal-fixture}-2026-11-12.png`: 표시 의미와 검증 출처·화면 증적을 기록했다.
+- 이 계획서: 담당 변경, 화면 명세, 완료조건과 검증 이력을 기록했다.
 
 ## 5. 범위 밖 (ADR 021에 이유와 함께 적는다)
 

@@ -20,7 +20,7 @@
           ]
         }
       ],
-      "row": 0,
+      "row": 4,
       "size_x": 8,
       "size_y": 4,
       "visualization_settings": {}
@@ -44,7 +44,7 @@
           ]
         }
       ],
-      "row": 0,
+      "row": 4,
       "size_x": 8,
       "size_y": 4,
       "visualization_settings": {}
@@ -68,8 +68,20 @@
           ]
         }
       ],
-      "row": 0,
+      "row": 4,
       "size_x": 8,
+      "size_y": 4,
+      "visualization_settings": {}
+    },
+    {
+      "card_id": 60,
+      "col": 0,
+      "dashboard_tab_id": null,
+      "id": 52,
+      "inline_parameters": [],
+      "parameter_mappings": [],
+      "row": 0,
+      "size_x": 24,
       "size_y": 4,
       "visualization_settings": {}
     }

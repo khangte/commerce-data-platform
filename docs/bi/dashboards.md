@@ -8,6 +8,22 @@ Metabase Collection `Commerce Mart 대시보드`의 Dashboard ID는 Sales `2`, P
 | Product | Category GMV, Top Products, Sales Volume | `fct_order_item`, `dim_product`, `dim_date` | UTC 주문일. 주문 Fact를 결합하지 않는다. |
 | Customer | New/Repeat, Subscription Status Trend·Current Distribution, Membership Tier 집계·추이, Region, Current Tier | `rpt_customer_order_activity_daily`, `rpt_subscription_funnel_daily`, `rpt_membership_tier_performance`, `dim_subscription`, `fct_order`, `dim_customer`, `dim_date` | New/Repeat·구독 추이·등급·지역은 사건 발생 시점, Current Tier·Current Subscription Status는 현재 시점이다. Region은 주별 주문 수 내림차순 막대 차트다. |
 
+세 Dashboard 맨 위의 card 60 `도메인 게시 상태`는 `serving_domain_status`(도메인별 게시 상태)에서
+주문(`orders`)·구독(`subscriptions`)의 게시 상태, 마지막 정상 게시 시각(UTC), 연속 보류 횟수를
+표시한다. `보류`는 해당 도메인이 이전 게시 데이터를 사용한다는 뜻이다. 마지막 정상 게시 시각은
+`refreshed_at`(마지막 비보류 게시 시각)이며 `as_of`(마지막 사건 시각)가 아니다. 상태나 시각을
+알 수 없으면 `확인 불가`로 표시한다. 이 표는 지연 임계값을 판정하지 않으며 Dashboard 날짜·주문
+상태 필터의 영향을 받지 않는다. 모바일에서는 표를 가로로 스크롤해 남은 열을 볼 수 있다.
+
+2026-11-12 검증: 최신 게시 `e34cbcfc-6ea1-4aee-9eed-97bb927af43b`, 내보내기
+`106c5954-1910-4d7a-8b9b-fece9fd30fea`에서 주문 정상·구독 2회 연속 보류를 확인했다.
+[보류 화면](screenshots/domain-status-held-2026-11-12.png)과
+[모바일 화면](screenshots/domain-status-mobile-2026-11-12.png)은 실제 Serving 결과다.
+[정상 화면](screenshots/domain-status-normal-fixture-2026-11-12.png)은 실제 Serving 파일을 바꾸지
+않고 브라우저에서 card 60의 응답 중 구독 행을 정상·0회·`2026-11-11 09:49:42` UTC로 대체한
+검증용 화면이다. 빈 결과·HTTP 500·확인 불가 응답도 브라우저에서 대체해 각각 `결과 없음`, 차트
+오류, `확인 불가` 표시를 확인했다. NULL 값은 카드 SQL을 DuckDB 임시 테이블에 실행해 별도 확인했다.
+
 BI SQL의 배포 정본은 `metabase/export/card-<id>.json`의 `dataset_query`(카드 쿼리 설정)다.
 `metabase/queries/*.sql`은 Template Tag가 없는 대조용 참조이며 배포 입력으로 쓰지 않는다.
 빈 Metabase 앱 DB에서는 Connection을 만든 뒤 JSON의 배포 필드를 카드·Dashboard API payload의 기준으로 사용한다.

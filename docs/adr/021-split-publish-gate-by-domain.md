@@ -107,8 +107,8 @@ graph LR
 | ---- | ---- |
 | 포기 | 게시본의 모든 Table이 같은 Bronze 시점이라는 보장. 보류 도메인은 직전 게시 시점, 나머지는 최신 시점이다 |
 | 유지 | 파일 단위 원자 교체. 도메인 안의 정합성(도메인 Relation은 함께 되돌린다). 공유 Dimension·staging·Model 오류의 전체 차단 |
-| 보완 | 경계 Test 재검증, 귀속 불가 시 전체 차단, `held_domains`·`PUBLISH_PARTIAL` 기록, 되돌리기 전 Build 보존, 끄는 스위치 |
-| 미보완 | 도메인을 가로지르는 분석(같은 고객의 주문과 구독)은 시점이 어긋난 값을 볼 수 있다. 도메인별 갱신 시각과 보류 여부는 Serving 파일의 `serving_domain_status`에 있지만 Dashboard Card는 없다(화면 담당 역할이 없어 보류). Metabase가 이 Table을 동기화하는지도 확인하지 않았다 |
+| 보완 | 경계 Test 재검증, 귀속 불가 시 전체 차단, `held_domains`·`PUBLISH_PARTIAL` 기록, 되돌리기 전 Build 보존, 끄는 스위치. Sales·Product·Customer Dashboard 맨 위의 `도메인 게시 상태` 표(card 60)가 `serving_domain_status`의 도메인별 보류 여부·마지막 정상 게시 시각·연속 보류 횟수를 보여 준다([BI 문서](../bi/dashboards.md)) |
+| 미보완 | 도메인을 가로지르는 분석(같은 고객의 주문과 구독)은 시점이 어긋난 값을 볼 수 있다. 상태 표는 어긋남을 알려 줄 뿐 없애지 않는다. 표는 지연 임계값을 판정하지 않고(판정은 Run report의 `DATA_STALE:<domain>`), 개별 카드에는 보류 표시가 없다 |
 | 운영 변화 | `dbt_build` Task가 Test 실패에도 성공으로 끝난다. 감지는 Run report로 한다([R-14 Runbook](../runbooks/r14-dbt-failure.md)). 보류가 원천 주기 2회를 넘겨 이어지면 `DATA_STALE:<domain>`이 뜬다([게시 SLO](../reference/publish-slo.md)) |
 
 게시 파일이 지키는 불변식: 통과 도메인은 이번 Build의 `error` Test를 모두 통과했고, 보류 도메인은 직전 게시 값과 같으며 경계 Test를 다시 통과했다.
@@ -145,7 +145,7 @@ F·G·H의 수치와 명령은 [08 §6](../benchmarks/08-publish-gate-domain-spl
 - 경계 Test 실패가 운영에서 저절로 생기는 경우: 정상 수집에서는 `customer_key`가 바뀌지 않는다(관측이 뒤에만 붙고 등급이 내려가지 않는다). 실험 G는 소급 관측을 주입했다. 실제로는 재적재·Backfill에서만 생길 조건이다.
 - 실행 H는 Canary SQL의 var 기본값을 잠시 바꿔 만들었다. DAG에 dbt var를 넘기는 Param이 없다.
 - 소요 시간은 1회 측정이다.
-- Metabase의 `serving_domain_status` 동기화(Metabase 미기동).
+- Dashboard 상태 표의 정상 화면: 실제 Serving이 두 도메인 모두 정상인 실행이 아니라 카드 응답 대역으로 확인했다. 보류 화면과 Metabase의 `serving_domain_status` 조회는 실제 Serving으로 확인했다([BI 문서](../bi/dashboards.md)).
 
 ## 실무 관행과의 거리
 

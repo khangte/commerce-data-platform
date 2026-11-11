@@ -1,0 +1,22 @@
+{
+  "collection_id": 6,
+  "database_id": 2,
+  "dataset_query": {
+    "database": 2,
+    "lib/type": "mbql/query",
+    "stages": [
+      {
+        "lib/type": "mbql.stage/native",
+        "native": "SELECT CASE domain WHEN 'orders' THEN '주문' WHEN 'subscriptions' THEN '구독' ELSE domain END AS \"도메인\",\nCASE WHEN held IS TRUE THEN '보류' WHEN held IS FALSE THEN '정상' ELSE '확인 불가' END AS \"게시 상태\",\nCOALESCE(strftime(refreshed_at AT TIME ZONE 'UTC', '%Y-%m-%d %H:%M:%S'), '확인 불가') AS \"마지막 정상 게시 시각 (UTC)\",\nCOALESCE(CAST(consecutive_holds AS VARCHAR), '확인 불가') AS \"연속 보류 횟수\"\nFROM serving_domain_status ORDER BY domain"
+      }
+    ]
+  },
+  "description": "보류 중인 도메인은 이전 게시 데이터를 표시합니다. 마지막 정상 게시 시각은 해당 도메인을 보류하지 않고 게시한 시각입니다. 지연 임계값 판정은 포함하지 않습니다.",
+  "display": "table",
+  "id": 60,
+  "name": "도메인 게시 상태",
+  "parameter_mappings": [],
+  "parameters": [],
+  "type": "question",
+  "visualization_settings": {}
+}
