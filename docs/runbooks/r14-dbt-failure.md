@@ -82,8 +82,8 @@ SELECT publish_run_id, tests_warned, finished_at FROM mart_publish_runs
 WHERE tests_warned > 0 ORDER BY started_at DESC;
 ```
 
-어떤 Test인지는 저장되지 않는다(건수만 남는다). Published 파일 **복사본**에서 지표 Test만 다시
-돌려 식별한다. 복사본에서는 Test 결과가 출력된 뒤 종료 Hook이 Catalog 오류로 끝날 수 있다. Test
+어떤 Test인지는 `dbt_build` Task 로그의 `dbt warned_nodes=[...]` 줄에 남는다(DB에는 건수만 남는다).
+로그가 없으면 Published 파일 **복사본**에서 지표 Test만 다시 돌려 식별한다. 복사본에서는 Test 결과가 출력된 뒤 종료 Hook이 Catalog 오류로 끝날 수 있다. Test
 결과 줄만 본다.
 
 ```bash
@@ -104,6 +104,45 @@ uv run python -m src.warehouse.publish --dbt-vars "{metrics_test_severity: error
 
 DAG에는 dbt var Param이 없다. DAG 게시까지 되돌리려면 `dbt/dbt_project.yml`의
 `metrics_test_severity` 기본값을 `error`로 바꿔 배포한다.
+
+## 도메인 부분 게시 (`PUBLISH_PARTIAL:<domain>`)
+
+`error` 등급 Test 실패가 한 도메인(`orders` 또는 `subscriptions`)에만 귀속되면 그 도메인만 직전
+게시 값으로 되돌리고 나머지를 게시한다([ADR 021](../adr/021-split-publish-gate-by-domain.md)).
+이때 `dbt_build` Task는 **성공**으로 끝나고 상태는 `PUBLISHED`다. Task 실패 알림으로는 보이지
+않으므로 Run report로 확인한다. 보류 도메인의 Table은 직전 게시 시점, 나머지는 최신 시점이다.
+
+확인:
+
+```sql
+SELECT dag_run_id, failures, recorded_at FROM warehouse_run_reports
+WHERE failures::text LIKE '%PUBLISH_PARTIAL%' ORDER BY recorded_at DESC;
+
+SELECT publish_run_id, held_domains, tests_failed, failed_path, finished_at
+FROM mart_publish_runs WHERE held_domains <> '[]' ORDER BY started_at DESC;
+```
+
+- 실패한 Test 이름: `dbt_build` Task 로그의 `dbt warned_nodes=... failed_nodes=[...] held_domains=[...]` 줄.
+- 실패 당시 데이터: `failed_path`의 파일. 되돌리기 **전** Build 복사본이다. `failed/`는 최근 3개만
+  남으므로 부분 게시가 이어지면 오래된 증거부터 지워진다.
+
+조치: `failed_path` 파일에서 실패 Test의 원인을 찾아 고친다. 다음 실행이 성공하면 보류 도메인이
+밀린 Key까지 반영하고 `held_domains`가 `[]`로 돌아온다. 부분 게시 동안 재계산 경계는 전진하지
+않으므로 별도 Backfill은 필요 없다.
+
+전체 차단으로 끝나는 경우(`FAILED`, 위 격리 절차 적용): 공유 Dimension(`dim_customer`,
+`dim_date`)·staging·intermediate Test 실패, Model 오류, 두 도메인 동시 실패, 첫 게시, 되돌린 뒤
+경계 Test 실패. 마지막 두 경우는 `error_message` 앞부분에 물러난 사유(`boundary tests failed`,
+`revert failed`)가 남는다.
+
+전체 Gate로 되돌리기: 시점이 어긋난 게시본을 내보내면 안 되는 기간에는 부분 게시를 끈다.
+
+```bash
+airflow dags trigger warehouse_pipeline_dag --conf '{"partial_publish": false}'
+uv run python -m src.warehouse.publish --no-partial-publish
+```
+
+정기 실행까지 끄려면 DAG Param `partial_publish`의 기본값을 `False`로 바꿔 배포한다.
 
 ## 재검증 명령과 결과
 

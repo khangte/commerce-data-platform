@@ -1,9 +1,9 @@
-# 08. Publish Gate 도메인 분리 — Test 실패가 묶는 도메인 (초안)
+# 08. Publish Gate 도메인 분리 — Test 실패가 묶는 도메인
 
 > 증적: `data/reliability/gate-domain-split/20261110T131419718338Z.json` (Git 미추적)
 > 실험: `tests/reliability/test_domain_gate_experiment.py` (실제 PostgreSQL·SeaweedFS·dbt, 563.20초)
 > 측정일: 2026-11-10
-> 상태: 측정값 초안. 해석은 Phase 4에서 추가한다.
+> 결정: [ADR 021](../adr/021-split-publish-gate-by-domain.md) · 선행: [07](07-publish-gate-split.md)
 
 ## 1. 환경과 명령
 
@@ -66,7 +66,16 @@ RUN_POSTGRES_INTEGRATION=1 RUN_SEAWEEDFS_INTEGRATION=1 RUN_DBT_PUBLISH_INTEGRATI
 | D 복구 실행 | 32.66 |
 | D-orders 복구 실행 | 34.64 |
 
-## 4. 측정 범위의 한계
+## 4. 해석
+
+- **구독 Test 실패가 주문을 묶지 않는다.** 스위치를 끈 전체 Gate에서는 구독 Canary 하나가 주문 5행(주문 시각 600초분)을 묶었다. 켜면 0행이다(A). `dim_subscription`에 붙은 Test가 실패해 하위 28개 Node가 건너뛰어진 경우에도 같다(E).
+- **보류된 도메인은 여전히 묶인다.** B에서 스위치를 켜도 주문 5행은 게시되지 않았다. 도메인 분리는 실패를 없애는 것이 아니라 실패의 범위를 그 도메인으로 좁힌다.
+- **귀속할 수 없으면 전체 Gate 그대로다.** 의존이 없는 Canary(C)는 스위치와 무관하게 `FAILED`다.
+- **되돌린 증분은 다음 실행에서 복구된다.** 부분 게시본에서 Canary 없이 다시 실행하면 13개 Relation이 한 번에 게시한 기준 파일과 모두 같다(D, D-orders). 재계산 경계가 전진하지 않아 밀린 Key를 다시 계산하기 때문이다.
+- **추가 비용은 작다.** 부분 게시 1회(되돌리기와 재검증 포함)는 38.81초로 정상 증분 실행 37.60초보다 1.21초 길었다. 설계가 정한 전환 기준(정상 실행의 2배)에 한참 못 미친다. 각 1회 측정이다.
+- **대가는 시점 불일치다.** 부분 게시본에서 보류 도메인은 직전 게시 시점, 나머지와 공유 Dimension은 최신 시점이다. 이 실험의 A에서는 `subscriptions`에 변화가 없어 값 차이로 드러나지 않았다.
+
+## 5. 측정 범위의 한계
 
 - 이 Bronze의 마지막 Batch에는 구독·구독 결제 변화가 없다. 그래서 B의 구독 결제 묶임이 끔·켬 모두 0이고, D는 `subscriptions`의 증분 복구를 검증하지 못한다. 되돌린 증분이 복구되는지는 실제 변화가 있는 `orders`를 보류한 D-orders로 확인했다.
 - 5행·600초는 Bronze Batch 하나(10분 간격)를 경계로 잡은 실험 값이다.

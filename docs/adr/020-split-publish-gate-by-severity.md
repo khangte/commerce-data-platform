@@ -43,9 +43,9 @@ ADR 016은 복사한 Build 파일에서 `dbt build`를 돌리고, 모든 Test가
 
 알려진 한계:
 
-- **어떤 Test가 경고였는지는 저장되지 않는다.** 건수만 남는다. dbt 출력은 실패 때만 기록되고 `run_results.json`은 게시 성공 뒤 지워진다. 식별 절차는 [R-14 Runbook](../runbooks/r14-dbt-failure.md)에 있다. 경고 노드 이름을 로그로 남기는 것이 후속 과제다.
+- **어떤 Test가 경고였는지는 저장되지 않는다.** 건수만 남는다. dbt 출력은 실패 때만 기록되고 `run_results.json`은 게시 성공 뒤 지워진다. 식별 절차는 [R-14 Runbook](../runbooks/r14-dbt-failure.md)에 있다. 이후 [ADR 021](021-split-publish-gate-by-domain.md) 구현에서 경고 Node 이름을 `dbt_build` 로그에 남기게 했다.
 - DAG에는 dbt var를 넘기는 Param이 없다. 운영 DAG에서 전체 Gate로 돌아가려면 `dbt/dbt_project.yml`의 기본값을 바꿔야 한다. CLI 게시는 `--dbt-vars`로 즉시 가능하다.
-- 분리 단위가 계층 전체다. Fact·Dimension Test 실패는 여전히 관계없는 도메인까지 막는다. 이것이 도메인별 분리의 동기다.
+- 분리 단위가 계층 전체다. Fact·Dimension Test 실패는 여전히 관계없는 도메인까지 막는다. 이것이 도메인별 분리([ADR 021](021-split-publish-gate-by-domain.md))의 동기다.
 
 ## Validation
 

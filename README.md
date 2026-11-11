@@ -13,7 +13,7 @@
 > **증분 수집 → Bronze(Parquet) → dbt Star Schema → 품질 Gate → Dashboard**까지 이어지는
 > 배치 파이프라인의 **신뢰성**과 **분석 모델 정합성**을 설계·검증한 프로젝트다.
 
-기준 문서: [PRD v1.29](PRD_v1.29.md) · 단계별 기록: [`docs/phases/`](docs/phases/ROADMAP.md)
+기준 문서: [PRD v1.30](PRD_v1.30.md) · 단계별 기록: [`docs/phases/`](docs/phases/ROADMAP.md)
 
 ---
 
@@ -232,7 +232,7 @@ Business Event Time은 과거일 수 있지만 Mutable Row의 `updated_at`은 **
 
 ```text
 data/warehouse/build/   dbt build + test 수행
-        │ error 등급 Test 모두 통과
+        │ error 등급 Test 모두 통과, 또는 실패 도메인만 직전 게시 값으로 되돌림
         ▼
 data/warehouse/warehouse.duckdb   ← 검증된 파일로만 Atomic 교체
 data/warehouse/failed/            ← 실패 Build는 최근 3개만 보존
@@ -240,6 +240,7 @@ data/warehouse/failed/            ← 실패 Build는 최근 3개만 보존
 
 - v1은 일관성을 우선해 Test 하나라도 실패하면 전체를 게시하지 않았다([ADR 016](docs/adr/016-publish-mart-via-warehouse-file-swap.md)). 지표 Test 하나가 주문 Fact 게시까지 묶는 비용을 [재현 실험](docs/benchmarks/07-publish-gate-split.md)으로 확인한 뒤, 지표 계층(`rpt_*`) Test만 `warn`으로 내렸다([ADR 020](docs/adr/020-split-publish-gate-by-severity.md)). Fact·Dimension Test는 계속 게시를 막는다
 - 경고가 있는 게시는 `mart_publish_runs.tests_warned`와 Run report `DBT_TEST_WARN`으로 남긴다. 내준 것은 지표와 Fact 사이의 정합성이고, 파일 단위 원자 교체는 그대로다
+- 다음으로 `error` 등급 실패를 도메인(`orders`·`subscriptions`)으로 나눴다([ADR 021](docs/adr/021-split-publish-gate-by-domain.md)). 한 도메인에 귀속되는 실패면 그 도메인만 Build 파일 안에서 직전 게시 값으로 되돌리고 나머지를 게시한다. [재현 실험](docs/benchmarks/08-publish-gate-domain-split.md)에서 구독 Test 실패가 묶던 주문 5행(600초분)이 0행이 됐다. 내준 것은 도메인 사이의 같은 시점 보장이고, 되돌린 뒤 공유 Dimension 참조를 재검증해 끊기면 전체 차단으로 물러난다. 부분 게시는 `held_domains`와 `PUBLISH_PARTIAL:<domain>`으로 남긴다
 - Export는 Hash를 다시 계산하지 않고, Publish 때 기록한 게시 파일 Identity(inode·mtime_ns)로 같은 파일인지 확인 ([058](docs/architect-review/058_publish-file-identity.md))
 - Serving용 Export 후 Metabase 연결을 새 파일로 Repoint하고 스키마 동기화를 요청
 
