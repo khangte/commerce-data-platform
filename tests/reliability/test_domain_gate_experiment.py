@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+from collections.abc import Callable
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
@@ -15,6 +16,7 @@ import pytest
 
 from src.common.database import PostgresSettings
 from src.common.row_hash import hash_cursor_rows
+from src.ingestion.bronze.storage import SeaweedFSSettings
 from src.observability.run_report import judge_run_report
 from src.warehouse.dbt_runner import DbtRunResult, run_dbt_build
 from src.warehouse.domain_gate import domain_table
@@ -37,6 +39,7 @@ from src.warehouse.publish_metadata import (
     get_publish_run,
 )
 from tests.integration.test_publish_gate_dbt_integration import _run as _new_publish_run
+from tests.reliability.faults import backdated_tier_observation
 from tests.reliability.harness import write_evidence
 from tests.reliability.test_gate_split_experiment import (
     _boundary,
@@ -82,15 +85,24 @@ class Attempt:
     skipped_nodes: int
     build_seconds: float
     manifest: dict
+    error_message: str | None = None
 
 
 def _attempt(
-    settings: PostgresSettings, paths: WarehousePaths, canary: str | None, *, partial_publish: bool
+    settings: PostgresSettings,
+    paths: WarehousePaths,
+    canaries: tuple[str, ...],
+    *,
+    partial_publish: bool,
+    before_build: Callable[[Path], object] | None = None,
 ) -> Attempt:
-    """운영과 같은 증분 dbt Build로 한 번 게시를 시도하고 결과를 모은다."""
+    """운영과 같은 증분 dbt Build로 한 번 게시를 시도하고 결과를 모은다.
+
+    before_build는 Build 파일과 Catalog가 준비된 뒤 dbt 실행 전에 Bronze 조건을 바꿀 때 쓴다.
+    """
     run = _new_publish_run()
     observed: dict[str, object] = {}
-    runner = partial(run_dbt_build, dbt_vars={canary: True} if canary else None)
+    runner = partial(run_dbt_build, dbt_vars=dict.fromkeys(canaries, True) or None)
 
     def recording(build_path: Path, target_path: Path) -> DbtRunResult:
         """Publish가 Target Directory를 지우기 전에 산출물을 읽어 둔다."""
@@ -102,13 +114,17 @@ def _attempt(
         return result
 
     prepare_warehouse_build(settings, paths, run)
+    if before_build is not None:
+        before_build(paths.build_file(run.publish_run_id))
     started = perf_counter()
+    error_message = None
     try:
         build_warehouse(
             settings, paths, run.publish_run_id, dbt_runner=recording, partial_publish=partial_publish
         )
-    except WarehouseBuildError:
+    except WarehouseBuildError as error:
         build_seconds = perf_counter() - started
+        error_message = str(error)
     else:
         build_seconds = perf_counter() - started
         publish_build(settings, paths, run.publish_run_id)
@@ -122,6 +138,7 @@ def _attempt(
         skipped_nodes=observed["skipped"],
         build_seconds=build_seconds,
         manifest=observed["manifest"],
+        error_message=error_message,
     )
 
 
@@ -182,6 +199,21 @@ def _node(canary: str) -> str:
     return f"test.commerce_data_platform.{canary}"
 
 
+def _key_count(path: Path, customer_key: str) -> tuple[int, int]:
+    """dim_customer에 그 Key가 있는 행 수와 구독 결제가 그 Key를 참조하는 행 수를 반환한다."""
+    with duckdb.connect(str(path), read_only=True) as connection:
+        return connection.execute(
+            "SELECT (SELECT count(*) FROM dimensions.dim_customer WHERE customer_key = $key),"
+            " (SELECT count(*) FROM facts.fct_subscription_payment WHERE customer_key = $key)",
+            {"key": customer_key},
+        ).fetchone()
+
+
+def _boundary_node(error_message: str) -> str:
+    """전체 차단 사유 첫 줄에서 실패한 경계 Test Node ID를 꺼낸다."""
+    return error_message.splitlines()[0].split("boundary tests failed: ", 1)[1]
+
+
 def test_domain_failure_only_holds_its_own_domain(tmp_path: Path) -> None:
     """같은 Bronze·같은 Canary에서 스위치만 바꿔 묶이는 범위와 복구 후 Hash를 비교한다."""
     settings = PostgresSettings.from_environment()
@@ -208,18 +240,20 @@ def test_domain_failure_only_holds_its_own_domain(tmp_path: Path) -> None:
             shutil.copyfile(base.published, paths.published)
             return paths
 
-        def compare(name: str, canary: str) -> tuple[WarehousePaths, Attempt, WarehousePaths, Attempt]:
+        def compare(
+            name: str, *canaries: str
+        ) -> tuple[WarehousePaths, Attempt, WarehousePaths, Attempt]:
             """스위치 끔·켬을 각각 Baseline에서 실행하고 끔의 차단을 단언한다."""
             off_paths = fresh(f"{name}-off")
-            off = _attempt(settings, off_paths, canary, partial_publish=False)
+            off = _attempt(settings, off_paths, canaries, partial_publish=False)
             assert (off.status, off.error_type) == (FAILED, DBT_TEST_ERROR)
             assert off.held_domains == ()
             assert _hashes(off_paths.published, ALL_MODELS) == baseline_all
             on_paths = fresh(f"{name}-on")
-            return off_paths, off, on_paths, _attempt(settings, on_paths, canary, partial_publish=True)
+            return off_paths, off, on_paths, _attempt(settings, on_paths, canaries, partial_publish=True)
 
         reference_paths = fresh("reference")
-        reference = _attempt(settings, reference_paths, None, partial_publish=True)
+        reference = _attempt(settings, reference_paths, (), partial_publish=True)
         assert (reference.status, reference.held_domains) == (PUBLISHED, ())
         _assert_manifest_matches_domain_table(reference.manifest)
         reference_all = _hashes(reference_paths.published, ALL_MODELS)
@@ -262,6 +296,7 @@ def test_domain_failure_only_holds_its_own_domain(tmp_path: Path) -> None:
         assert (c_on.status, c_on.error_type) == (FAILED, DBT_TEST_ERROR)
         assert c_on.held_domains == ()
         assert _hashes(c_on_paths.published, ALL_MODELS) == baseline_all
+        assert "PUBLISH_FAILED" in _judge(c_on)
 
         # E: 상위 Dimension 실패로 intermediate·경계 Test가 skipped여도 구독만 보류한다.
         e_off_paths, e_off, e_on_paths, e_on = compare("e", DIM_SUBSCRIPTION_CANARY)
@@ -274,9 +309,52 @@ def test_domain_failure_only_holds_its_own_domain(tmp_path: Path) -> None:
             e_on_paths.published, e_on_paths.failed_file(e_on.run.publish_run_id)
         )
         assert e_on_rows == 0
+        assert "PUBLISH_PARTIAL:subscriptions" in _judge(e_on)
+
+        # F: 두 도메인 Canary가 함께 실패하면 어느 한쪽에 귀속되지 않아 스위치를 켜도 전체 차단이다.
+        _, f_off, f_on_paths, f_on = compare("f", ORDER_CANARY, SUBSCRIPTION_CANARY)
+        both = tuple(sorted((_node(ORDER_CANARY), _node(SUBSCRIPTION_CANARY))))
+        assert tuple(sorted(f_off.failed_nodes)) == tuple(sorted(f_on.failed_nodes)) == both
+        assert (f_on.status, f_on.error_type, f_on.held_domains) == (FAILED, DBT_TEST_ERROR, ())
+        assert "partial publish fallback" not in (f_on.error_message or "")
+        assert _hashes(f_on_paths.published, ALL_MODELS) == baseline_all
+        assert "PUBLISH_FAILED" in _judge(f_on)
+
+        # G: 가입 시각을 앞당긴 등급 관측이 늦게 도착해 첫 고객 Version Key가 바뀐 Bronze에서 구독을 보류하면,
+        # 되돌린 구독 결제가 사라진 Key를 참조해 경계 Test가 실패하고 전체 차단으로 물러나야 한다.
+        with backdated_tier_observation(SeaweedFSSettings.from_environment()) as inject:
+            injected = []
+            g_control_paths = fresh("g-control")
+            g_control = _attempt(
+                settings, g_control_paths, (), partial_publish=True,
+                before_build=lambda path: injected.append(inject(path)),
+            )
+            g_paths = fresh("g-on")
+            g_on = _attempt(
+                settings, g_paths, (SUBSCRIPTION_CANARY,), partial_publish=True,
+                before_build=lambda path: injected.append(inject(path)),
+            )
+        fault = injected[0]
+        assert injected[1].replaced_customer_key == fault.replaced_customer_key
+        # 대조: 보류가 없으면 영향 Key 재계산이 결제를 새 Key로 옮겨 그대로 게시된다.
+        assert (g_control.status, g_control.held_domains) == (PUBLISHED, ())
+        assert _key_count(g_control_paths.published, fault.replaced_customer_key) == (0, 0)
+        assert (g_on.status, g_on.error_type, g_on.held_domains) == (FAILED, DBT_TEST_ERROR, ())
+        assert "partial publish fallback: subscriptions: boundary tests failed" in g_on.error_message
+        boundary_node = _boundary_node(g_on.error_message)
+        assert "fct_subscription_payment_customer_key" in boundary_node
+        assert _hashes(g_paths.published, ALL_MODELS) == baseline_all
+        g_copy = g_paths.failed_file(g_on.run.publish_run_id)
+        assert g_copy.exists()
+        assert not g_paths.build_file(g_on.run.publish_run_id).exists()
+        # failed/ 사본은 되돌리기 전 Build다. 새 dim_customer에 옛 Key가 없고 결제도 옮겨져 있다.
+        assert _key_count(g_copy, fault.replaced_customer_key) == (0, 0)
+        g_baseline_refs = _key_count(base.published, fault.replaced_customer_key)
+        assert g_baseline_refs[0] == 1 and g_baseline_refs[1] > 0
+        assert "PUBLISH_FAILED" in _judge(g_on)
 
         # D: A의 부분 게시본에서 Canary 없이 다시 돌리면 한 번에 게시한 결과와 같아야 한다.
-        d_on = _attempt(settings, a_on_paths, None, partial_publish=True)
+        d_on = _attempt(settings, a_on_paths, (), partial_publish=True)
         assert (d_on.status, d_on.held_domains) == (PUBLISHED, ())
         d_all = _hashes(a_on_paths.published, ALL_MODELS)
         d_mismatched = sorted(model for model in ALL_MODELS if d_all[model] != reference_all[model])
@@ -287,7 +365,7 @@ def test_domain_failure_only_holds_its_own_domain(tmp_path: Path) -> None:
         # 않는다. 변화가 있는 orders를 보류한 B에서도 복구해 Hash가 같은지 본다.
         changed = sorted(model for model in ALL_MODELS if baseline_all[model] != reference_all[model])
         assert "fct_order" in changed, "Orders recovery proves nothing without a delta"
-        d_orders = _attempt(settings, b_on_paths, None, partial_publish=True)
+        d_orders = _attempt(settings, b_on_paths, (), partial_publish=True)
         assert (d_orders.status, d_orders.held_domains) == (PUBLISHED, ())
         d_orders_all = _hashes(b_on_paths.published, ALL_MODELS)
         d_orders_mismatched = sorted(
@@ -333,6 +411,7 @@ def test_domain_failure_only_holds_its_own_domain(tmp_path: Path) -> None:
                     "on_status": c_on.status,
                     "on_error_type": c_on.error_type,
                     "on_held_domains": list(c_on.held_domains),
+                    "on_failures": _judge(c_on),
                 },
                 "e": {
                     "off_status": e_off.status,
@@ -341,6 +420,35 @@ def test_domain_failure_only_holds_its_own_domain(tmp_path: Path) -> None:
                     "on_held_domains": list(e_on.held_domains),
                     "on_withheld_order_rows": e_on_rows,
                     "on_skipped_nodes": e_on.skipped_nodes,
+                    "on_failures": _judge(e_on),
+                },
+                "f": {
+                    "failed_nodes": list(both),
+                    "off_status": f_off.status,
+                    "off_error_type": f_off.error_type,
+                    "on_status": f_on.status,
+                    "on_error_type": f_on.error_type,
+                    "on_held_domains": list(f_on.held_domains),
+                    "on_published_hash_unchanged": True,
+                    "on_failures": _judge(f_on),
+                },
+                "g": {
+                    "injected_object_key": fault.object_key,
+                    "customer_id": fault.customer_id,
+                    "membership_tier": fault.membership_tier,
+                    "replaced_customer_key": fault.replaced_customer_key,
+                    "baseline_payment_rows_on_replaced_key": g_baseline_refs[1],
+                    "control_status": g_control.status,
+                    "control_held_domains": list(g_control.held_domains),
+                    "on_status": g_on.status,
+                    "on_error_type": g_on.error_type,
+                    "on_held_domains": list(g_on.held_domains),
+                    "on_failed_nodes": list(g_on.failed_nodes),
+                    "on_boundary_node": boundary_node,
+                    "on_error_head": g_on.error_message.splitlines()[0],
+                    "on_failed_copy": g_copy.name,
+                    "on_published_hash_unchanged": True,
+                    "on_failures": _judge(g_on),
                 },
                 "d": {
                     "status": d_on.status,

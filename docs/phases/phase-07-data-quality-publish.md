@@ -357,7 +357,37 @@ Normal E2E Unknown Key = 0
 - [x] Manifest 수치 재확인: 새 `dbt parse` 결과 Canary 제외 `error` Test 134개(주문 41·구독 33·공유 16·staging 44)로 계획 §2와 같다.
 - [x] 검증: 단위 811개 통과·147개 건너뜀·1개 실패(`test_doc_links`, ADR 021이 추적되지 않는 계획서를 링크, 이번 변경과 무관). 이 실패는 architect의 ADR 021 수정으로 해소됐고, 다시 돌린 `tests/test_doc_links.py`는 198개 모두 통과했다. Ruff 통과. 3개 Flag로 재현 실험 A~E와 R-14 2개 통과(670초). 상태·`held_domains`·`PUBLISH_PARTIAL`·복구 Hash 불일치 0이 11-10 증적과 같고, 묶인 행 수만 Bronze 진행(경계 11:40 → 11:50)으로 5 → 20행이 됐다. 증적: `data/reliability/gate-domain-split/20261111T085539667873Z.json`.
 
+## Publish Gate 도메인 경계: 미검증 3건 재현 (2026-11-11)
+
+계획: `docs/superpowers/plans/2026-11-11-publish-gate-domain-boundary.md` Phase 2. 새 Canary는 만들지 않았고, 같은 재현 실험 Harness에 Attempt를 더했다. 증적은 `docs/benchmarks/evidence/publish-gate-domain-boundary/`에 있다.
+
+- [x] C·E Run report 판정: 같은 실행에서 C는 `PUBLISH_FAILED`, E는 `PUBLISH_PARTIAL:subscriptions`로 기록했다.
+- [x] F. 두 도메인 동시 실패: 주문·구독 Canary를 함께 켰다. 스위치를 켜도 `FAILED`/`DBT_TEST_ERROR`, `held_domains=[]`, 게시본 Hash 불변, `PUBLISH_FAILED`였다. 오류에 `partial publish fallback`이 없다. 되돌리기 전에 판정됐다는 뜻이다.
+- [x] G. 실데이터 경계 실패:
+  - 주입: `tests/reliability/faults.py::backdated_tier_observation`이 구독 결제 고객의 같은 등급 관측을 하루 앞당겨 Bronze와 실험 Build Catalog에 넣는다. 그러면 `dim_customer` 첫 버전의 Key가 바뀐다.
+  - 결과: `subscriptions`를 보류하면 경계 Test `relationships_fct_subscription_payment_customer_key…`가 실패하고 전체 차단으로 물러났다.
+  - 확인한 값: `failed/`에 되돌리기 전 파일이 남았고 Build는 삭제됐다. 오류는 `partial publish fallback: subscriptions: boundary tests failed`로 시작한다.
+  - 대조군: Canary 없이는 같은 주입으로 `PUBLISHED`였다.
+  - 첫 시도: 처음에는 다른 등급을 주입해 등급 비감소 Test에 걸렸다. 같은 등급 주입으로 고쳤다.
+  - Key 안정성: 운영에서는 Cursor 수집이 추가만 하고 등급이 내려가지 않아 Key가 안정적이다. 그래서 주입은 합성이고, 이후 경로만 실제다.
+- [x] H. Airflow `subscriptions`만 보류:
+  - 실행: 구독 Canary var 기본값을 잠시 `true`로 두고 `source_simulation_dag` → `warehouse_pipeline_dag`를 실행했다.
+  - `manual__2026-11-11T09:40:00+00:00` 결과:
+    - `dbt_build` 성공
+    - `held_domains=["subscriptions"]`, `PUBLISH_PARTIAL:subscriptions`, `ok=false`
+    - `fct_order` 99849 → 99869, `fct_subscription_payment` 9 불변
+  - 복원: Canary SQL은 `git checkout`으로 되돌렸다.
+  - 무관한 failure: `REPOINT_FAILED`는 Metabase를 띄우지 않아 생겼다.
+- [x] 검증:
+  - 재현 실험 A~G는 3개 Flag로 1개 통과했다(663.94초). 증적: `data/reliability/gate-domain-split/20261111T094058794989Z.json`.
+  - 단위 813개 통과·147개 건너뜀·2개 실패(`test_doc_links`). 새 증적 문서가 아직 추적되지 않아서이고, 커밋하면 해소된다.
+  - Ruff 통과, `git diff --check` 통과.
+  - 주입 객체는 종료 시 삭제됐다.
+
 ## 파일·폴더별 변경 요약
+
+- `tests/reliability/faults.py`, `tests/reliability/test_domain_gate_experiment.py`: 늦게 도착한 등급 관측 주입 `backdated_tier_observation`을 추가했다. 실험에는 F·G Attempt, 다중 Canary·Build 전 Hook·오류 메시지 수집, C·E Run report 판정을 더했다.
+- `docs/benchmarks/08-publish-gate-domain-split.md`, `docs/benchmarks/evidence/publish-gate-domain-boundary/`: §6에 C·E·F·G·H 결과 행과 해석을 추가했다. 재현 실험과 Airflow H의 증적 문서를 함께 추가했다.
 
 - `dbt/models/marts/groups.yml`, `dbt/models/marts/dimensions/schema.yml`, `dbt/models/marts/facts/schema.yml`, `dbt/models/marts/metrics/schema.yml`: 도메인 Group 3개와 Mart 13개의 소속을 선언하고, `dim_customer`·`dim_date`에 Contract와 Column 타입을 추가했다.
 - `src/warehouse/domain_gate.py`: `DOMAINS`·`SHARED` 상수를 지우고 Manifest Group으로 도메인 표를 만드는 `domain_table`·`is_mart`를 추가했다. Group 누락과 미등록 Group은 전체 차단이다.

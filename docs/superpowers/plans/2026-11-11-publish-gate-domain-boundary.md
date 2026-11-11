@@ -130,6 +130,21 @@ graph LR
 - 기존 미측정분인 실험 C·E의 Run report 판정을 같은 실행에서 기록한다.
 - 공통 완료조건: `docs/benchmarks/08-publish-gate-domain-split.md`에 F·G·H 결과 행 추가.
 
+**진행 (2026-11-11, backend 구현, architect 확인 대기)**
+
+- [x] F. 스위치를 켜도 `FAILED`/`DBT_TEST_ERROR`, `held_domains=[]`, Hash 불변이었다. Run report는 `PUBLISH_FAILED`이고 오류에 `partial publish fallback`이 없다.
+- [x] G. 실제 dbt Build로 통과했다.
+  - 주입: `faults.py::backdated_tier_observation`이 같은 등급 관측을 하루 앞당겨 넣는다.
+  - 결과: 경계 Test `relationships_fct_subscription_payment_customer_key…` 실패 → 전체 차단. `failed/` 복사본은 되돌리기 전(옛 Key 행 0)이고, 오류는 `partial publish fallback: subscriptions: boundary tests failed`로 시작한다.
+  - 대조군(Canary 없음): `PUBLISHED`
+  - Key 안정성: 운영 Bronze만으로는 조건이 생기지 않는다. Cursor 수집이 추가만 하고 등급이 비감소이기 때문이며, 이 이유는 08 §6에 적었다.
+- [x] H. `manual__2026-11-11T09:40:00+00:00` 결과:
+  - `dbt_build` 성공, `held_domains=["subscriptions"]`, `PUBLISH_PARTIAL:subscriptions`, `ok=false`
+  - `fct_order` 99849 → 99869
+  - 증거: `docs/benchmarks/evidence/publish-gate-domain-boundary/02-airflow-subscriptions-held.md`
+- [x] C·E Run report 판정: C는 `PUBLISH_FAILED`, E는 `PUBLISH_PARTIAL:subscriptions`
+- [x] 08 §6에 C·E·F·G·H 행을 추가했다. 실험은 1개 통과(663.94초). 증적: `data/reliability/gate-domain-split/20261111T094058794989Z.json`
+
 ### Phase 3. 도메인별 지연 판정 (backend)
 
 지금 Run report의 `data_lag_s`는 `fct_order`의 `max(purchase_at)`만 본다(`src/observability/run_report.py`). `subscriptions`가 연속으로 보류돼도 `DATA_STALE`이 뜨지 않는다. 부분 게시가 만든 구멍이다.

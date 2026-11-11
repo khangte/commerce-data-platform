@@ -4,14 +4,19 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Literal
 
+import duckdb
 from botocore.exceptions import ClientError
 from psycopg import OperationalError
 from pytest import MonkeyPatch
 
+from src.benchmark.duckdb_s3 import configure_s3
 from src.ingestion import service
 from src.ingestion.bronze import storage as storage_module
 from src.ingestion.bronze.storage import SeaweedFSSettings, read_object_bytes, seaweedfs_s3_client
@@ -132,3 +137,94 @@ def _corrupt_payload(payload: dict[str, object], kind: ManifestCorruptionKind) -
     if not isinstance(schema_version, int):
         raise TypeError("Manifest schema_version must be an integer")
     payload["schema_version"] = schema_version + 1
+
+
+@dataclass(frozen=True)
+class BackdatedTier:
+    """Build Catalog에 주입한 소급 등급 관측과 그 관측으로 사라지는 기존 고객 Key다."""
+
+    object_key: str
+    customer_id: str
+    membership_tier: str
+    replaced_customer_key: str
+
+
+@contextmanager
+def backdated_tier_observation(
+    storage: SeaweedFSSettings,
+) -> Iterator[Callable[[Path], BackdatedTier]]:
+    """가입 시점 등급 관측이 늦게 도착한 Bronze 조건을 Build 파일 Catalog에만 주입한다.
+
+    구독 결제가 참조하는 첫 고객 Version을 고른다. 같은 등급에 생성·수정 시각을 하루 앞당긴 관측을
+    넣으면 첫 Version의 valid_from이 바뀌어 기존 customer_key가 사라진다. 등급은 내려갈 수 없어
+    (dim_customer_membership_tier_non_decreasing) 등급은 그대로 둔다. Cursor 수집은 Watermark 이후
+    관측만 가져오므로 이 조건을 만들지 못한다. 그래서 Object를 별도 Prefix에 올린다.
+    Postgres Metadata는 건드리지 않고, 올린 Object는 종료 시 지운다.
+    """
+    uploaded: list[str] = []
+
+    def inject(build_path: Path) -> BackdatedTier:
+        """build_path의 Catalog에 소급 관측 1건을 추가하고 대상 고객 정보를 반환한다."""
+        with duckdb.connect(str(build_path)) as connection:
+            configure_s3(connection, storage)
+            urls = [
+                f"s3://{storage.bucket}/{key}"
+                for (key,) in connection.execute(
+                    "SELECT object_key FROM control.bronze_files"
+                    " WHERE source_table = 'customer_membership_tiers' ORDER BY committed_at"
+                ).fetchall()
+            ]
+            row = connection.execute(
+                """
+                SELECT d.customer_id, d.membership_tier, d.customer_key
+                FROM facts.fct_subscription_payment AS p
+                JOIN dimensions.dim_customer AS d USING (customer_key)
+                WHERE d.effective_from = '-infinity'
+                ORDER BY d.customer_id
+                LIMIT 1
+                """
+            ).fetchone()
+            if row is None:
+                raise LookupError("No subscription payment on a first customer version")
+            customer_id, membership_tier, customer_key = row
+            (max_batch,) = connection.execute(
+                "SELECT max(batch_id) FROM control.bronze_files"
+            ).fetchone()
+            batch_id = f"{max_batch}_fault_backdated_tier"
+            object_key = (
+                "reliability-faults/customer_membership_tiers/"
+                f"ingestion_date={datetime.now(UTC).date()}/batch_id={batch_id}/data.parquet"
+            )
+            connection.execute(
+                f"""
+                COPY (
+                    SELECT * REPLACE (
+                        created_at - INTERVAL 1 DAY AS created_at,
+                        created_at - INTERVAL 1 DAY AS updated_at,
+                        ? AS _batch_id, now() AS _ingested_at
+                    )
+                    FROM read_parquet(?, union_by_name = true, hive_partitioning = false)
+                    WHERE customer_unique_id = ?
+                    ORDER BY updated_at
+                    LIMIT 1
+                ) TO 's3://{storage.bucket}/{object_key}' (FORMAT parquet)
+                """,
+                [batch_id, urls, customer_id],
+            )
+            uploaded.append(object_key)
+            schema_version = connection.execute(
+                "SELECT max(schema_version) FROM control.bronze_files"
+                " WHERE source_table = 'customer_membership_tiers'"
+            ).fetchone()[0]
+            connection.execute(
+                "INSERT INTO control.bronze_files VALUES (?, ?, ?, ?, now(), 1, 'fault-injected')",
+                ["customer_membership_tiers", object_key, schema_version, batch_id],
+            )
+        return BackdatedTier(object_key, customer_id, membership_tier, customer_key)
+
+    try:
+        yield inject
+    finally:
+        client = seaweedfs_s3_client(storage)
+        for key in uploaded:
+            client.delete_object(Bucket=storage.bucket, Key=key)
