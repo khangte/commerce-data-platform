@@ -20,6 +20,66 @@ ADR 016의 전체 Gate는 "게시본의 모든 Table이 같은 Build에서 나�
 
 제약은 게시 방식이다. 파일 1개를 `os.replace`로 교체하므로 실패한 도메인만 "빼고" 게시할 수 없다.
 
+## 도메인 경계 기준
+
+도메인은 업무 용어(주문·결제·고객)로 나눈 것이 아니다. **따로 보류해도 `error` Test가 새로 깨지지 않는 가장 작은 Model 묶음**이고, dbt Manifest에서 계산한다. 보류는 "그 Model만 직전 게시 값으로 되돌리는 것"이므로 세 규칙이 따라 나온다.
+
+| 규칙 | 내용 | 어기면 |
+| ---- | ---- | ------ |
+| R1 하위 닫힘 | 어떤 Model을 보류하면 그것을 `ref`하는 하위 Mart도 함께 보류한다 | 하위 Model이 실패한 상위 값으로 계산된 채 게시된다 |
+| R2 Test 닫힘 | `error` Test 하나가 함께 참조하는 Model은 같은 묶음에 둔다 | 보류 자체가 Gate가 막기로 한 불일치를 만든다 |
+| R3 절단 비용 | R1·R2로 묶이지 않게 하려면 연결 Model을 "공유"로 떼어 내야 하고, 공유 Model의 실패는 전체 차단이다. 떼어 내는 비용(전체 차단으로 가는 Test 수)보다 얻는 것이 클 때만 뗀다 | 나눌수록 전체 차단이 늘어난다 |
+
+Mart 13개를 `ref`(staging·intermediate 경유 포함)와 `error` Test 공동 참조로 이으면 **한 덩어리**다. 덩어리를 가르는 방법은 Model을 공유로 떼어 내는 것뿐이고, 후보는 넷이다(`dbt/target/manifest.json`, Canary 제외 `error` Test 134개 기준).
+
+| 떼어 내는 Model | 갈라지는 묶음 | 전체 차단으로 가는 Test | 독립 보류를 얻는 Test | 판정 |
+| ---- | ---- | ---- | ---- | ---- |
+| `dim_customer` + `dim_date` | 주문 7개 Model / 구독 4개 Model | 16 | 74 (주문 41, 구독 33) | 채택 |
+| `fct_order_item` | `dim_product`, `dim_seller`가 각각 분리 | 8 이상 | 4 | 기각. 손해다 |
+| `dim_subscription` | `rpt_subscription_funnel_daily` 분리 | 17 | 0 (`rpt_*`는 `warn`뿐) | 기각 |
+| `fct_subscription_payment` | `rpt_subscription_payment_outcomes_daily` 분리 | 15 | 0 | 기각 |
+
+`dim_customer`·`dim_date`를 떼면 남는 연결은 정확히 두 묶음이고 그것이 `orders`·`subscriptions`다. `warn` Test를 간선에 넣어도 결과는 같다. 두 묶음은 재계산 단위와도 1:1이다(`control.affected_keys`의 `order` / `subscription_payment`). 공유 Model의 원천을 빼면 staging 원천도 겹치지 않는다.
+
+```mermaid
+graph LR
+  subgraph shared["공유 (실패 = 전체 차단)"]
+    dim_customer
+    dim_date
+  end
+  subgraph orders
+    fct_order --> rpt_customer_order_activity_daily
+    fct_order --> rpt_membership_tier_performance
+    fct_order_item -. "Test 4" .- fct_order
+    fct_order_payment -. "Test 3" .- fct_order
+    dim_product -. "FK" .- fct_order_item
+    dim_seller -. "FK" .- fct_order_item
+  end
+  subgraph subscriptions
+    dim_subscription --> fct_subscription_payment
+    dim_subscription --> rpt_subscription_funnel_daily
+    fct_subscription_payment --> rpt_subscription_payment_outcomes_daily
+  end
+  dim_customer --> fct_order
+  dim_customer --> fct_order_payment
+  dim_customer --> fct_subscription_payment
+  dim_date -. "FK 3" .- orders
+  dim_date -. "FK 1" .- fct_subscription_payment
+```
+
+자주 나오는 대안이 왜 도메인이 아닌지:
+
+| 대안 | 계보 근거 | 결론 |
+| ---- | ---- | ---- |
+| `customers` 도메인(`dim_customer`) | 하위에 `fct_order`, `fct_order_payment`, `fct_subscription_payment`와 지표 3개가 있다(나머지 Mart 11개 중 6개, 두 묶음 모두). Fact의 `customer_key`는 이번 Build의 `dim_customer` Version에 Join해서 만든 값이다 | R1로 하위를 함께 보류하면 두 묶음 전부다. `customers` 보류 = 전체 차단이고, 그것이 지금의 "공유" 취급이다 |
+| `payments` 도메인(주문 결제 + 구독 결제) | `fct_order_payment`와 `fct_subscription_payment` 사이에는 `ref`도 공동 Test도 없다. 이름만 같다 | 묶을 근거가 없다 |
+| `fct_order_payment`만 분리 | `fct_order`와 `error` Test 3개로 묶인다. `stg_payments`가 `int_payment_summary`를 거쳐 `fct_order.payment_total`에도 들어간다. 재계산 Key도 주문 하나다 | R2 위반. 결제만 보류하면 `fct_order.payment_total`은 새 값, 결제 행은 옛 값이 되고 이 어긋남을 잡는 Test도 없다 |
+| 주문을 주문·품목·결제 3개로 | 세 Fact가 `error` Test 7개로 서로 묶인다 | R2 위반. 보류할 때마다 7개가 경계 Test가 되고 실제로 어긋나면 전체 차단으로 물러난다 |
+| `dim_product`·`dim_seller`를 `catalog` 도메인으로 | `ref` 하위가 없고 `fct_order_item`의 FK Test 1개씩으로만 묶인다. 고유 Test는 4개(전체의 3%) | 얻는 것 4개. 새 상품이 든 Batch에서 보류하면 FK가 끊겨 전체 차단으로 물러나므로 지금(주문만 보류)보다 나빠질 수 있다. 다른 묶음이 이 Dimension을 참조하게 되면 규칙대로 공유로 옮긴다 |
+| 지표(`rpt_*`)를 별도 도메인으로 | `rpt_*`의 Test 13개는 전부 `warn`이다 | ADR 020의 심각도 축이 이미 처리한다 |
+
+공유 취급의 비용: `error` Test 134개 중 독립 보류가 되는 것은 74개(55%)다. 공유 Dimension 16개(12%: `dim_customer` 12, `dim_date` 4)와 staging·intermediate 44개(33%)는 계속 전체를 막는다. 보류할 때마다 경계 Test(주문 5개, 구독 2개)를 다시 검사한다. `dim_date`는 `ref` 하위가 없지만 두 묶음의 원천으로 만들고 두 묶음의 Fact가 FK로 참조하므로 어느 한쪽에 둘 수 없다.
+
 ## Decision
 
 1. **실패 도메인을 Build 파일 안에서 되돌린 뒤 통째로 교체한다.** `DBT_TEST_ERROR`가 한 도메인에 귀속되면 Published 파일을 읽기 전용으로 붙여 그 도메인의 Relation 전부를 한 Transaction에서 직전 게시 값으로 바꾼다. 게시 절차(`publish_build`)는 바뀌지 않는다.
@@ -58,7 +118,8 @@ ADR 016의 전체 Gate는 "게시본의 모든 Table이 같은 Build에서 나�
 - 보류된 도메인 자체는 여전히 묶인다. 실패의 범위를 좁힐 뿐이다.
 - `metrics_test_severity=error`에서는 지표 Test 하나가 경계 Test에 들어가고 `fct_order` 실패 때 건너뛰어지므로 `orders` 실패가 전체 차단으로 간다. 그 값은 전체 Gate로 돌아가는 설정이라 의도와 맞는다.
 - `failed/` 보존 3개를 부분 게시 증거와 전체 실패가 나눠 쓴다.
-- 도메인은 2개로 고정이고 표는 코드에 있다. Mart Model을 추가하고 표를 고치지 않으면 재현 실험의 단언이 실패한다.
+- 도메인은 2개로 고정이고 소속은 dbt `group`(`dbt/models/marts/groups.yml`, 각 `schema.yml`)에 선언한다. `group`이 없는 Mart Model의 실패는 전체 차단이다. 선언이 "도메인 경계 기준"의 계산 결과와 같은지는 `tests/test_warehouse_domain_boundary.py`가 검사한다. CI가 없어 로컬 `pytest`로만 돈다.
+- staging Test 실패는 하위가 한 도메인뿐이어도 전체 차단이다. 같은 규칙(R1)을 staging까지 적용하면 18개(`stg_order_items`·`stg_payments`·`stg_products`·`stg_sellers` 11, `stg_customer_subscription_observations` 7)가 더 귀속되지만, 원천이 깨진 상태의 부분 게시라 따로 판단할 일로 남긴다.
 
 ## Validation
 
@@ -71,4 +132,4 @@ ADR 016의 전체 Gate는 "게시본의 모든 Table이 같은 Build에서 나�
 | 합성 파일 단위 테스트 | 경계 Test 실패와 되돌리기 실패에서 전체 차단, `failed/`에 되돌리기 전 파일 유지 |
 | R-14·기존 Canary·1단계 실험 | 수정 없이 통과 |
 
-검증하지 못한 것: 이 Bronze의 마지막 Batch에 구독 변화가 없어 `subscriptions`의 증분 복구는 측정하지 못했다(같은 경로를 `orders` 보류로 확인). 실제 고객 이력 재구성으로 경계 Test가 끊기는 시나리오는 합성 파일로만 검증했다. C·E의 Run report 판정은 측정하지 않았다. 소요 시간은 1회 측정이다.
+검증하지 못한 것: 이 Bronze의 마지막 Batch에 구독 변화가 없어 `subscriptions`의 증분 복구는 측정하지 못했다(같은 경로를 `orders` 보류로 확인). 실제 고객 이력 재구성으로 경계 Test가 끊기는 시나리오는 합성 파일로만 검증했다. C·E의 Run report 판정은 측정하지 않았다. 소요 시간은 1회 측정이다. 두 도메인이 한 Build에서 함께 실패하는 경우는 귀속 단위 테스트로만 확인했고 실제 dbt 실행으로는 재현하지 않았다. Airflow DAG에서 `subscriptions`만 보류되는 실행(`held_domains` XCom, Run report)은 확인하지 않았다.

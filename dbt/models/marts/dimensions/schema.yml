@@ -2,26 +2,42 @@ version: 2
 
 models:
   - name: dim_customer
+    config:
+      group: shared
+      contract:
+        enforced: true
     description: 사람 단위 거래 실적 등급의 SCD2 Version Dimension이다.
     columns:
       - name: customer_key
+        data_type: varchar
         data_tests: [not_null, unique]
       - name: customer_id
+        data_type: varchar
         data_tests: [not_null]
       - name: membership_tier
+        data_type: varchar
         data_tests:
           - not_null
           - accepted_values:
               arguments:
                 values: [BRONZE, SILVER, GOLD]
+      - name: attribute_hash
+        data_type: varchar
       - name: valid_from
+        data_type: timestamp with time zone
         data_tests: [not_null]
       - name: effective_from
+        data_type: timestamp with time zone
         data_tests: [not_null]
+      - name: valid_to
+        data_type: timestamp with time zone
       - name: is_current
+        data_type: boolean
         data_tests: [not_null]
 
   - name: dim_subscription
+    config:
+      group: subscriptions
     description: 계약 단위 구독 상태의 SCD2 Version Dimension이다.
     columns:
       - name: subscription_key
@@ -46,20 +62,40 @@ models:
         data_tests: [not_null]
 
   - name: dim_date
+    config:
+      group: shared
+      contract:
+        enforced: true
     description: 날짜 단위 분석을 위한 Type 1 Dimension이다.
     columns:
       - name: date_key
+        data_type: integer
         data_tests: [not_null, unique]
       - name: calendar_date
+        data_type: timestamp with time zone
         data_tests: [not_null, unique]
+      - name: year
+        data_type: bigint
+      - name: month
+        data_type: bigint
+      - name: day
+        data_type: bigint
+      - name: quarter
+        data_type: bigint
+      - name: day_of_week
+        data_type: bigint
 
   - name: dim_product
+    config:
+      group: orders
     description: 상품 단위 분석을 위한 Type 1 Dimension이다.
     columns:
       - name: product_id
         data_tests: [not_null, unique]
 
   - name: dim_seller
+    config:
+      group: orders
     description: 판매자 단위 분석을 위한 Type 1 Dimension이다.
     columns:
       - name: seller_id

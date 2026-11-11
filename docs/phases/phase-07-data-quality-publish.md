@@ -345,7 +345,25 @@ Normal E2E Unknown Key = 0
 - [x] Phase 3 계획 보완: 시나리오 E를 위해 `dim_subscription` Canary를 추가했다(계획 Task 1은 2개). 마지막 Batch에 구독 변화가 없어 D만으로는 복구가 검증되지 않아, `orders`를 보류한 뒤 복구하는 D-orders를 추가했다.
 - [ ] 알려진 한계: `publish_build`가 되돌린 뒤 실패하거나 Process가 중단되어 복구되면 되돌린 Build가 `failed/` 복사본을 덮는다. 계획이 보장하는 것은 전체 차단 경로의 원본 보존까지다. `08`의 해석은 Phase 4 범위다.
 
+## Publish Gate 도메인 경계: dbt Group 선언 (2026-11-11)
+
+계획: `docs/superpowers/plans/2026-11-11-publish-gate-domain-boundary.md` Phase 1. 도메인 구성(`orders` 7, `subscriptions` 4, 공유 2)은 그대로 두고, 선언 위치를 Python 상수에서 dbt Group으로 옮겼다.
+
+- [x] 선언: `dbt/models/marts/groups.yml`에 Group `orders`·`subscriptions`·`shared`와 소유자를 두고, Mart 13개의 `schema.yml` 항목에 `config.group`을 줬다. staging·intermediate에는 주지 않았고 `access`는 기본값이다. `dbt ls --select group:<g>` 결과가 ADR 021 표와 같다.
+- [x] Manifest 기반 소속: `domain_table`이 Mart(`stg_`·`int_` 제외 Model)의 `config.group`으로 도메인 표를 만든다. `attribute_failure`·`revert_domain`·`boundary_failures`는 각자 읽는 Manifest에서 이 표를 쓴다. `domain_gate.py`에는 Model 이름이 없다.
+- [x] 차단 쪽으로 닫힘: Group이 없는 Mart, `AFFECTED_KEY_DOMAIN`에 없는 Group의 Mart는 어느 도메인에도 들지 않는다. 그 Model의 실패·건너뜀은 귀속되지 않아 전체 차단이다. 단위 Case 3개로 고정했고, 구현 전 3개 실패를 먼저 확인했다.
+- [x] 경계 기준 단언: `tests/test_warehouse_domain_boundary.py`의 `mart_components`가 ref(staging·intermediate를 거쳐 가장 가까운 Mart까지)와 `error` Test 공동 참조로 Mart를 잇고 `shared`를 뺀 연결 요소를 낸다. 이것이 선언한 Group과 같아야 한다. 합성 Manifest의 잘못된 소속 5가지는 실패하고, 실제 Manifest(`dbt parse`)는 통과한다. 재현 실험의 Manifest 단언도 이 함수를 쓴다. CI 없이 일반 `pytest`로 돈다.
+- [x] Contract: dbt-duckdb 1.11이 지원해 `dim_customer`(8 Column)·`dim_date`(7 Column)에 `contract.enforced`와 `data_type`을 선언했다. 운영 Warehouse 복사본에서 타입 지정 DDL로 빌드되고, 타입을 틀리게 바꾸면 `data type mismatch`로 실패했다.
+- [x] Manifest 수치 재확인: 새 `dbt parse` 결과 Canary 제외 `error` Test 134개(주문 41·구독 33·공유 16·staging 44)로 계획 §2와 같다.
+- [x] 검증: 단위 811개 통과·147개 건너뜀·1개 실패(`test_doc_links`, ADR 021이 추적되지 않는 계획서를 링크, 이번 변경과 무관). 이 실패는 architect의 ADR 021 수정으로 해소됐고, 다시 돌린 `tests/test_doc_links.py`는 198개 모두 통과했다. Ruff 통과. 3개 Flag로 재현 실험 A~E와 R-14 2개 통과(670초). 상태·`held_domains`·`PUBLISH_PARTIAL`·복구 Hash 불일치 0이 11-10 증적과 같고, 묶인 행 수만 Bronze 진행(경계 11:40 → 11:50)으로 5 → 20행이 됐다. 증적: `data/reliability/gate-domain-split/20261111T085539667873Z.json`.
+
 ## 파일·폴더별 변경 요약
+
+- `dbt/models/marts/groups.yml`, `dbt/models/marts/dimensions/schema.yml`, `dbt/models/marts/facts/schema.yml`, `dbt/models/marts/metrics/schema.yml`: 도메인 Group 3개와 Mart 13개의 소속을 선언하고, `dim_customer`·`dim_date`에 Contract와 Column 타입을 추가했다.
+- `src/warehouse/domain_gate.py`: `DOMAINS`·`SHARED` 상수를 지우고 Manifest Group으로 도메인 표를 만드는 `domain_table`·`is_mart`를 추가했다. Group 누락과 미등록 Group은 전체 차단이다.
+- `tests/test_warehouse_domain_boundary.py`, `tests/test_warehouse_domain_gate.py`, `tests/reliability/test_domain_gate_experiment.py`: 계보 기반 경계 단언과 합성·실제 Manifest 테스트를 추가하고, 기존 Fixture를 Group 선언으로 바꾸고 차단 Case 3개를 더했다. 재현 실험의 Manifest 단언을 새 함수로 교체했다.
+- `docs/phases/phase-07-data-quality-publish.md`, `docs/superpowers/plans/2026-11-11-publish-gate-domain-boundary.md`: Phase 1 진행 기록과 체크리스트를 동기화했다.
+- `docs/adr/021-split-publish-gate-by-domain.md`(architect 작성): `도메인 경계 기준` 절(R1~R3, Manifest 수치)을 추가하고, 도메인 소속을 dbt `group`에 선언하며 Group 없는 Mart는 전체 차단이고 `tests/test_warehouse_domain_boundary.py`가 선언을 검사한다는 결과를 적었다.
 
 - `dbt/tests/subscriptions_publish_gate_canary.sql`, `dbt/tests/orders_publish_gate_canary.sql`, `dbt/tests/dim_subscription_publish_gate_canary.sql`, `tests/test_warehouse_quality_contract.py`, `tests/reliability/test_domain_gate_experiment.py`, `docs/benchmarks/08-publish-gate-domain-split.md`: 도메인 Canary와 스위치 끔·켬 재현 실험, 측정값 초안을 추가했다.
 - `src/warehouse/publish.py`, `src/warehouse/dbt_runner.py`, `tests/test_warehouse_partial_publish.py`: `build_warehouse`에 도메인 부분 게시와 전체 차단 복귀를 연결하고 `warned_nodes`와 Node 로그를 추가했다. CLI는 `--no-partial-publish`와 출력 `held_domains`를 지원한다.

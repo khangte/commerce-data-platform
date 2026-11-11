@@ -1,0 +1,13 @@
+version: 2
+
+# 도메인별 부분 게시(ADR 021)의 보류 단위다. 접근 제어가 아니라 소속·소유자 표시로만 쓴다.
+groups:
+  - name: orders
+    owner:
+      name: khangte
+  - name: subscriptions
+    owner:
+      name: khangte
+  - name: shared
+    owner:
+      name: khangte

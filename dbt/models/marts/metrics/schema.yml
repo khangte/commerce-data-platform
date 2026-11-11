@@ -2,6 +2,8 @@ version: 2
 
 models:
   - name: rpt_customer_order_activity_daily
+    config:
+      group: orders
     description: 주문일·신규 또는 재구매 고객 구분별 고객·주문·배송 완료 GMV 집계다.
     columns:
       - name: purchase_date_key
@@ -14,12 +16,16 @@ models:
                 values: [new, repeat]
 
   - name: rpt_subscription_funnel_daily
+    config:
+      group: subscriptions
     description: 구독 상태 진입 이벤트를 일별로 집계한 퍼널 지표다.
     columns:
       - name: event_date_key
         data_tests: [not_null, unique]
 
   - name: rpt_subscription_payment_outcomes_daily
+    config:
+      group: subscriptions
     description: 결제일·성공 또는 실패 상태별 구독 결제 집계다.
     columns:
       - name: payment_date_key
@@ -32,6 +38,8 @@ models:
                 values: [COMPLETED, FAILED]
 
   - name: rpt_membership_tier_performance
+    config:
+      group: orders
     description: 주문 시점 거래 실적 등급별 주문 성과 집계다.
     columns:
       - name: membership_tier

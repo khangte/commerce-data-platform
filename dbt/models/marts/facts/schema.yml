@@ -2,6 +2,8 @@ version: 2
 
 models:
   - name: fct_order
+    config:
+      group: orders
     description: 주문 Grain Fact다. Item/Payment는 이미 주문 단위로 집계되어 반영되어 있다.
     columns:
       - name: order_id
@@ -30,6 +32,8 @@ models:
                 values: [CREATED, APPROVED, PROCESSING, INVOICED, SHIPPED, DELIVERED, CANCELED, UNAVAILABLE]
 
   - name: fct_order_item
+    config:
+      group: orders
     description: 주문 Line Grain Fact다. 복합 PK는 tests/fct_order_item_unique.sql이 검증한다. Olist 원본 order_items에는 상품(항목)별 상태 데이터가 없고 취소는 orders.order_status로만 표현된다. 원본 구조를 유지하므로 항목별 상태는 관리하지 않고 소속 주문 상태를 상속한다.
     columns:
       - name: order_id
@@ -73,6 +77,8 @@ models:
         data_tests: [non_negative]
 
   - name: fct_order_payment
+    config:
+      group: orders
     description: 결제 Sequence Grain Fact다. 복합 PK는 tests/fct_order_payment_unique.sql이 검증한다.
     columns:
       - name: order_id
@@ -110,6 +116,8 @@ models:
         data_tests: [non_negative]
 
   - name: fct_subscription_payment
+    config:
+      group: subscriptions
     description: 계약별 구독 결제 시도 Grain의 Fact다. 청구 회차·시도 조합은 Singular Test가 검증한다.
     columns:
       - name: payment_id

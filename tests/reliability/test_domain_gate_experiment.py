@@ -17,7 +17,7 @@ from src.common.database import PostgresSettings
 from src.common.row_hash import hash_cursor_rows
 from src.observability.run_report import judge_run_report
 from src.warehouse.dbt_runner import DbtRunResult, run_dbt_build
-from src.warehouse.domain_gate import DOMAINS, SHARED
+from src.warehouse.domain_gate import domain_table
 from src.warehouse.errors import DBT_TEST_ERROR, PublishInProgressError, WarehouseBuildError
 from src.warehouse.mart_hash import mart_logical_hashes
 from src.warehouse.publish import (
@@ -43,6 +43,8 @@ from tests.reliability.test_gate_split_experiment import (
     _full_refresh_runner,
     _order_fact,
 )
+from tests.test_warehouse_domain_boundary import assert_groups_match_lineage
+from tests.test_warehouse_domain_gate import DOMAINS, SHARED
 
 pytestmark = [
     pytest.mark.integration,
@@ -156,19 +158,12 @@ def _withheld_payments(published: Path, built: Path) -> int:
 
 
 def _assert_manifest_matches_domain_table(manifest: dict) -> None:
-    """Model을 추가하고 도메인 표를 안 고치거나 두 도메인에 걸친 Test가 생기면 실패한다."""
+    """dbt Group이 계보 기준과 같고, 이 실험이 Hash를 비교하는 Model 표와도 같은지 단언한다."""
     nodes = manifest["nodes"]
-    marts = {
-        node["name"]
-        for node in nodes.values()
-        if node["resource_type"] == "model" and "marts" in node["fqn"]
-    }
-    assert marts == set(ALL_MODELS)
-    for unique_id, node in nodes.items():
-        if node["resource_type"] != "test":
-            continue
-        models = {dep.split(".")[-1] for dep in node["depends_on"]["nodes"] if dep.startswith("model.")}
-        assert not (models & set(DOMAINS["orders"]) and models & set(DOMAINS["subscriptions"])), unique_id
+    assert_groups_match_lineage(nodes)
+    table = domain_table(nodes)
+    assert table.shared == set(SHARED)
+    assert table.domains == {domain: set(names) for domain, names in DOMAINS.items()}
 
 
 def _judge(attempt: Attempt) -> list[str]:

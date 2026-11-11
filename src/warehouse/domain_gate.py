@@ -3,32 +3,49 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from pathlib import Path
 
 import duckdb
 
-DOMAINS = {
-    "orders": (
-        "fct_order",
-        "fct_order_item",
-        "fct_order_payment",
-        "dim_product",
-        "dim_seller",
-        "rpt_customer_order_activity_daily",
-        "rpt_membership_tier_performance",
-    ),
-    "subscriptions": (
-        "dim_subscription",
-        "fct_subscription_payment",
-        "rpt_subscription_funnel_daily",
-        "rpt_subscription_payment_outcomes_daily",
-    ),
-}
-SHARED = ("dim_customer", "dim_date")
+# 도메인은 dbt Group(dbt/models/marts/groups.yml)이다. 여기 없는 Group은 되돌릴 Key가 없어 전체 차단이다.
 AFFECTED_KEY_DOMAIN = {"orders": "order", "subscriptions": "subscription_payment"}
+SHARED_GROUP = "shared"
 
 _NON_MART_PREFIXES = ("stg_", "int_")
 _EXCLUDED = ""
+
+
+@dataclass(frozen=True)
+class DomainTable:
+    """Manifest의 Mart Group으로 만든 도메인별 Model 이름과 공유 Model 이름이다."""
+
+    domains: dict[str, frozenset[str]]
+    shared: frozenset[str]
+
+
+def is_mart(node: dict) -> bool:
+    """staging·intermediate가 아닌 Model을 Mart로 본다."""
+    return node["resource_type"] == "model" and not node["name"].startswith(_NON_MART_PREFIXES)
+
+
+def domain_table(nodes: dict) -> DomainTable:
+    """Mart Model의 config.group으로 도메인 표를 만든다.
+
+    Group이 없거나 AFFECTED_KEY_DOMAIN에 없는 Group의 Mart는 어느 쪽에도 넣지 않는다. 그 Model이
+    실패·건너뜀에 걸리면 귀속되지 않아 전체 차단이 된다. 선언 누락이 덜 막는 쪽으로 가지 않게 한다.
+    """
+    members: dict[str, set[str]] = {domain: set() for domain in AFFECTED_KEY_DOMAIN}
+    shared: set[str] = set()
+    for node in nodes.values():
+        if not is_mart(node):
+            continue
+        group = node["config"].get("group")
+        if group == SHARED_GROUP:
+            shared.add(node["name"])
+        elif group in members:
+            members[group].add(node["name"])
+    return DomainTable({domain: frozenset(names) for domain, names in members.items()}, frozenset(shared))
 
 
 def attribute_failure(target_dir: Path) -> str | None:
@@ -40,8 +57,9 @@ def attribute_failure(target_dir: Path) -> str | None:
     try:
         results = _read_json(target_dir / "run_results.json")["results"]
         nodes = _read_json(target_dir / "manifest.json")["nodes"]
+        table = domain_table(nodes)
         owners = {
-            _owner(result["status"], nodes[result["unique_id"]])
+            _owner(result["status"], nodes[result["unique_id"]], table)
             for result in results
             if result["status"] in ("error", "fail", "skipped")
         }
@@ -58,16 +76,13 @@ def revert_domain(
 
     Published 파일이나 Relation이 없으면 duckdb 예외가 나고, Commit 전이므로 Build는 그대로다.
     """
-    models = {
-        node["name"]: node
-        for node in _read_json(target_dir / "manifest.json")["nodes"].values()
-        if node["resource_type"] == "model"
-    }
+    nodes = _read_json(target_dir / "manifest.json")["nodes"]
+    models = {node["name"]: node for node in nodes.values() if node["resource_type"] == "model"}
     with duckdb.connect(str(build_path)) as connection:
         escaped_path = str(published_path).replace("'", "''")
         connection.execute(f"ATTACH '{escaped_path}' AS pub (READ_ONLY)")
         connection.execute("BEGIN")
-        for name in DOMAINS[domain]:
+        for name in sorted(domain_table(nodes).domains[domain]):
             relation = _relation(models[name])
             connection.execute(f"CREATE OR REPLACE TABLE {relation} AS SELECT * FROM pub.{relation}")
         connection.execute(
@@ -85,6 +100,7 @@ def boundary_failures(build_path: Path, domain: str, target_dir: Path) -> tuple[
     dbt가 건너뛴 relationships Test도 검증하려고 SQL을 Manifest에서 만든다.
     """
     nodes = _read_json(target_dir / "manifest.json")["nodes"]
+    table = domain_table(nodes)
     compiled = {
         result["unique_id"]: result.get("compiled_code")
         for result in _read_json(target_dir / "run_results.json")["results"]
@@ -94,7 +110,7 @@ def boundary_failures(build_path: Path, domain: str, target_dir: Path) -> tuple[
         # dbt Profile과 같은 Session 시간대로 맞춰 시각 비교 Test의 결과를 동일하게 유지한다.
         connection.execute("SET TimeZone = 'UTC'")
         for unique_id, node in nodes.items():
-            if not _is_boundary_test(node, domain):
+            if not _is_boundary_test(node, domain, table):
                 continue
             sql = _relationship_sql(node, nodes)
             if sql is None and compiled.get(unique_id):
@@ -104,35 +120,35 @@ def boundary_failures(build_path: Path, domain: str, target_dir: Path) -> tuple[
     return tuple(failures)
 
 
-def _owner(status: str, node: dict) -> str | None:
+def _owner(status: str, node: dict, table: DomainTable) -> str | None:
     """실패·건너뜀 Node 하나의 소유 도메인, 제외 표식, 또는 차단(None)을 반환한다."""
     if node["resource_type"] == "test":
         dependencies = node["depends_on"]["nodes"]
         models = {dep.split(".")[-1] for dep in dependencies if dep.startswith("model.")}
         if status == "skipped" and all(name.startswith(_NON_MART_PREFIXES) for name in models):
             return _EXCLUDED
-        return _single_domain(models) if len(models) == len(dependencies) else None
+        return _single_domain(models, table) if len(models) == len(dependencies) else None
     if node["resource_type"] == "model" and status == "skipped":
         if node["name"].startswith(_NON_MART_PREFIXES):
             return _EXCLUDED
-        return _single_domain({node["name"]})
+        return _single_domain({node["name"]}, table)
     return None
 
 
-def _single_domain(models: set[str]) -> str | None:
+def _single_domain(models: set[str], table: DomainTable) -> str | None:
     """Model 집합이 한 도메인과 공유 Model로만 이루어졌을 때 그 도메인을 반환한다."""
-    owners = [domain for domain, members in DOMAINS.items() if models & set(members)]
-    if len(owners) == 1 and models <= {*DOMAINS[owners[0]], *SHARED}:
+    owners = [domain for domain, members in table.domains.items() if models & members]
+    if len(owners) == 1 and models <= table.domains[owners[0]] | table.shared:
         return owners[0]
     return None
 
 
-def _is_boundary_test(node: dict, domain: str) -> bool:
+def _is_boundary_test(node: dict, domain: str, table: DomainTable) -> bool:
     """보류 도메인과 공유 Model을 모두 참조하는 error 등급 Test인지 판단한다."""
     if node["resource_type"] != "test" or node["config"]["severity"].lower() != "error":
         return False
     models = {dep.split(".")[-1] for dep in node["depends_on"]["nodes"] if dep.startswith("model.")}
-    return bool(models & set(DOMAINS[domain])) and bool(models & set(SHARED))
+    return bool(models & table.domains[domain]) and bool(models & table.shared)
 
 
 def _relationship_sql(node: dict, nodes: dict) -> str | None:

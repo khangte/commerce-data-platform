@@ -9,8 +9,6 @@ import duckdb
 import pytest
 
 from src.warehouse.domain_gate import (
-    DOMAINS,
-    SHARED,
     attribute_failure,
     boundary_failures,
     revert_domain,
@@ -19,6 +17,28 @@ from src.warehouse.mart_hash import MartTarget, mart_logical_hash
 
 SCHEMAS = {"dim": "dimensions", "fct": "facts", "rpt": "metrics"}
 INVOCATION = "invocation-now"
+# dbt schema.yml의 Group 선언과 같은 소속이다. 합성 Manifest의 Model config.group으로 들어간다.
+DOMAINS = {
+    "orders": (
+        "fct_order",
+        "fct_order_item",
+        "fct_order_payment",
+        "dim_product",
+        "dim_seller",
+        "rpt_customer_order_activity_daily",
+        "rpt_membership_tier_performance",
+    ),
+    "subscriptions": (
+        "dim_subscription",
+        "fct_subscription_payment",
+        "rpt_subscription_funnel_daily",
+        "rpt_subscription_payment_outcomes_daily",
+    ),
+}
+SHARED = ("dim_customer", "dim_date")
+GROUP_OF = {name: group for group, names in DOMAINS.items() for name in names} | {
+    name: "shared" for name in SHARED
+}
 
 
 def _model_id(name: str) -> str:
@@ -33,15 +53,17 @@ def _schema(name: str) -> str:
     return SCHEMAS[name.split("_")[0]]
 
 
-def _model(name: str) -> dict:
+def _model(name: str, group: str | None = None) -> dict:
+    """Model Node를 만든다. group을 안 주면 GROUP_OF의 소속을 쓰고, 없으면 Group이 없다."""
     prefix = name.split("_")[0]
+    group = group or GROUP_OF.get(name)
     return {
         "resource_type": "model",
         "name": name,
         "alias": name,
         "schema": SCHEMAS.get(prefix, "staging"),
         "depends_on": {"nodes": []},
-        "config": {},
+        "config": {"group": group} if group else {},
     }
 
 
@@ -85,7 +107,8 @@ def _write_target(
 
 
 def _attribute(tmp_path: Path, nodes: dict[str, dict], results: dict[str, str]) -> str | None:
-    return attribute_failure(_write_target(tmp_path / "target", nodes, results))
+    """도메인 표는 Manifest의 Model Group에서 오므로 Mart 13개를 깔고 nodes로 덮어쓴다."""
+    return attribute_failure(_write_target(tmp_path / "target", {**_all_models(), **nodes}, results))
 
 
 def _all_models() -> dict[str, dict]:
@@ -198,6 +221,24 @@ FCT_SUB_TEST = _test("t_sub", "fct_subscription_payment")
             {_test_id("a"): "fail", _test_id("b"): "fail"},
             None,
             id="test-on-mart-outside-table",
+        ),
+        pytest.param(
+            {_model_id("fct_order"): _model("fct_order", group=None) | {"config": {}}, _test_id("a"): FCT_ORDER_TEST},
+            {_test_id("a"): "fail"},
+            None,
+            id="test-on-ungrouped-mart",
+        ),
+        pytest.param(
+            {_model_id("rpt_membership_tier_performance"): _model("rpt_membership_tier_performance") | {"config": {}}, _test_id("a"): FCT_ORDER_TEST},
+            {_test_id("a"): "fail", _model_id("rpt_membership_tier_performance"): "skipped"},
+            None,
+            id="skipped-ungrouped-mart",
+        ),
+        pytest.param(
+            {_model_id("dim_product"): _model("dim_product", group="catalog"), _test_id("a"): _test("a", "dim_product")},
+            {_test_id("a"): "fail"},
+            None,
+            id="group-without-affected-key-domain",
         ),
         pytest.param({_test_id("a"): FCT_ORDER_TEST}, {_test_id("a"): "warn"}, None, id="warn-is-not-attributed"),
         pytest.param(
