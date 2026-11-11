@@ -4,7 +4,7 @@
 > 대상: [ADR 021](../../adr/021-split-publish-gate-by-domain.md) "도메인 경계 기준" 절
 > 선행: `docs/superpowers/plans/2026-11-10-publish-gate-domain-split.md`
 > 커밋은 lead가 한다. backend·frontend·reviewer는 커밋하지 않는다.
-> **상태: 범위 확정(2026-11-11).** Phase 1~4는 lead가 배분한다. Phase 5는 사용자 결정으로 uiux가 구현·검수했고 reviewer 승인, architect 완료조건 대조를 마쳤다(§4).
+> **상태: Phase 1~5 완료·커밋(2026-11-12).** Phase 1 `93f3c7a`, Phase 2 `0335c35`, Phase 3 `fac25db`, Phase 4 `c946e87`, Phase 5 `401b010`. Phase 5는 사용자 결정으로 uiux가 구현·검수했다(§4).
 
 ## 1. 결론
 
@@ -107,7 +107,7 @@ graph LR
 6. `error` Test 분포(주문·구독·공유·staging)가 §2와 다르면 수치를 보고한다.
 7. Contract: 지원 여부와 적용 결과(또는 넣지 않은 이유)를 보고한다.
 
-**진행 (2026-11-11, backend 구현·architect 완료 확인, reviewer 리뷰 중)**
+**완료 (2026-11-11, backend 구현 → architect 완료조건 7/7 확인 → reviewer 리뷰 → 커밋 `93f3c7a`)**
 
 - [x] 1. `dbt/models/marts/groups.yml`에 Group 3개(`owner.name: khangte`)를 선언하고 Mart 13개에 `config.group`을 줬다. `dbt ls --resource-type model --select group:<g>` 결과 `orders` 7, `subscriptions` 4, `shared` 2로 ADR 021 표와 같다. Test Node는 Group을 물려받지 않는다(151개 중 0개). 귀속은 Model 기준이라 영향이 없다.
 - [x] 2. `domain_gate.py`에서 `DOMAINS`·`SHARED`를 지웠다. `domain_table(nodes)`가 Mart의 `config.group`으로 표를 만들고 귀속·되돌리기·경계 재검증이 이를 쓴다. Model 이름 목록은 테스트 쪽(`tests/test_warehouse_domain_gate.py`)에만 남는다.
@@ -130,7 +130,7 @@ graph LR
 - 기존 미측정분인 실험 C·E의 Run report 판정을 같은 실행에서 기록한다.
 - 공통 완료조건: `docs/benchmarks/08-publish-gate-domain-split.md`에 F·G·H 결과 행 추가.
 
-**진행 (2026-11-11, backend 구현, architect 확인 대기)**
+**완료 (2026-11-11, backend 구현 → architect 완료조건 확인 → reviewer 리뷰 → 커밋 `0335c35`)**
 
 - [x] F. 스위치를 켜도 `FAILED`/`DBT_TEST_ERROR`, `held_domains=[]`, Hash 불변이었다. Run report는 `PUBLISH_FAILED`이고 오류에 `partial publish fallback`이 없다.
 - [x] G. 실제 dbt Build로 통과했다.
@@ -181,7 +181,7 @@ Dashboard(Metabase)는 Serving 파일(`Commerce Mart Serving`) 하나만 읽는�
 4. 부분 게시 뒤 Export한 Serving 파일의 `serving_domain_status`가 보류 도메인에 `held = true`와 이전 `as_of`를, 다른 도메인에 `held = false`와 최신 `as_of`를 담는 테스트가 있다. 기존 Serving 검증(`_validate_serving_file`)과 Metabase 재지정 테스트가 통과한다.
 5. 구독 도메인의 Bronze 변화가 드물어 `payment_at` 기준이 평소에도 오래된 값이면, 그 사실과 대안(게시 시각 기준)을 보고한다. 판정은 architect가 한다.
 
-**진행 (2026-11-12, backend 구현, 판정 반영, architect 확인 대기)**
+**완료 (2026-11-12, backend 구현 → architect 판정(조건 5)·완료조건 1~7 확인 → reviewer 승인(지적 없음) → 커밋 `fac25db`)**
 
 - [x] 1. `tests/observability/test_run_report_domains.py`: 구독이 3회 연속 보류되고 마지막 비보류 게시가 임계값보다 오래되면 `DATA_STALE:subscriptions`만 뜬다. `DATA_STALE`·`DATA_STALE:orders`는 뜨지 않는다.
 - [x] 2. `summarize_holds` 단위 테스트(보류 1·2회 → 1·2, 복구 → 0)를 추가했다. 갱신 시각도 함께 검증한다. Postgres 사슬 통합 테스트 `test_domain_holds_follow_published_chain`(FAILED 건너뜀 포함)도 통과한다.
@@ -195,7 +195,7 @@ Dashboard(Metabase)는 Serving 파일(`Commerce Mart Serving`) 하나만 읽는�
 - 연속 보류를 세는 사슬 조회에 `finished_at`을 더해 한 번에 구한다. 조회를 따로 만들지 않는다.
 - 기존 `DATA_STALE`·`data_lag_s`(주문 사건 시각)는 그대로다.
 - 추가 완료조건: (6) 보류가 없고 결제 시각이 몇 주 전이어도 `DATA_STALE:subscriptions`가 뜨지 않는 테스트. (7) Postgres 사슬 통합 테스트를 실제로 돌려 통과.
-- Metabase의 새 Table 동기화는 Phase 5로 넘긴다(Metabase 미기동). `_validate_serving_file`의 허용 목록 변경은 승인한다.
+- Metabase의 새 Table 동기화는 Phase 5로 넘긴다(Metabase 미기동). → Phase 5에서 card 60이 실제 Serving의 이 Table을 조회했다(§6). `_validate_serving_file`의 허용 목록 변경은 승인한다.
 
 - [x] 5. 보고했고 대안이 채택됐다. `domain_lag_s`는 `refreshed_at` 기준이다. `domain_as_of`는 참고값이다. 사슬 한도를 넘거나 비보류 게시가 없으면 판정하지 않는다(`test_no_clean_publish_is_not_judged`).
 - [x] 6. `test_old_payment_without_hold_is_not_stale`: 보류가 없으면 결제 시각이 몇 주 전이어도 `DATA_STALE:subscriptions`가 뜨지 않는다.
@@ -209,7 +209,7 @@ Dashboard(Metabase)는 Serving 파일(`Commerce Mart Serving`) 하나만 읽는�
 
 **완료조건**: "검증하지 못한 것"과 범위 밖 항목마다 이유가 한 줄씩 있다.
 
-**진행 (2026-11-12, architect)**: `docs/reference/publish-slo.md` 신규, ADR 021(R3 표현, Validation F·G·H·경계 단언·도메인 판정, 검증하지 못한 것, 실무 관행과의 거리, 범위 밖), R-14 Runbook(연속 보류 확인) 반영. Phase 5는 차단 그대로라 ADR "미보완"에 남겼다.
+**진행 (2026-11-12, architect)**: `docs/reference/publish-slo.md` 신규, ADR 021(R3 표현, Validation F·G·H·경계 단언·도메인 판정, 검증하지 못한 것, 실무 관행과의 거리, 범위 밖), R-14 Runbook(연속 보류 확인) 반영. Phase 5는 차단 그대로라 ADR "미보완"에 남겼다. 커밋 `c946e87`(PRD v1.31 포함). Phase 5 완료 뒤 ADR "미보완"은 화면 표시 반영 상태로 고쳤다(`401b010`).
 
 ### Phase 5. Dashboard 지연·보류 표시 (uiux → frontend → uiux 검수 → reviewer)
 
@@ -259,5 +259,13 @@ Dashboard(Metabase)는 Serving 파일(`Commerce Mart Serving`) 하나만 읽는�
 
 - `error` Canary 4개는 실험용이라 비용 계산에서 뺐다.
 - Mart는 이름이 `stg_`·`int_`로 시작하지 않는 Model이다.
-- PRD는 고치지 않는다. 게시 동작은 바뀌지 않고 Run report에 판정이 추가된다. lead가 PRD 반영이 필요하다고 보면 Phase 4에서 함께 한다.
-- 미검증: Serving 검증(`_validate_serving_file`)이 새 Table을 허용하는지. Metabase Schema 동기화가 새 Table을 자동으로 잡는지. dbt-duckdb 1.11에서 `group`·Contract가 이 저장소에서 문제없이 도는지. Test Node가 Model의 Group을 물려받는지(귀속은 Model 기준이라 영향이 없을 것으로 본다). `dbt parse`만으로 기준 단언용 Manifest를 얻을 수 있는지(안 되면 재현 실험 안에서만 단언한다).
+- PRD는 고치지 않는다는 가정이었으나 Phase 4에서 lead 결정으로 PRD v1.31에 반영했다(`c946e87`).
+- 계획 시점의 미검증 항목과 확인 결과:
+
+  | 항목 | 결과 | 확인한 곳 |
+  | ---- | ---- | ---- |
+  | Serving 검증(`_validate_serving_file`)이 새 Table을 허용하는지 | 허용하지 않았다. 허용 목록에 `serving_domain_status`를 더했고(architect 승인) 기존 Serving 검증·Metabase 재지정 테스트가 통과한다 | Phase 3 조건 4 |
+  | Metabase가 새 Table을 읽는지 | 읽는다. 최신 게시를 내보내 재지정한 뒤 card 60(Native SQL)이 실제 Serving의 `serving_domain_status`를 조회했다. Native SQL은 Schema 동기화에 기대지 않으므로 **자동 동기화가 새 Table을 잡는지는 따로 확인하지 않았다** | Phase 5 |
+  | dbt-duckdb 1.11에서 `group`·Contract가 도는지 | 둘 다 돈다. `dim_date`·`dim_customer`에 Contract를 켰고 타입 불일치에서 Build가 실패한다 | Phase 1 조건 1·7 |
+  | Test Node가 Model의 Group을 물려받는지 | 물려받지 않는다(151개 중 0개). 귀속이 Model 기준이라 영향이 없다 | Phase 1 조건 1 |
+  | `dbt parse`만으로 기준 단언용 Manifest를 얻을 수 있는지 | 얻을 수 있다. 기준 단언은 `dbt parse` Manifest에서 통과한다 | Phase 1 조건 3 |
