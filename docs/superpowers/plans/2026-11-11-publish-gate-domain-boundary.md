@@ -265,7 +265,7 @@ Dashboard(Metabase)는 Serving 파일(`Commerce Mart Serving`) 하나만 읽는�
   | 항목 | 결과 | 확인한 곳 |
   | ---- | ---- | ---- |
   | Serving 검증(`_validate_serving_file`)이 새 Table을 허용하는지 | 허용하지 않았다. 허용 목록에 `serving_domain_status`를 더했고(architect 승인) 기존 Serving 검증·Metabase 재지정 테스트가 통과한다 | Phase 3 조건 4 |
-  | Metabase가 새 Table을 읽는지 | 읽는다. 최신 게시를 내보내 재지정한 뒤 card 60(Native SQL)이 실제 Serving의 `serving_domain_status`를 조회했다. Native SQL은 Schema 동기화에 기대지 않으므로 **자동 동기화가 새 Table을 잡는지는 따로 확인하지 않았다** | Phase 5 |
+  | Metabase가 새 Table을 읽고 메타데이터에 동기화하는지 | 읽는다. card 60이 실제 Serving의 `serving_domain_status`를 조회했다. Serving DB 2의 `sync_schema` 요청(HTTP 200) 후 metadata에서 `main.serving_domain_status`와 `domain`, `as_of`, `refreshed_at`, `held`, `consecutive_holds` 필드 5개를 확인했다. 최초 발견 시점은 확인하지 않았다 | Phase 5 |
   | dbt-duckdb 1.11에서 `group`·Contract가 도는지 | 둘 다 돈다. `dim_date`·`dim_customer`에 Contract를 켰고 타입 불일치에서 Build가 실패한다 | Phase 1 조건 1·7 |
   | Test Node가 Model의 Group을 물려받는지 | 물려받지 않는다(151개 중 0개). 귀속이 Model 기준이라 영향이 없다 | Phase 1 조건 1 |
   | `dbt parse`만으로 기준 단언용 Manifest를 얻을 수 있는지 | 얻을 수 있다. 기준 단언은 `dbt parse` Manifest에서 통과한다 | Phase 1 조건 3 |
