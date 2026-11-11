@@ -126,6 +126,16 @@ FROM mart_publish_runs WHERE held_domains <> '[]' ORDER BY started_at DESC;
 - 실패 당시 데이터: `failed_path`의 파일. 되돌리기 **전** Build 복사본이다. `failed/`는 최근 3개만
   남으므로 부분 게시가 이어지면 오래된 증거부터 지워진다.
 
+보류가 이어지는지 확인: Run report의 `consecutive_holds`가 도메인별 연속 보류 횟수다. 마지막으로
+보류 없이 게시된 시각(`domain_refreshed_at`)부터 원천 주기의 2배가 지나면 `DATA_STALE:<domain>`이
+함께 뜬다([게시 SLO](../reference/publish-slo.md)). 이 판정은 결제·주문 시각이 아니라 게시 시각 기준이다.
+
+```sql
+SELECT dag_run_id, report->'consecutive_holds' AS holds,
+       report->'domain_refreshed_at' AS refreshed_at, failures
+FROM warehouse_run_reports ORDER BY recorded_at DESC LIMIT 5;
+```
+
 조치: `failed_path` 파일에서 실패 Test의 원인을 찾아 고친다. 다음 실행이 성공하면 보류 도메인이
 밀린 Key까지 반영하고 `held_domains`가 `[]`로 돌아온다. 부분 게시 동안 재계산 경계는 전진하지
 않으므로 별도 Backfill은 필요 없다.

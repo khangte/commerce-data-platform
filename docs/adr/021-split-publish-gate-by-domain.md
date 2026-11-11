@@ -28,7 +28,7 @@ ADR 016의 전체 Gate는 "게시본의 모든 Table이 같은 Build에서 나�
 | ---- | ---- | ------ |
 | R1 하위 닫힘 | 어떤 Model을 보류하면 그것을 `ref`하는 하위 Mart도 함께 보류한다 | 하위 Model이 실패한 상위 값으로 계산된 채 게시된다 |
 | R2 Test 닫힘 | `error` Test 하나가 함께 참조하는 Model은 같은 묶음에 둔다 | 보류 자체가 Gate가 막기로 한 불일치를 만든다 |
-| R3 절단 비용 | R1·R2로 묶이지 않게 하려면 연결 Model을 "공유"로 떼어 내야 하고, 공유 Model의 실패는 전체 차단이다. 떼어 내는 비용(전체 차단으로 가는 Test 수)보다 얻는 것이 클 때만 뗀다 | 나눌수록 전체 차단이 늘어난다 |
+| R3 절단 비용 | R1·R2로 묶이지 않게 하려면 연결 Model을 "공유"로 떼어 내야 하고, 공유 Model의 실패는 전체 차단이다. 떼어 내는 비용(전체 차단으로 가는 Test 수)보다 얻는 것이 클 때만 뗀다. 장애 이력이 없어 Test 개수를 대용으로 쓴 이 프로젝트의 판단이고 업계 규칙이 아니다 | 나눌수록 전체 차단이 늘어난다 |
 
 Mart 13개를 `ref`(staging·intermediate 경유 포함)와 `error` Test 공동 참조로 이으면 **한 덩어리**다. 덩어리를 가르는 방법은 Model을 공유로 떼어 내는 것뿐이고, 후보는 넷이다(`dbt/target/manifest.json`, Canary 제외 `error` Test 134개 기준).
 
@@ -108,8 +108,8 @@ graph LR
 | 포기 | 게시본의 모든 Table이 같은 Bronze 시점이라는 보장. 보류 도메인은 직전 게시 시점, 나머지는 최신 시점이다 |
 | 유지 | 파일 단위 원자 교체. 도메인 안의 정합성(도메인 Relation은 함께 되돌린다). 공유 Dimension·staging·Model 오류의 전체 차단 |
 | 보완 | 경계 Test 재검증, 귀속 불가 시 전체 차단, `held_domains`·`PUBLISH_PARTIAL` 기록, 되돌리기 전 Build 보존, 끄는 스위치 |
-| 미보완 | 도메인을 가로지르는 분석(같은 고객의 주문과 구독)은 시점이 어긋난 값을 볼 수 있다. Dashboard에는 표시되지 않는다 |
-| 운영 변화 | `dbt_build` Task가 Test 실패에도 성공으로 끝난다. 감지는 Run report로 한다([R-14 Runbook](../runbooks/r14-dbt-failure.md)) |
+| 미보완 | 도메인을 가로지르는 분석(같은 고객의 주문과 구독)은 시점이 어긋난 값을 볼 수 있다. 도메인별 갱신 시각과 보류 여부는 Serving 파일의 `serving_domain_status`에 있지만 Dashboard Card는 없다(화면 담당 역할이 없어 보류). Metabase가 이 Table을 동기화하는지도 확인하지 않았다 |
+| 운영 변화 | `dbt_build` Task가 Test 실패에도 성공으로 끝난다. 감지는 Run report로 한다([R-14 Runbook](../runbooks/r14-dbt-failure.md)). 보류가 원천 주기 2회를 넘겨 이어지면 `DATA_STALE:<domain>`이 뜬다([게시 SLO](../reference/publish-slo.md)) |
 
 게시 파일이 지키는 불변식: 통과 도메인은 이번 Build의 `error` Test를 모두 통과했고, 보류 도메인은 직전 게시 값과 같으며 경계 Test를 다시 통과했다.
 
@@ -131,5 +131,40 @@ graph LR
 | 같은 실험 D·D-orders | 부분 게시 뒤 재실행: `held_domains = []`, 13개 Relation이 기준 파일과 모두 같음 |
 | 합성 파일 단위 테스트 | 경계 Test 실패와 되돌리기 실패에서 전체 차단, `failed/`에 되돌리기 전 파일 유지 |
 | R-14·기존 Canary·1단계 실험 | 수정 없이 통과 |
+| `tests/test_warehouse_domain_boundary.py` | dbt `group` 선언이 R1·R2로 계산한 묶음과 같음. Model 하나를 다른 Group으로 옮긴 합성 Manifest에서는 실패 |
+| 같은 실험 F (2026-11-11) | 두 도메인 Canary 동시 실패: 켬에서도 `FAILED`, `held_domains = []`, 게시본 Hash 불변 |
+| 같은 실험 G (2026-11-11) | 소급 고객 관측을 주입한 실제 dbt Build: 구독 보류 뒤 경계 Test `relationships_fct_subscription_payment_customer_key` 실패 → 전체 차단, `failed/`에 되돌리기 전 파일 |
+| Airflow 실행 H (2026-11-11) | 구독 Canary 강제: `dbt_build` 성공, `held_domains = ["subscriptions"]`, `PUBLISH_PARTIAL:subscriptions`, `fct_order` 99849 → 99869 |
+| Run report 도메인 판정 | 구독 3회 연속 보류에서 `DATA_STALE:subscriptions`만 뜸. 보류 없이 결제 시각만 오래된 경우는 뜨지 않음 |
 
-검증하지 못한 것: 이 Bronze의 마지막 Batch에 구독 변화가 없어 `subscriptions`의 증분 복구는 측정하지 못했다(같은 경로를 `orders` 보류로 확인). 실제 고객 이력 재구성으로 경계 Test가 끊기는 시나리오는 합성 파일로만 검증했다. C·E의 Run report 판정은 측정하지 않았다. 소요 시간은 1회 측정이다. 두 도메인이 한 Build에서 함께 실패하는 경우는 귀속 단위 테스트로만 확인했고 실제 dbt 실행으로는 재현하지 않았다. Airflow DAG에서 `subscriptions`만 보류되는 실행(`held_domains` XCom, Run report)은 확인하지 않았다.
+F·G·H의 수치와 명령은 [08 §6](../benchmarks/08-publish-gate-domain-split.md)에 있다.
+
+검증하지 못한 것:
+
+- `subscriptions`의 증분 복구: 이 Bronze의 마지막 Batch에 구독 변화가 없어 측정하지 못했다. 같은 경로를 `orders` 보류로 확인했다.
+- 경계 Test 실패가 운영에서 저절로 생기는 경우: 정상 수집에서는 `customer_key`가 바뀌지 않는다(관측이 뒤에만 붙고 등급이 내려가지 않는다). 실험 G는 소급 관측을 주입했다. 실제로는 재적재·Backfill에서만 생길 조건이다.
+- 실행 H는 Canary SQL의 var 기본값을 잠시 바꿔 만들었다. DAG에 dbt var를 넘기는 Param이 없다.
+- 소요 시간은 1회 측정이다.
+- Metabase의 `serving_domain_status` 동기화(Metabase 미기동).
+
+## 실무 관행과의 거리
+
+| 요소 | 위치 |
+| ---- | ---- |
+| Build-then-swap, 심각도별 차단, 실패 하위 건너뛰기(R1) | 흔한 방식이다. R1은 [dbt `build`](https://docs.getdbt.com/reference/commands/build)가 실패한 Model의 하위를 건너뛰는 것과 같은 규칙이다 |
+| 공유 Dimension의 실패는 전체 차단 | 흔한 방식이다 |
+| 도메인을 dbt [`group`](https://docs.getdbt.com/docs/build/groups)과 `owner`로 선언 | dbt의 표준 수단이다. 다만 소유자가 한 명이라 소유 경계 역할은 하지 않는다 |
+| 실패 도메인을 Build 파일 안에서 직전 값으로 되돌리기 | 이 프로젝트의 방식이다. 파일 1개를 통째로 교체하는 구조(ADR 016)에서 나왔다. Table 단위 Snapshot이 있는 저장 계층에서는 Table별 게시로 푼다 |
+| R2·R3로 경계를 계산 | 이 프로젝트의 정식화다. 실무의 도메인은 대개 소유 조직으로 정한다 |
+
+범위 밖으로 둔 것:
+
+| 항목 | 이유 |
+| ---- | ---- |
+| CI(GitHub Actions), Slim CI | 하지 않기로 했다. 경계 단언과 테스트는 로컬 `pytest`로 돈다. 전체 Build가 수 초라 변경분만 Build할 이유도 없다 |
+| 알림 | README의 의도적 비목표다. 걸 자리는 Run report의 `ok=false`다 |
+| 소유 조직 기준 도메인, 다중 dbt Project | 소유자가 한 명이다 |
+| Table 단위 Snapshot 게시 | ADR 016의 전환 기준(1GB 또는 복사 60초)에 못 미친다 |
+| dbt `source freshness` | Bronze를 dbt Source가 아니라 Macro로 읽는다. 같은 판정을 Run report `NOT_FRESH`가 한다 |
+| 오류 예산 | [게시 SLO](../reference/publish-slo.md)는 실행 단위 조건만 둔다 |
+| staging 실패의 도메인 귀속 | 위 "알려진 한계"의 마지막 항목 |
