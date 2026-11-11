@@ -12,6 +12,7 @@ import pytest
 
 from src.common.database import PostgresSettings
 from src.warehouse import publish_metadata as metadata
+from src.warehouse.domain_gate import DomainHolds
 from src.warehouse.duckdb_files import FileIdentity
 from src.warehouse.errors import PublishInProgressError, PublishStateError
 from src.warehouse.publish_metadata import (
@@ -315,3 +316,44 @@ def test_close_dag_run_building_returns_only_closed_runs(settings, pipeline, dag
     else:
         assert row == ("PUBLISHING" if publishing else BUILDING, None, None, None)
     assert metadata.close_dag_run_building(settings, pipeline_name="test_publish_reclaim", dag_run_id="dr1", now=NOW) == ()
+
+
+def _publish(settings, *, now, held):
+    """보류 도메인을 기록하고 PUBLISHED로 끝낸 Test Run을 만든다."""
+    record = start_publish_run(settings, _run(), now=now)
+    metadata.record_held_domains(settings, record.publish_run_id, held)
+    mark_publishing(settings, record.publish_run_id, mart_hashes={}, mart_row_counts={},
+                    published_identity=FileIdentity(1, 2))
+    mark_published(settings, record.publish_run_id, now=now)
+    return record.publish_run_id
+
+
+def test_domain_holds_follow_published_chain(settings):
+    """보류 1·2회를 세고 사이의 FAILED는 건너뛰며, 갱신 시각은 마지막 비보류 게시의 완료 시각이다."""
+    base = _after_latest_publish(settings)
+    _publish(settings, now=base, held=[])
+    first = _publish(settings, now=base + timedelta(minutes=1), held=["subscriptions"])
+    assert metadata.get_domain_holds(settings, first) == DomainHolds(
+        {"orders": 0, "subscriptions": 1},
+        {"orders": base + timedelta(minutes=1), "subscriptions": base},
+    )
+    failed = start_publish_run(settings, _run(), now=base + timedelta(minutes=2))
+    mark_failed(settings, failed.publish_run_id, error_type="DBT_TEST_ERROR", error_message="x",
+                failed_path=None, now=base + timedelta(minutes=2))
+    assert metadata.get_domain_holds(settings, failed.publish_run_id) == DomainHolds(
+        {"orders": 0, "subscriptions": 1},
+        {"orders": base + timedelta(minutes=1), "subscriptions": base},
+    )
+    second = _publish(settings, now=base + timedelta(minutes=3), held=["subscriptions"])
+    assert metadata.get_domain_holds(settings, second) == DomainHolds(
+        {"orders": 0, "subscriptions": 2},
+        {"orders": base + timedelta(minutes=3), "subscriptions": base},
+    )
+    recovered = _publish(settings, now=base + timedelta(minutes=4), held=[])
+    assert metadata.get_domain_holds(settings, recovered) == DomainHolds(
+        {"orders": 0, "subscriptions": 0},
+        {"orders": base + timedelta(minutes=4), "subscriptions": base + timedelta(minutes=4)},
+    )
+    assert metadata.get_domain_holds(settings, uuid.uuid4()) == DomainHolds(
+        {"orders": 0, "subscriptions": 0}, {"orders": None, "subscriptions": None},
+    )

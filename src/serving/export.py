@@ -12,6 +12,7 @@ from pathlib import Path
 
 import duckdb
 
+from src.warehouse.domain_gate import DomainHolds, domain_as_of
 from src.warehouse.duckdb_files import (
     FileIdentity,
     checkpoint,
@@ -59,8 +60,12 @@ def export_serving_mart(
     mart_hashes: Mapping[str, str],
     published_identity: FileIdentity,
     now: datetime,
+    holds: DomainHolds | None = None,
 ) -> ServingExportResult:
-    """Published Mart만 복사해 Serving 파일을 원자 교체하고 Publish Hash를 기록한다."""
+    """Published Mart만 복사해 Serving 파일을 원자 교체하고 Publish Hash를 기록한다.
+
+    holds는 게시 실행의 도메인별 보류 상태다. 없으면 refreshed_at·보류 열을 NULL로 둔다.
+    """
     _require_identity(published, published_identity, publish_run_id)
 
     export_id = uuid.uuid4()
@@ -77,6 +82,7 @@ def export_serving_mart(
             row_counts=row_counts,
             now=now,
         )
+        _record_domain_status(build_path, holds)
         _validate_serving_file(build_path)
         checkpoint(build_path)
         if wal_path(build_path).exists():
@@ -178,6 +184,33 @@ def _record_manifest(
         )
 
 
+def _record_domain_status(build_path: Path, holds: DomainHolds | None) -> None:
+    """도메인마다 사건 시각·갱신 시각·보류 상태를 한 행씩 남긴다. as_of는 복사된 Serving 파일에서 잰다.
+
+    이번 게시의 보류 여부는 연속 보류 1회 이상과 같다(Export는 PUBLISHED Run만 받는다).
+    """
+    with duckdb.connect(str(build_path)) as connection:
+        as_of = domain_as_of(connection)
+        connection.execute(
+            """
+            CREATE TABLE serving_domain_status (
+                domain VARCHAR NOT NULL PRIMARY KEY,
+                as_of TIMESTAMPTZ,
+                refreshed_at TIMESTAMPTZ,
+                held BOOLEAN,
+                consecutive_holds INTEGER
+            )
+            """
+        )
+        for domain, value in as_of.items():
+            count = None if holds is None else holds.consecutive.get(domain, 0)
+            refreshed_at = None if holds is None else holds.refreshed_at.get(domain)
+            connection.execute(
+                "INSERT INTO serving_domain_status VALUES (?, ?, ?, ?, ?)",
+                [domain, value, refreshed_at, None if count is None else count > 0, count],
+            )
+
+
 def _validate_serving_file(build_path: Path) -> None:
     """Serving 파일에 Mart 외 Schema가 새지 않았는지 확인한다."""
     with duckdb.connect(str(build_path), read_only=True) as connection:
@@ -201,7 +234,7 @@ def _validate_serving_file(build_path: Path) -> None:
             ORDER BY table_name
             """
         ).fetchall()
-        if manifest != [("serving_manifest",)]:
+        if manifest != [("serving_domain_status",), ("serving_manifest",)]:
             raise ValueError(f"Serving main schema is invalid: {manifest}")
 
 

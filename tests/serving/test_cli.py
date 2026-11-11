@@ -12,6 +12,7 @@ import pytest
 
 from src.serving import cli, metabase_settings
 from src.serving.freshness import ServingFreshness
+from src.warehouse.domain_gate import DomainHolds
 from src.warehouse.duckdb_files import file_identity
 from src.warehouse.publish_metadata import PUBLISHED, PublishRecord
 from tests.serving.test_export import _create_published_mart
@@ -35,6 +36,7 @@ def export_setup(monkeypatch, tmp_path):
         uuid.uuid4(), PUBLISHED, datetime.now(UTC), None, {}, None, file_identity(published)
     )
     monkeypatch.setattr(cli, "get_latest_publish_run", lambda _: record)
+    monkeypatch.setattr(cli, "get_domain_holds", lambda *_: DomainHolds({}, {}))
     root = tmp_path / "serving"
     versions = root / "exports"
     versions.mkdir(parents=True)

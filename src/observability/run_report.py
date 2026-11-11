@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -15,7 +16,9 @@ from src.common.database import PostgresSettings, apply_sql_file
 from src.common.schedule import schedule_interval, source_dag_schedule
 from src.serving.freshness import check_serving_freshness
 from src.serving.metabase_repoint import SERVING_EXPORT_RETENTION
+from src.warehouse.domain_gate import domain_as_of
 from src.warehouse.publish import FAILED_BUILD_RETENTION
+from src.warehouse.publish_metadata import get_domain_holds
 
 RUN_LIMIT_SECONDS = 600
 STALE_AFTER_INTERVALS = 2
@@ -42,6 +45,9 @@ def judge_run_report(report: dict) -> list[str]:
     lag, threshold = report.get("data_lag_s"), report.get("stale_after_s")
     if lag is not None and threshold is not None and lag > threshold:
         failures.append("DATA_STALE")
+    for domain, domain_lag in sorted((report.get("domain_lag_s") or {}).items()):
+        if domain_lag is not None and threshold is not None and domain_lag > threshold:
+            failures.append(f"DATA_STALE:{domain}")
     previous, current = report.get("previous_mart_row_counts"), report.get("mart_row_counts")
     if not report.get("full_refresh", False) and previous is not None and current is not None:
         for relation in sorted(previous.keys() & current.keys()):
@@ -80,7 +86,7 @@ def collect_run_report(
         ("dag", _probe_dag), ("tasks", _probe_tasks), ("ingestion", _probe_ingestion),
         ("leases", _probe_leases), ("bronze", _probe_bronze), ("publish", _probe_publish),
         ("freshness", _probe_freshness), ("staleness", _probe_staleness),
-        ("row_counts", _probe_row_counts), ("files", _probe_files),
+        ("domains", _probe_domains), ("row_counts", _probe_row_counts), ("files", _probe_files),
     ):
         try:
             report.update(probe(settings, summary, context, warehouse_paths, serving_paths, now))
@@ -202,6 +208,32 @@ def _probe_staleness(settings, summary, context, warehouse_paths, serving_paths,
     if epoch is not None:
         result.update(max_purchase_at=datetime.fromtimestamp(epoch, UTC).isoformat(),
                       data_lag_s=now.timestamp() - epoch)
+    return result
+
+
+def _probe_domains(settings, summary, context, warehouse_paths, serving_paths, now) -> dict:
+    """도메인별 연속 보류·마지막 비보류 게시 시각·지연과 게시 파일의 사건 시각을 수집한다.
+
+    지연(판정 기준)은 마지막 비보류 게시 시각부터 잰다. 사건 시각(domain_as_of)은 드문 도메인에서
+    보류 없이도 오래되므로 참고로만 싣는다. 게시 실행이 없으면 DB와 파일을 열지 않는다.
+    """
+    result = {"domain_as_of": {}, "domain_refreshed_at": {}, "domain_lag_s": {},
+              "consecutive_holds": {}}
+    publish_run_id = summary.get("publish_run_id")
+    if not publish_run_id:
+        return result
+    holds = get_domain_holds(settings, uuid.UUID(publish_run_id))
+    result["consecutive_holds"] = holds.consecutive
+    result["domain_refreshed_at"] = {
+        d: v.isoformat() if v else None for d, v in holds.refreshed_at.items()
+    }
+    result["domain_lag_s"] = {
+        d: now.timestamp() - v.timestamp() if v else None for d, v in holds.refreshed_at.items()
+    }
+    if warehouse_paths.published.exists():
+        with duckdb.connect(str(warehouse_paths.published), read_only=True) as connection:
+            as_of = domain_as_of(connection)
+        result["domain_as_of"] = {d: v.isoformat() if v else None for d, v in as_of.items()}
     return result
 
 

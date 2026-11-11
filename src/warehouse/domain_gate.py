@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 import duckdb
@@ -11,6 +13,11 @@ import duckdb
 # 도메인은 dbt Group(dbt/models/marts/groups.yml)이다. 여기 없는 Group은 되돌릴 Key가 없어 전체 차단이다.
 AFFECTED_KEY_DOMAIN = {"orders": "order", "subscriptions": "subscription_payment"}
 SHARED_GROUP = "shared"
+# 도메인별 지연을 재는 기준 시각 Column이다. Run report와 Serving 상태 Table이 함께 쓴다.
+DOMAIN_TIME_COLUMN = {
+    "orders": ("facts", "fct_order", "purchase_at"),
+    "subscriptions": ("facts", "fct_subscription_payment", "payment_at"),
+}
 
 _NON_MART_PREFIXES = ("stg_", "int_")
 _EXCLUDED = ""
@@ -46,6 +53,53 @@ def domain_table(nodes: dict) -> DomainTable:
         elif group in members:
             members[group].add(node["name"])
     return DomainTable({domain: frozenset(names) for domain, names in members.items()}, frozenset(shared))
+
+
+def domain_as_of(
+    connection: duckdb.DuckDBPyConnection, catalog: str | None = None
+) -> dict[str, datetime | None]:
+    """도메인마다 기준 시각 Column의 최댓값을 UTC로 잰다.
+
+    Relation·Column이 없거나 비어 있으면 None(측정 불가)이다. TIMESTAMP·TIMESTAMPTZ를 같은 값으로
+    읽으려고 epoch로 바꿔 잰다.
+    """
+    result: dict[str, datetime | None] = {}
+    for domain, (schema, table, column) in DOMAIN_TIME_COLUMN.items():
+        exists = connection.execute(
+            """SELECT count(*) FROM information_schema.columns
+               WHERE table_catalog = coalesce(?, current_database())
+                 AND table_schema = ? AND table_name = ? AND column_name = ?""",
+            [catalog, schema, table, column],
+        ).fetchone()[0]
+        epoch = None
+        if exists:
+            relation = ".".join(f'"{part}"' for part in (catalog, schema, table) if part)
+            epoch = connection.execute(f'SELECT epoch(max("{column}")) FROM {relation}').fetchone()[0]
+        result[domain] = None if epoch is None else datetime.fromtimestamp(epoch, UTC)
+    return result
+
+
+@dataclass(frozen=True)
+class DomainHolds:
+    """도메인별 연속 보류 횟수와 마지막으로 보류 없이 게시된 시각(없으면 None)이다."""
+
+    consecutive: dict[str, int]
+    refreshed_at: dict[str, datetime | None]
+
+
+def summarize_holds(histories: Sequence[tuple[Sequence[str], datetime | None]]) -> DomainHolds:
+    """최신 게시부터 거꾸로 놓인 (held_domains, finished_at)으로 도메인별 보류 상태를 만든다.
+
+    보류가 끊긴 첫 게시의 finished_at이 그 도메인의 갱신 시각이다. 끝까지 보류면 None이다.
+    """
+    consecutive, refreshed_at = {}, {}
+    for domain in DOMAIN_TIME_COLUMN:
+        count = 0
+        while count < len(histories) and domain in histories[count][0]:
+            count += 1
+        consecutive[domain] = count
+        refreshed_at[domain] = histories[count][1] if count < len(histories) else None
+    return DomainHolds(consecutive, refreshed_at)
 
 
 def attribute_failure(target_dir: Path) -> str | None:

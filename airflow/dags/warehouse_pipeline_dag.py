@@ -45,6 +45,7 @@ from src.warehouse.publish import (
 )
 from src.warehouse.publish_metadata import (
     PublishRun,
+    get_domain_holds,
     get_held_domains,
     get_publish_run,
     get_tests_warned,
@@ -250,15 +251,17 @@ with DAG(
     def export_serving_mart_task(publish: dict) -> dict:
         """성공한 Published Mart만 별도 Serving 파일로 복사하고 실패를 Publish와 분리한다."""
         try:
+            publish_run_id = uuid.UUID(publish["publish_run_id"])
             result = export_serving_mart(
                 WAREHOUSE_PATHS.published,
                 SERVING_PATHS,
-                publish_run_id=uuid.UUID(publish["publish_run_id"]),
+                publish_run_id=publish_run_id,
                 mart_hashes=publish["mart_hashes"],
                 published_identity=FileIdentity(
                     publish["published_inode"], publish["published_mtime_ns"]
                 ),
                 now=datetime.now(UTC),
+                holds=get_domain_holds(PostgresSettings.from_environment(), publish_run_id),
             )
         except Exception as error:
             raise AirflowFailException(f"SERVING_EXPORT_FAILED: {error}") from error

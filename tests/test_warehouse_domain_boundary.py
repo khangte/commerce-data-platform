@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from src.warehouse.dbt_runner import DBT_PROJECT_DIR, _default_dbt_executable
-from src.warehouse.domain_gate import SHARED_GROUP, is_mart
+from src.warehouse.domain_gate import DOMAIN_TIME_COLUMN, SHARED_GROUP, is_mart
 
 PROJECT_ROOT = DBT_PROJECT_DIR.parent
 
@@ -174,3 +174,5 @@ def test_real_manifest_groups_match_lineage(tmp_path: Path) -> None:
     nodes = json.loads((tmp_path / "manifest.json").read_text())["nodes"]
     assert len(declared_groups(nodes)) == 2
     assert_groups_match_lineage(nodes)
+    groups = {node["config"].get("group") for node in nodes.values() if is_mart(node)}
+    assert groups - {SHARED_GROUP} == DOMAIN_TIME_COLUMN.keys()

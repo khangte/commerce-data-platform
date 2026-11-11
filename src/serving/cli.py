@@ -20,7 +20,7 @@ from src.serving.metabase_settings import (
     require_metabase_setting,
 )
 from src.warehouse.duckdb_files import DEFAULT_WAREHOUSE_ROOT, PUBLISHED_FILE_NAME
-from src.warehouse.publish_metadata import get_latest_publish_run
+from src.warehouse.publish_metadata import get_domain_holds, get_latest_publish_run
 
 
 def _parse_arguments(argv: list[str] | None) -> argparse.Namespace:
@@ -51,6 +51,7 @@ def _export(arguments: argparse.Namespace) -> int:
         mart_hashes=record.mart_hashes,
         published_identity=record.published_identity,
         now=datetime.now(UTC),
+        holds=get_domain_holds(settings, record.publish_run_id),
     )
     status = repoint_and_prune_serving(
         str(result.export_id), host_metabase_url(), metabase_setting("METABASE_API_KEY"),

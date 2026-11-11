@@ -10,6 +10,7 @@ import psycopg
 from psycopg.types.json import Jsonb
 
 from src.common.database import PostgresSettings, apply_sql_file
+from src.warehouse.domain_gate import DomainHolds, summarize_holds
 from src.warehouse.duckdb_files import FileIdentity
 from src.warehouse.errors import PublishInProgressError, PublishStateError
 
@@ -22,6 +23,8 @@ ACTIVE_PUBLISH_INDEX = "mart_publish_runs_single_active_idx"
 ERROR_MESSAGE_LIMIT = 4000
 ABANDONED_MESSAGE = "abandoned"
 RECLAIMED_MESSAGE = "abandoned: reclaimed by same DAG run retry"
+# shortcut: 연속 보류는 최근 게시 1000건까지만 센다(넘으면 갱신 시각 None·미판정). 그보다 길게 보류되면 사슬 끝까지 따라가게 바꾼다.
+HOLD_HISTORY_LIMIT = 1000
 
 _RECORD_COLUMNS = (
     "publish_run_id, status, started_at, previous_publish_run_id, mart_hashes, error_type, "
@@ -197,6 +200,31 @@ def get_held_domains(settings: PostgresSettings, publish_run_id: uuid.UUID) -> t
             (publish_run_id,),
         ).fetchone()
     return () if row is None else tuple(row[0])
+
+
+def get_domain_holds(settings: PostgresSettings, publish_run_id: uuid.UUID) -> DomainHolds:
+    """이 Run부터 previous_publish_run_id 사슬을 따라 도메인별 연속 보류와 마지막 비보류 게시 시각을 구한다.
+
+    FAILED Run은 게시본을 바꾸지 않으므로 세지도 끊지도 않는다. 사슬은 시작 시점의 최신 PUBLISHED를
+    가리키므로 FAILED는 맨 앞(이 Run 자신)에만 나온다. Run이 없으면 모두 0·None이다.
+    """
+    with settings.pipeline_connection() as connection:
+        rows = connection.execute(
+            """
+            WITH RECURSIVE chain AS (
+                SELECT previous_publish_run_id, status, held_domains, finished_at, 0 AS depth
+                FROM mart_publish_runs WHERE publish_run_id = %s
+                UNION ALL
+                SELECT p.previous_publish_run_id, p.status, p.held_domains, p.finished_at,
+                       c.depth + 1
+                FROM mart_publish_runs p JOIN chain c ON p.publish_run_id = c.previous_publish_run_id
+                WHERE c.depth < %s
+            )
+            SELECT held_domains, finished_at FROM chain WHERE status = 'PUBLISHED' ORDER BY depth
+            """,
+            (publish_run_id, HOLD_HISTORY_LIMIT),
+        ).fetchall()
+    return summarize_holds([(row[0], row[1]) for row in rows])
 
 
 def get_latest_publish_run(settings: PostgresSettings) -> PublishRecord | None:

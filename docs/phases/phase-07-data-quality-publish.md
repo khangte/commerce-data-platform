@@ -384,7 +384,45 @@ Normal E2E Unknown Key = 0
   - Ruff 통과, `git diff --check` 통과.
   - 주입 객체는 종료 시 삭제됐다.
 
+## Publish Gate 도메인 경계: 도메인별 지연 판정 (2026-11-12)
+
+계획: `docs/superpowers/plans/2026-11-11-publish-gate-domain-boundary.md` Phase 3. 부분 게시로 `subscriptions`가 계속 보류돼도 주문 기준 `DATA_STALE`만으로는 드러나지 않던 구멍을 메운다.
+
+- [x] 공용 계산(`src/warehouse/domain_gate.py`):
+  - `DOMAIN_TIME_COLUMN`은 `orders`→`fct_order.purchase_at`, `subscriptions`→`fct_subscription_payment.payment_at` 대응이다.
+  - `domain_as_of`는 도메인별 최댓값을 UTC로 잰다. Relation이나 Column이 없거나 비어 있으면 `None`이다.
+  - `summarize_holds`는 도메인별 연속 보류 횟수와 `refreshed_at`(마지막 비보류 PUBLISHED Run의 `finished_at`)을 만든다. 찾지 못하면 `None`이다.
+  - 도메인 목록은 등록 Group(`AFFECTED_KEY_DOMAIN`)과 같다. 실제 Manifest의 Group도 같은지 테스트로 고정했다.
+- [x] 연속 보류: `get_domain_holds`가 `previous_publish_run_id` 사슬 조회 한 번으로 PUBLISHED Run의 `held_domains`·`finished_at`을 읽어 위 값을 만든다.
+  - FAILED Run은 게시본을 바꾸지 않으므로 세지도 끊지도 않는다.
+  - 최대 1000건까지만 센다(shortcut).
+- [x] Run report:
+  - Probe `domains`가 `domain_as_of`·`domain_lag_s`·`consecutive_holds`를 싣는다.
+  - 판정 `DATA_STALE:<domain>`은 같은 `stale_after_s`를 쓴다.
+  - 기존 `DATA_STALE`·`data_lag_s`는 그대로다. 기존 Run report 테스트는 수정 없이 통과한다.
+  - 게시 실행이 없는 Run(Build 전 실패)은 도메인 값을 재지 않는다.
+- [x] Serving:
+  - `export_serving_mart`가 `serving_domain_status`(`domain`, `as_of`, `held`, `consecutive_holds`)를 만든다. `as_of`는 복사된 Serving 파일에서 잰다.
+  - `held`는 `consecutive_holds > 0`과 같다. Export는 PUBLISHED Run만 받기 때문이다.
+  - `refreshed_at` 열도 싣는다.
+  - DAG와 CLI가 같은 `get_domain_holds`로 보류 상태를 넘긴다. 넘기지 않으면 `refreshed_at`·보류 열은 NULL이다.
+  - `_validate_serving_file`은 `main`에 `serving_manifest`와 `serving_domain_status` 두 Table만 허용한다.
+  - `serving_manifest` Column은 바꾸지 않았다.
+- [x] 지연 기준(architect 판정 2026-11-12):
+  - 현재 게시본의 `fct_subscription_payment`는 9행이다. 결제일이 9/7부터 11/11까지 몇 주 간격으로 흩어져 있다. 그래서 `payment_at` 기준이면 보류가 없어도 `DATA_STALE:subscriptions`가 거의 매번 뜬다.
+  - 판정에 따라 `domain_lag_s`는 `refreshed_at`부터 잰다. 두 도메인에 같은 정의를 쓴다. `None`이면 판정하지 않는다.
+  - 사건 시각 최댓값 `domain_as_of`는 참고값으로만 싣는다.
+- [x] 검증:
+  - Ruff·`git diff --check` 통과
+  - 새 테스트: `tests/test_warehouse_domain_status.py`, `tests/observability/test_run_report_domains.py`, `tests/serving/test_export_domain_status.py`
+  - 단위 833개 통과·148개 건너뜀(판정 반영 후)
+  - Postgres 통합 `tests/integration/test_publish_metadata_integration.py` 20개 통과. 사슬 테스트 `test_domain_holds_follow_published_chain`이 포함된다.
+  - Metabase에서 새 Table이 Sync되는지는 확인하지 않았다(Phase 5 범위).
+
 ## 파일·폴더별 변경 요약
+
+- `src/warehouse/domain_gate.py`, `src/warehouse/publish_metadata.py`, `src/observability/run_report.py`, `src/serving/export.py`, `src/serving/cli.py`, `airflow/dags/warehouse_pipeline_dag.py`: 도메인 기준 시각·연속 보류 공용 계산, Run report `DATA_STALE:<domain>`(마지막 비보류 게시 기준)·`consecutive_holds`, Serving `serving_domain_status`와 그 호출을 추가했다.
+- `tests/test_warehouse_domain_status.py`, `tests/observability/test_run_report_domains.py`, `tests/serving/test_export_domain_status.py`, `tests/serving/test_cli.py`, `tests/test_warehouse_domain_boundary.py`, `tests/integration/test_publish_metadata_integration.py`: 위 동작의 단위·통합 테스트를 추가하고 CLI Fixture에 보류 조회 대역을 넣었다.
 
 - `tests/reliability/faults.py`, `tests/reliability/test_domain_gate_experiment.py`: 늦게 도착한 등급 관측 주입 `backdated_tier_observation`을 추가했다. 실험에는 F·G Attempt, 다중 Canary·Build 전 Hook·오류 메시지 수집, C·E Run report 판정을 더했다.
 - `docs/benchmarks/08-publish-gate-domain-split.md`, `docs/benchmarks/evidence/publish-gate-domain-boundary/`: §6에 C·E·F·G·H 결과 행과 해석을 추가했다. 재현 실험과 Airflow H의 증적 문서를 함께 추가했다.

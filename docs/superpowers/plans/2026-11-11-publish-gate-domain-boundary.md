@@ -149,7 +149,7 @@ graph LR
 
 지금 Run report의 `data_lag_s`는 `fct_order`의 `max(purchase_at)`만 본다(`src/observability/run_report.py`). `subscriptions`가 연속으로 보류돼도 `DATA_STALE`이 뜨지 않는다. 부분 게시가 만든 구멍이다.
 
-- 도메인마다 지연을 잰다. 기준 시각은 `orders`가 `fct_order.purchase_at`, `subscriptions`가 `fct_subscription_payment.payment_at`이다.
+- 도메인마다 지연을 잰다. **기준은 그 도메인이 마지막으로 보류 없이 게시된 시각이다(architect 판정 2026-11-12, 아래).** 사건 시각 Column(`purchase_at`, `payment_at`)의 최댓값은 `domain_as_of`로 싣기만 하고 판정에 쓰지 않는다.
 - 판정 `DATA_STALE:<domain>`을 추가한다. 임계값은 지금과 같은 `stale_after_s`를 쓴다.
 - 기존 `DATA_STALE`·`data_lag_s`(주문 기준)는 그대로 둔다. 읽는 쪽이 깨지지 않게 추가만 한다.
 - 도메인별 연속 보류 횟수를 Run report에 싣는다(`mart_publish_runs.held_domains`에서 계산).
@@ -164,7 +164,8 @@ Dashboard(Metabase)는 Serving 파일(`Commerce Mart Serving`) 하나만 읽는�
   | Column | 뜻 |
   | ---- | ---- |
   | `domain` | Group 이름(`orders`, `subscriptions`) |
-  | `as_of` | 그 도메인 기준 시각 Column의 최댓값. 복사된 Serving 파일에서 직접 잰다 |
+  | `as_of` | 그 도메인 사건 시각 Column의 최댓값. 복사된 Serving 파일에서 직접 잰다 |
+  | `refreshed_at` | 그 도메인이 마지막으로 보류 없이 게시된 시각. 화면의 "기준 시각"은 이 값이다 |
   | `held` | 이번 게시에서 보류됐는지(`mart_publish_runs.held_domains`) |
   | `consecutive_holds` | 연속 보류 횟수. Run report와 같은 계산을 쓴다 |
 
@@ -180,6 +181,26 @@ Dashboard(Metabase)는 Serving 파일(`Commerce Mart Serving`) 하나만 읽는�
 4. 부분 게시 뒤 Export한 Serving 파일의 `serving_domain_status`가 보류 도메인에 `held = true`와 이전 `as_of`를, 다른 도메인에 `held = false`와 최신 `as_of`를 담는 테스트가 있다. 기존 Serving 검증(`_validate_serving_file`)과 Metabase 재지정 테스트가 통과한다.
 5. 구독 도메인의 Bronze 변화가 드물어 `payment_at` 기준이 평소에도 오래된 값이면, 그 사실과 대안(게시 시각 기준)을 보고한다. 판정은 architect가 한다.
 
+**진행 (2026-11-12, backend 구현, 판정 반영, architect 확인 대기)**
+
+- [x] 1. `tests/observability/test_run_report_domains.py`: 구독이 3회 연속 보류되고 마지막 비보류 게시가 임계값보다 오래되면 `DATA_STALE:subscriptions`만 뜬다. `DATA_STALE`·`DATA_STALE:orders`는 뜨지 않는다.
+- [x] 2. `summarize_holds` 단위 테스트(보류 1·2회 → 1·2, 복구 → 0)를 추가했다. 갱신 시각도 함께 검증한다. Postgres 사슬 통합 테스트 `test_domain_holds_follow_published_chain`(FAILED 건너뜀 포함)도 통과한다.
+- [x] 3. 기존 `tests/observability/test_run_report.py`는 수정 없이 통과한다.
+- [x] 4. `tests/serving/test_export_domain_status.py`: 보류 도메인은 `held=true`·이전 `as_of`, 다른 도메인은 `held=false`·최신 `as_of`다. `refreshed_at`도 검증한다. 기존 Serving 검증·Metabase 재지정 테스트도 통과한다. `test_cli.py` Fixture에는 보류 조회 대역 1줄만 더했다.
+**판정 (architect, 2026-11-12): 조건 5는 대안을 채택한다.**
+
+- 이유: 구독 결제는 9행이고 몇 주씩 비어 있다. 사건 시각 기준은 보류가 없어도 항상 `DATA_STALE:subscriptions`를 낸다. 항상 뜨는 판정은 판정이 아니다. 메우려던 구멍은 "보류가 오래 이어지는데 모른다"이고, 그것을 직접 재는 값은 마지막 비보류 게시 시각이다.
+- 정의: `domain_refreshed_at[d]` = 이 Run부터 사슬을 거슬러 `d`가 `held_domains`에 없는 첫 `PUBLISHED` Run의 `finished_at`. `domain_lag_s[d]` = 지금 − 그 값. 두 도메인에 같은 정의를 쓴다.
+- 찾지 못하면(사슬 한도 초과, 게시 이력 없음) `None`이고 판정하지 않는다.
+- 연속 보류를 세는 사슬 조회에 `finished_at`을 더해 한 번에 구한다. 조회를 따로 만들지 않는다.
+- 기존 `DATA_STALE`·`data_lag_s`(주문 사건 시각)는 그대로다.
+- 추가 완료조건: (6) 보류가 없고 결제 시각이 몇 주 전이어도 `DATA_STALE:subscriptions`가 뜨지 않는 테스트. (7) Postgres 사슬 통합 테스트를 실제로 돌려 통과.
+- Metabase의 새 Table 동기화는 Phase 5로 넘긴다(Metabase 미기동). `_validate_serving_file`의 허용 목록 변경은 승인한다.
+
+- [x] 5. 보고했고 대안이 채택됐다. `domain_lag_s`는 `refreshed_at` 기준이다. `domain_as_of`는 참고값이다. 사슬 한도를 넘거나 비보류 게시가 없으면 판정하지 않는다(`test_no_clean_publish_is_not_judged`).
+- [x] 6. `test_old_payment_without_hold_is_not_stale`: 보류가 없으면 결제 시각이 몇 주 전이어도 `DATA_STALE:subscriptions`가 뜨지 않는다.
+- [x] 7. Postgres 통합 테스트 `tests/integration/test_publish_metadata_integration.py`를 실제로 실행했다. 20개 모두 통과한다.
+
 ### Phase 4. SLO 문서와 ADR 마감 (architect)
 
 - 이미 코드에 있는 임계값을 게시 SLO 표로 정리한다: 지연(`stale_after_s` = 원천 주기 × 2), 실행 시간(`SLOW_RUN` 600초), 부분 게시(`PUBLISH_PARTIAL`), 연속 보류. 새 임계값을 만들지 않는다. 오류 예산은 계산하지 않는다.
@@ -187,6 +208,8 @@ Dashboard(Metabase)는 Serving 파일(`Commerce Mart Serving`) 하나만 읽는�
 - R-14 Runbook에 `DATA_STALE:<domain>`과 연속 보류 횟수 읽는 법을 더한다.
 
 **완료조건**: "검증하지 못한 것"과 범위 밖 항목마다 이유가 한 줄씩 있다.
+
+**진행 (2026-11-12, architect)**: `docs/reference/publish-slo.md` 신규, ADR 021(R3 표현, Validation F·G·H·경계 단언·도메인 판정, 검증하지 못한 것, 실무 관행과의 거리, 범위 밖), R-14 Runbook(연속 보류 확인) 반영. Phase 5는 차단 그대로라 ADR "미보완"에 남겼다.
 
 ### Phase 5. Dashboard 지연·보류 표시 (uiux → frontend → uiux 검수 → reviewer)
 
