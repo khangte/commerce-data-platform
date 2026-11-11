@@ -3,6 +3,7 @@
 - 수집 시각: 2026-11-11T07:41Z (UTC), 실행 구간 06:10–07:35Z
 - 환경: branch `feat/publish-gate-split` (HEAD 1d687ac), `docker compose --profile airflow up -d` 로컬 실행, Airflow 3.3.1 LocalExecutor, dbt-core 1.12.3, dbt-duckdb 1.11.0
 - 관련 문서: [08-publish-gate-domain-split.md](../../08-publish-gate-domain-split.md) (DuckDB 재현 실험 수치)
+- 범위: 이 실환경 run에서 강제한 Canary는 `orders_publish_gate_canary` 하나다. `subscriptions`·`dim_subscription` Canary 실패(하위 28개 Node 건너뜀 포함)는 재현 실험 `tests/reliability/test_domain_gate_experiment.py` A·E에서 확인했고, 여기서는 다시 돌리지 않았다.
 
 ## 시나리오
 
