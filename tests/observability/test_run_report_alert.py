@@ -29,3 +29,16 @@ def test_alert_failures_keeps_order_and_handles_empty():
     assert alert_failures(
         ["DBT_TEST_WARN", "PUBLISH_PARTIAL:orders", "DATA_STALE", "DATA_STALE:orders"]
     ) == ["PUBLISH_PARTIAL:orders", "DATA_STALE:orders"]
+
+
+def test_view_sql_alert_prefixes_match_alert_failure_prefixes():
+    """운영 View의 alert_codes 접두사가 ALERT_FAILURE_PREFIXES와 정확히 같다."""
+    import re
+
+    from src.common.database import PROJECT_ROOT
+    from src.observability.run_report import ALERT_FAILURE_PREFIXES
+
+    sql = (PROJECT_ROOT / "sql/metadata/007_create_warehouse_run_report_views.sql").read_text()
+    prefixes = re.findall(r"starts_with\(code, '([^']*)'\)", sql)
+    assert sorted(prefixes) == sorted(ALERT_FAILURE_PREFIXES)
+    assert " LIKE " not in sql.upper()

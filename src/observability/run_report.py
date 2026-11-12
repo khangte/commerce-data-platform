@@ -289,7 +289,7 @@ def _probe_files(settings, summary, context, warehouse_paths, serving_paths, now
 
 
 def record_run_report(settings: PostgresSettings, report: dict) -> None:
-    """동일 DagRun의 기록을 갱신하고 저장 실패는 로그만 남긴다."""
+    """동일 DagRun의 기록을 갱신하고 운영 View를 적용한다. 저장·적용 실패는 로그만 남긴다."""
     try:
         with settings.pipeline_connection() as connection:
             apply_sql_file(connection, "sql/metadata/006_create_warehouse_run_reports.sql")
@@ -309,3 +309,9 @@ def record_run_report(settings: PostgresSettings, report: dict) -> None:
             )
     except Exception as error:  # noqa: BLE001 - 수집·기록 장애를 DAG 밖으로 전파하지 않는다.
         print(f"RUN_REPORT_WRITE_FAILED: {error}")
+    # View 적용은 기록과 다른 Transaction이다. 실패해도 기록은 남고 DAG도 실패하지 않는다.
+    try:
+        with settings.pipeline_connection() as connection:
+            apply_sql_file(connection, "sql/metadata/007_create_warehouse_run_report_views.sql")
+    except Exception as error:  # noqa: BLE001 - 운영 화면용 View 장애를 DAG 밖으로 전파하지 않는다.
+        print(f"RUN_REPORT_VIEW_APPLY_FAILED: {error}")

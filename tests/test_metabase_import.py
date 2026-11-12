@@ -30,6 +30,7 @@ def importer(tmp_path, monkeypatch):
     monkeypatch.setattr(module, "PostgresSettings", SimpleNamespace(
         from_environment=Mock(return_value=object()),
     ), raising=False)
+    monkeypatch.setattr(module, "database_engine", Mock(return_value="duckdb"))
     monkeypatch.setattr(module, "check_serving_freshness", Mock(
         return_value=ServingFreshness(2, "e1", "p1", "p1"),
     ), raising=False)
@@ -219,3 +220,31 @@ def test_code_defect_in_export_is_not_swallowed(importer, monkeypatch):
     (importer.EXPORT_DIR / "card-49.json").write_text(json.dumps({"id": 49, "database_id": 2}))
     with pytest.raises(KeyError):
         importer.main(["49"])
+
+
+def test_apply_skips_freshness_for_postgres_database(importer, monkeypatch):
+    """운영 Dashboard의 Postgres 연결 카드는 Serving 검사 없이 반영하고 DuckDB 연결만 검사한다."""
+    exports, live, transport = prepare_cards(importer, monkeypatch, (49, 61))
+    for card in (exports[61], live[61]):
+        card["database_id"] = card["dataset_query"]["database"] = 3
+    (importer.EXPORT_DIR / "card-61.json").write_text(json.dumps(exports[61]))
+    importer.database_engine.side_effect = lambda base, key, database_id: (
+        "postgres" if database_id == 3 else "duckdb"
+    )
+    assert importer.main(["49", "61", "--apply"]) == 0
+    assert [call.args[3] for call in importer.check_serving_freshness.call_args_list] == [2]
+    assert [call.args[0].get_method() for call in transport.call_args_list] == [
+        "GET", "GET", "PUT", "PUT",
+    ]
+
+
+def test_database_engine_reads_metabase_database(monkeypatch):
+    """DB 연결 조회는 GET 한 번으로 엔진 이름을 읽는다."""
+    spec = importlib.util.spec_from_file_location("metabase_import_real", SCRIPT_PATH)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    transport = Mock(return_value=BytesIO(b'{"engine": "postgres", "details": {}}'))
+    monkeypatch.setattr(module, "urlopen", transport)
+    assert module.database_engine("http://mb.test", "k", 3) == "postgres"
+    request = transport.call_args.args[0]
+    assert (request.get_method(), request.full_url) == ("GET", "http://mb.test/api/database/3")

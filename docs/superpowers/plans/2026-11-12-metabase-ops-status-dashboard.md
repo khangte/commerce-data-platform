@@ -161,12 +161,38 @@ graph LR
 
 완료조건:
 
-1. Postgres 통합 테스트: `metabase_ops_ro`로 View 2개를 읽을 수 있고 `warehouse_run_reports`·`mart_publish_runs`는 권한 오류가 난다.
-2. 통합 테스트: 판정이 다른 기록 4건(정상, `PUBLISH_FAILED`, `ROW_COUNT_DROP:<relation>`만, `SLOW_RUN`만)에서 `alert_codes`와 `status`가 §3.2 표와 같다. `recorded_at`이 오래된 행은 `확인 불가`다.
-3. 통합 테스트: 도메인 값이 없는 기록은 도메인 View에 행이 없고 오류도 없다.
-4. 단위 테스트: View SQL의 접두사가 `ALERT_FAILURE_PREFIXES`와 같다.
-5. 기존 Run report 테스트와 Metabase 가져오기 테스트가 통과한다. `uv run pytest`, Ruff 통과.
-6. `record_run_report`의 실패 처리(저장 실패는 로그만)가 그대로다. View 적용 실패가 DAG를 실패시키지 않는다.
+- [x] 1. Postgres 통합 테스트: `metabase_ops_ro`로 View 2개를 읽을 수 있고 `warehouse_run_reports`·`mart_publish_runs`는 권한 오류가 난다.
+   - 결과(backend, 2026-11-12): `test_ops_role_reads_only_views` 통과. `metabase_ops_ro`로 View 2개 SELECT 성공, 두 Table은 `InsufficientPrivilege`. 같은 Role의 `information_schema.tables`에는 View 2개만 보인다.
+- [x] 2. 통합 테스트: 판정이 다른 기록 4건(정상, `PUBLISH_FAILED`, `ROW_COUNT_DROP:<relation>`만, `SLOW_RUN`만)에서 `alert_codes`와 `status`가 §3.2 표와 같다. `recorded_at`이 오래된 행은 `확인 불가`다.
+   - 결과: `test_status_and_alert_codes` 통과. 정상 → `정상`, `PUBLISH_FAILED` → `알림 대상`(`alert_codes = PUBLISH_FAILED`), `ROW_COUNT_DROP:facts.fct_order` → `알림 대상`, `SLOW_RUN` → `판정 있음`, 1,300초 전 기록과 `stale_after_s` NULL 기록 → `확인 불가`.
+- [x] 3. 통합 테스트: 도메인 값이 없는 기록은 도메인 View에 행이 없고 오류도 없다.
+   - 결과: `test_domain_view_rows` 통과. `domain_lag_s`가 없거나 JSON null인 기록은 행이 없고, 값이 있는 기록은 도메인별 1행(NULL 지연은 NULL 그대로)이다.
+- [x] 4. 단위 테스트: View SQL의 접두사가 `ALERT_FAILURE_PREFIXES`와 같다.
+   - 결과: `test_view_sql_alert_prefixes_match_alert_failure_prefixes` 통과. 접두사는 `LIKE`가 아니라 `starts_with()`로 쓴다(`LIKE`의 `_`는 임의 한 글자라서). 테스트는 `starts_with` 접두사 집합이 `ALERT_FAILURE_PREFIXES`와 같고 SQL에 `LIKE`가 없음을 검사한다.
+- [x] 5. 기존 Run report 테스트와 Metabase 가져오기 테스트가 통과한다. `uv run pytest`, Ruff 통과.
+   - 결과: `uv run pytest` 862 통과·151 건너뜀, `RUN_POSTGRES_INTEGRATION=1` Run report·View 통합 14 통과, `uv run ruff check .` 통과.
+- [x] 6. `record_run_report`의 실패 처리(저장 실패는 로그만)가 그대로다. View 적용 실패가 DAG를 실패시키지 않는다.
+   - 결과: 007 적용은 기록 Insert 뒤 별도 연결·Transaction·`try`에서 돈다. 실패하면 `RUN_REPORT_VIEW_APPLY_FAILED: ...`만 출력하고 기록은 남는다(`test_view_apply_failure_keeps_record_and_does_not_raise`). 저장 실패의 `RUN_REPORT_WRITE_FAILED` 처리는 그대로다.
+
+#### 파일·폴더별 변경 요약 (backend, 2026-11-12)
+
+| 파일 | 변경 |
+| ---- | ---- |
+| `sql/metadata/007_create_warehouse_run_report_views.sql` | 신규. `warehouse_run_report_status`(실행 1행, §3.2 Column·`status` 규칙)와 `warehouse_run_report_domain_status`(실행 × 도메인)를 `CREATE OR REPLACE VIEW`로 만든다. 알림 접두사는 `starts_with()`. `domain_lag_s`·`held_domains`가 객체·배열이 아니면 행·값을 만들지 않는다. Role `metabase_ops_ro`가 있을 때만 `CONNECT`·`USAGE`·View 2개 `SELECT`를 준다. **Role 이름은 SQL에 고정**이라 `METABASE_OPS_DB_USER`를 바꾸면 권한이 안 붙는다 |
+| `src/observability/run_report.py` | `record_run_report`가 기록 Insert 뒤 별도 연결에서 007을 적용한다. 실패는 `RUN_REPORT_VIEW_APPLY_FAILED` 로그만 남긴다 |
+| `sql/bootstrap/01-create-databases-and-roles.sh` | `create_role "$METABASE_OPS_DB_USER" "$METABASE_OPS_DB_PASSWORD"` 추가(새 Volume에서만 실행) |
+| `compose.yaml` | Postgres 서비스에 `METABASE_OPS_DB_USER`(기본 `metabase_ops_ro`)·`METABASE_OPS_DB_PASSWORD` 전달 |
+| `.env.example` | 위 두 변수와 "이름을 바꾸지 않는다" 주석 |
+| `scripts/metabase_import.py` | `database_engine()`이 `GET /api/database/{id}`로 엔진을 읽고, `--apply`에서 엔진이 `postgres`인 DB는 Serving 최신 여부 검사를 건너뛴다 |
+| `tests/integration/test_run_report_views_integration.py` | 신규. 완료조건 1~3 |
+| `tests/observability/test_run_report_alert.py` | 완료조건 4 |
+| `tests/observability/test_run_report.py` | 완료조건 6(View 적용 실패 격리) |
+| `tests/test_metabase_import.py` | Postgres 엔진 DB 검사 건너뜀, `database_engine` 요청 형태. Fixture는 기본 엔진을 `duckdb`로 둔다 |
+
+후속 확인:
+
+- 로컬 기존 Volume에는 backend가 `metabase_ops_ro`를 1회 생성하고 로컬 `.env`에 비밀번호를 넣었다. 기존 Volume용 명령의 문서화는 Phase 5(`metabase/README.md`).
+- `scripts/metabase_snapshot.py`는 Collection `(5, 6)`만 수집한다. Phase 3에서 새 Dashboard·Card를 이 Collection에 두거나 `SNAPSHOT_COLLECTION_IDS`를 갱신해야 Snapshot에 들어간다.
 
 ### Phase 3. 화면 (uiux 명세 → uiux 구현 → uiux 검수)
 

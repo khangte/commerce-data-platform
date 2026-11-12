@@ -3,7 +3,7 @@
 import uuid
 from datetime import UTC, datetime
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import MagicMock, Mock
 
 import pytest
 
@@ -318,3 +318,23 @@ def test_row_counts_probe_skips_without_publish_run(context, expected):
         'mart_row_counts': None, 'previous_mart_row_counts': None, 'full_refresh': expected,
     }
     settings.pipeline_connection.assert_not_called()
+
+
+def test_view_apply_failure_keeps_record_and_does_not_raise(healthy, monkeypatch, capsys):
+    """View 적용이 실패해도 기록은 이미 다른 연결에서 끝났고 예외는 밖으로 나가지 않는다."""
+    applied = []
+
+    def apply(connection, path):
+        """007 적용만 실패시킨다."""
+        applied.append(path)
+        if "007" in path:
+            raise RuntimeError("view broken")
+
+    monkeypatch.setattr(module, "apply_sql_file", apply)
+    settings = MagicMock()
+    module.record_run_report(settings, {**healthy, "ok": True, "failures": []})
+    assert [path.rsplit("/", 1)[1][:3] for path in applied] == ["006", "007"]
+    assert settings.pipeline_connection.call_count == 2
+    output = capsys.readouterr().out
+    assert "RUN_REPORT_VIEW_APPLY_FAILED: view broken" in output
+    assert "RUN_REPORT_WRITE_FAILED" not in output

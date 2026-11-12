@@ -31,6 +31,8 @@ create_role "$SOURCE_DB_USER" "$SOURCE_DB_PASSWORD"
 create_role "$AIRFLOW_DB_USER" "$AIRFLOW_DB_PASSWORD"
 create_role "$PIPELINE_DB_USER" "$PIPELINE_DB_PASSWORD"
 create_role "$METABASE_DB_USER" "$METABASE_DB_PASSWORD"
+# 운영 Dashboard 읽기 전용. 권한은 sql/metadata/007이 View 2개에만 준다.
+create_role "$METABASE_OPS_DB_USER" "$METABASE_OPS_DB_PASSWORD"
 
 create_database "$COMMERCE_SOURCE_DB" "$SOURCE_DB_USER"
 create_database "$AIRFLOW_METADATA_DB" "$AIRFLOW_DB_USER"

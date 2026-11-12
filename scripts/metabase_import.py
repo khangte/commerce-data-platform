@@ -47,6 +47,11 @@ def target_database(exported: dict, live: dict, card_id: int) -> int:
     return database
 
 
+def database_engine(base: str, api_key: str, database_id: int) -> str:
+    """Metabase DB 연결의 엔진 이름을 조회한다."""
+    return request_card(f"{base}/api/database/{database_id}", api_key)["engine"]
+
+
 def query_diff(card_id: int, live_query: dict, export_query: dict) -> str:
     """실제로 반영할 dataset_query의 차이를 통합 diff로 만든다."""
     live_lines = json.dumps(live_query, ensure_ascii=False, sort_keys=True, indent=2).splitlines()
@@ -92,6 +97,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.apply:
             settings = PostgresSettings.from_environment()
             for database_id in sorted(database_ids):
+                # 운영 Dashboard의 Postgres 연결(pipeline_metadata View)에는 Serving 파일이 없다.
+                if database_engine(base, api_key, database_id) == "postgres":
+                    continue
                 try:
                     freshness = check_serving_freshness(settings, base, api_key, database_id)
                 except HTTPError as error:
