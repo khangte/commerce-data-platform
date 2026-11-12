@@ -116,7 +116,8 @@ def test_summary_keeps_xcom_and_emits_json(healthy, capsys):
     function = next(node for node in ast.walk(tree)
                     if isinstance(node, ast.FunctionDef) and node.name == 'publish_run_summary')
     function.decorator_list = []
-    collector = Mock(return_value=healthy)
+    report = {**healthy, 'failures': []}
+    collector = Mock(return_value=report)
     recorder = Mock()
     namespace = {
         'PostgresSettings': SimpleNamespace(from_environment=Mock(return_value='settings')),
@@ -132,12 +133,14 @@ def test_summary_keeps_xcom_and_emits_json(healthy, capsys):
         'publish_status': 'SKIPPED', 'publish_error_type': None, 'changed_relations': [],
         'serving_export_status': 'NOT_REQUESTED', 'serving_export_id': None,
         'serving_row_counts': {}, 'metabase_repoint_status': 'NOT_REQUESTED',
-        'tests_warned': 0, 'held_domains': [],
+        'tests_warned': 0, 'held_domains': [], 'run_report_failures': [],
     }
-    collector.assert_called_once_with('settings', result, {'context': True}, 'warehouse', 'serving')
-    recorder.assert_called_once_with('settings', healthy)
+    # Run report에 넘기는 요약은 알림용 Key 없이 그대로다.
+    summary_sent = {key: value for key, value in result.items() if key != 'run_report_failures'}
+    collector.assert_called_once_with('settings', summary_sent, {'context': True}, 'warehouse', 'serving')
+    recorder.assert_called_once_with('settings', report)
     line = capsys.readouterr().out.strip()
-    assert json.loads(line.removeprefix('RUN_REPORT ')) == healthy
+    assert json.loads(line.removeprefix('RUN_REPORT ')) == report
     assert 'release_task >> summary' in source
 
     # Build가 있으면 warn 건수는 상태 Table 기록에서 온다.

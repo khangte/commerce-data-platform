@@ -569,3 +569,69 @@ def test_warehouse_full_refresh_param_defaults_to_false() -> None:
     """conf가 없는 원천 DAG 트리거에서도 전체 새로고침 기본값은 거짓이다."""
     source = (PROJECT_ROOT / "airflow/dags/warehouse_pipeline_dag.py").read_text()
     assert '\"full_refresh\": Param(False, type=\"boolean\"' in source
+
+
+def _warehouse_dag_block() -> ast.With:
+    """Warehouse DAG 파일의 `with DAG(...)` 본문을 AST로 꺼낸다."""
+    source = (PROJECT_ROOT / "airflow/dags/warehouse_pipeline_dag.py").read_text(encoding="utf-8")
+    return next(node for node in ast.parse(source).body if isinstance(node, ast.With))
+
+
+def test_domain_publish_alert_is_sole_leaf_below_summary_without_retries() -> None:
+    """알림 Task는 요약 Task 바로 아래의 유일한 Leaf이고 재시도하지 않는다."""
+    block = _warehouse_dag_block()
+    function = next(
+        node for node in block.body
+        if isinstance(node, ast.FunctionDef) and node.name == "domain_publish_alert_task"
+    )
+    decorator = function.decorator_list[0]
+    keywords = {kw.arg: ast.literal_eval(kw.value) for kw in decorator.keywords}
+    assert keywords == {"task_id": "domain_publish_alert", "retries": 0}
+
+    calls = [
+        node for node in ast.walk(block)
+        if isinstance(node, ast.Call) and getattr(node.func, "id", None) == "domain_publish_alert_task"
+    ]
+    assert len(calls) == 1
+    assert [arg.id for arg in calls[0].args] == ["summary"]
+    # 알림 호출 결과는 어디에도 연결되지 않아야 Leaf다.
+    statement = next(node for node in block.body if calls[0] in ast.walk(node))
+    assert isinstance(statement, ast.Expr) and statement.value is calls[0]
+    # 요약 결과의 하위는 알림 Task뿐이다(`release_task >> summary`의 오른쪽은 상위 연결).
+    wiring = [node for node in block.body if not isinstance(node, ast.FunctionDef)]
+    summary_uses = [
+        node for statement in wiring for node in ast.walk(statement)
+        if isinstance(node, ast.Name) and node.id == "summary" and isinstance(node.ctx, ast.Load)
+    ]
+    shifts = [node for statement in wiring for node in ast.walk(statement) if isinstance(node, ast.BinOp)]
+    downstream = [
+        use for use in summary_uses
+        if use is not calls[0].args[0] and not any(use is shift.right for shift in shifts)
+    ]
+    assert downstream == []
+
+
+class _StubAirflowFailException(Exception):
+    """테스트에서 Airflow 실패 예외를 대신한다."""
+
+
+def _domain_publish_alert():
+    """Airflow 없이 알림 Task 본문만 실행 가능한 함수로 꺼낸다."""
+    from src.observability.run_report import alert_failures
+
+    return _dag_task_function("warehouse_pipeline_dag.py", "domain_publish_alert_task", {
+        "AirflowFailException": _StubAirflowFailException, "alert_failures": alert_failures,
+    })
+
+
+@pytest.mark.parametrize("code", ["PUBLISH_PARTIAL:subscriptions", "PUBLISH_FAILED"])
+def test_domain_publish_alert_fails_on_alert_codes(code: str) -> None:
+    """부분 게시·전체 차단 판정이 있으면 그 코드를 실은 실패 예외를 던진다."""
+    with pytest.raises(_StubAirflowFailException, match=f"DOMAIN_PUBLISH_ALERT: .*{code}"):
+        _domain_publish_alert()({"run_report_failures": ["DBT_TEST_WARN", code]})
+
+
+@pytest.mark.parametrize("failures", [["DBT_TEST_WARN"], []])
+def test_domain_publish_alert_passes_without_alert_codes(failures: list[str]) -> None:
+    """알림 대상이 아닌 판정만 있거나 판정이 없으면 성공한다."""
+    _domain_publish_alert()({"run_report_failures": failures})

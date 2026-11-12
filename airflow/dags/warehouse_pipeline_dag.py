@@ -28,7 +28,7 @@ from src.ingestion.bronze.verification import verify_bronze_commit
 from src.ingestion.control.batch import BatchIdentity
 from src.ingestion.errors import classify_error, is_retryable
 from src.ingestion.service import TableIngestionRequest, ingest_table
-from src.observability.run_report import collect_run_report, record_run_report
+from src.observability.run_report import alert_failures, collect_run_report, record_run_report
 from src.serving.export import ServingPaths, export_serving_mart
 from src.serving.metabase_repoint import (
     metabase_repoint_summary_status,
@@ -326,7 +326,18 @@ with DAG(
         )
         print("RUN_REPORT", json.dumps(report, default=str))
         record_run_report(settings, report)
-        return summary
+        return {**summary, "run_report_failures": report["failures"]}
+
+    @task(task_id="domain_publish_alert", retries=0)
+    def domain_publish_alert_task(summary: dict) -> None:
+        """Run report 기록 뒤 부분 게시·도메인 지연·전체 차단 판정이 있으면 DagRun을 실패로 드러낸다.
+
+        게시·내보내기·재지정이 끝난 뒤의 Leaf라 게시 결과는 바꾸지 않는다. 같은 XCom을 다시 읽을 뿐이라
+        재시도하지 않는다.
+        """
+        codes = alert_failures(summary["run_report_failures"])
+        if codes:
+            raise AirflowFailException(f"DOMAIN_PUBLISH_ALERT: {', '.join(codes)}")
 
     run_info = initialize_run()
     lease_token = acquire_source_snapshot_lease(run_info)
@@ -360,3 +371,4 @@ with DAG(
     extract_results >> verification >> build >> dbt_result >> publish >> serving_export >> metabase_repoint
     summary = publish_run_summary(run_info, verification, build, publish, serving_export, metabase_repoint)
     release_task >> summary
+    domain_publish_alert_task(summary)
