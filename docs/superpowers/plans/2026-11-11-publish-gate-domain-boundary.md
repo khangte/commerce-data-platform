@@ -219,7 +219,7 @@ Dashboard(Metabase)는 Serving 파일(`Commerce Mart Serving`) 하나만 읽는�
 
 - Sales·Product·Customer 세 Dashboard의 맨 위에 같은 `도메인 게시 상태` 표를 배치한다. Customer는 두 도메인을 함께 사용하고 나머지 화면에서도 데이터의 부분 게시 여부를 확인할 수 있어야 한다. 기존 필터와 연결하지 않는다.
 - 데이터는 `Commerce Mart Serving`의 `serving_domain_status`만 읽는다. `orders`(주문), `subscriptions`(구독)를 각각 한 행으로 표시한다.
-- 열은 `도메인`, `게시 상태`, `마지막 정상 게시 시각 (UTC)`, `연속 보류 횟수`다. `held=true`는 `보류`, `false`는 `정상`으로 문자 표시한다. 보류 시 이전 게시 데이터가 표시된다는 설명을 카드에 둔다. 색상만으로 상태를 구분하지 않는다.
+- 열은 `도메인`, `게시 상태`, `마지막 정상 게시 시각 (UTC)`, `마지막 사건 시각 (UTC)`, `연속 보류 횟수`다. `held=true`는 `보류`, `false`는 `정상 (보류 없음)`으로 문자 표시한다. 보류 시 이전 게시 데이터가 표시된다는 설명을 카드에 둔다. 색상만으로 상태를 구분하지 않는다.
 - 시각은 `refreshed_at`(마지막 비보류 게시 시각)이며 `as_of`(마지막 사건 시각)가 아니다. 시각이 없으면 `확인 불가`로 표시하고 정상 게시 시각을 추측하지 않는다. 이 표는 임계값에 따른 지연 판정을 제공하지 않는다.
 - 표의 빈 결과나 질의 오류가 정상으로 보이지 않아야 한다. 좁은 화면에서도 도메인·상태와 시각을 읽을 수 있어야 하며 필요하면 표를 가로 스크롤한다.
 
@@ -238,8 +238,17 @@ Dashboard(Metabase)는 Serving 파일(`Commerce Mart Serving`) 하나만 읽는�
 
 **추가 검증 (2026-11-12):** 실제 전체 정상 Serving 내보내기 `ec871ab0-6bb6-428e-9538-a9ff18cce6c6`를 읽는 Customer Dashboard를 Playwright MCP로 응답 대체 없이 캡처했다. 주문·구독 모두 정상, 연속 보류 0회, 마지막 정상 게시 시각 `2026-11-12 02:25:47` UTC다. Sales·Product·Customer의 전체 Dashboard 캡처 스크립트도 모든 카드 완료 후 성공했다.
 
+**추가 화면 개선 완료조건 (2026-11-12)**
+
+- [x] Sales·Customer 필터의 적용 범위와 현재·전체 기간 기준을 제목에 표시하고, 주문 시점 등급별 서로 다른 단위의 지표를 표의 별도 열로 분리했다.
+- [x] 배송 완료 상품 상위 10개를 식별 가능한 표로 표시하고 구독 전이는 사건별 막대와 읽을 수 있는 범례로 표시했다.
+- [x] 상태 표에 사건 시각과 예상 도메인 누락 표시를 추가하고, 보류 없음이 전체 실행 성공이나 최신성 판정이 아님을 설명했다. 카드 43–45 및 운영 경보 카드는 사용자 범위 결정에 따라 변경하지 않았다.
+- [x] 세 Dashboard와 카드 변경을 Metabase에 반영하고 실제 화면·쿼리 완료를 검증했다.
+
 **파일·폴더별 변경 요약**
 
+- `metabase/export/card-{40,41,42,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60}.json`, `metabase/export/dashboard-{2,3,4}.json`: 카드·화면 이중 언어 제목, 필터 범위, 지표별 표, 상품 상위 10개 및 구독 전이 표시, 도메인 상태 열과 누락 처리를 반영했다.
+- `docs/bi/dashboards.md`, `docs/bi/screenshots/dashboard-{2,3,4}-scope-2026-11-12.png`: 필터 범위·지표 분모·날짜 기준, 보류 사례 이력과 실제 화면 증적을 기록했다.
 - `metabase/export/card-60.json`, `metabase/export/dashboard-{2,3,4}.json`: 상태 카드 SQL·문구와 세 Dashboard 배치를 저장했다.
 - `docs/bi/dashboards.md`, `docs/bi/screenshots/domain-status-{held,mobile,normal-fixture}-2026-11-12.png`: 표시 의미와 검증 출처·화면 증적을 기록했다.
 - `docs/bi/screenshots/domain-status-normal-real-2026-11-12.png`, `docs/bi/dashboards.md`, `docs/adr/021-split-publish-gate-by-domain.md`: 실제 전체 정상 게시 화면과 출처를 추가하고 기존 미검증 설명을 갱신했다.

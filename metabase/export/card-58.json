@@ -11,10 +11,10 @@
       }
     ]
   },
-  "description": "주문 발생 시점의 거래 실적 등급별 고객 수 추이입니다. rpt_membership_tier_performance와 같은 주문 Fact·고객 SCD2 결합을 날짜 축으로 펼칩니다. 현재 등급 분포와 혼용하지 않습니다.",
+  "description": "주문 발생 시점의 거래 실적 등급별 고객 수 추이입니다. rpt_membership_tier_performance와 같은 주문 Fact·고객 SCD2 결합을 날짜 축으로 펼칩니다. 현재 등급 분포와 혼용하지 않습니다. 주문한 고객을 날짜별로 중복 제거한 값이며 날짜·등급을 넘어 합산할 수 없다. UTC 주문일 필터가 적용되지 않는다.",
   "display": "line",
   "id": 58,
-  "name": "Membership Tier Trend (주문 시점)",
+  "name": "Daily Ordering Customers by Tier (주문 시점 등급별 일별 고객 수 · 전체 기간)",
   "parameter_mappings": [],
   "parameters": [],
   "type": "question",

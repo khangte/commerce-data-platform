@@ -5,17 +5,16 @@ Metabase Collection `Commerce Mart 대시보드`의 Dashboard ID는 Sales `2`, P
 | Dashboard | 카드 | Source Model | Filter / 기준 시점 |
 | --- | --- | --- | --- |
 | Sales | Daily GMV, Daily Orders, Daily AOV | `fct_order`, `dim_date` | UTC 주문일. 주문 상태는 Orders에만 적용하며 GMV·AOV는 항상 `DELIVERED`다. |
-| Product | Category GMV, Top Products, Sales Volume | `fct_order_item`, `dim_product`, `dim_date` | UTC 주문일. 주문 Fact를 결합하지 않는다. |
+| Product | Category GMV Top 10, Product GMV Top 10, Product Item Count Top 10 | `fct_order_item`, `dim_product`, `dim_date` | UTC 주문일. 주문 Fact를 결합하지 않으며 배송 완료 항목만 집계한다. |
 | Customer | New/Repeat, Subscription Status Trend·Current Distribution, Membership Tier 집계·추이, Region, Current Tier | `rpt_customer_order_activity_daily`, `rpt_subscription_funnel_daily`, `rpt_membership_tier_performance`, `dim_subscription`, `fct_order`, `dim_customer`, `dim_date` | New/Repeat·구독 추이·등급·지역은 사건 발생 시점, Current Tier·Current Subscription Status는 현재 시점이다. Region은 주별 주문 수 내림차순 막대 차트다. |
 
-세 Dashboard 맨 위의 card 60 `도메인 게시 상태`는 `serving_domain_status`(도메인별 게시 상태)에서
-주문(`orders`)·구독(`subscriptions`)의 게시 상태, 마지막 정상 게시 시각(UTC), 연속 보류 횟수를
+세 Dashboard 맨 위의 card 60 `Domain Publish State (도메인 게시 상태 · 필터 제외)`는 `serving_domain_status`(도메인별 게시 상태)에서
+주문(`orders`)·구독(`subscriptions`)의 게시 상태, 마지막 정상 게시 시각과 마지막 사건 시각(UTC), 연속 보류 횟수를
 표시한다. `보류`는 해당 도메인이 이전 게시 데이터를 사용한다는 뜻이다. 마지막 정상 게시 시각은
-`refreshed_at`(마지막 비보류 게시 시각)이며 `as_of`(마지막 사건 시각)가 아니다. 상태나 시각을
-알 수 없으면 `확인 불가`로 표시한다. 이 표는 지연 임계값을 판정하지 않으며 Dashboard 날짜·주문
+`refreshed_at`(마지막 비보류 게시 시각)이며 `as_of`(마지막 사건 시각)가 아니다. 예상 도메인 행이 없거나 상태·시각을 알 수 없으면 `확인 불가`로 표시한다. `정상 (보류 없음)`은 보류가 없다는 뜻이며 최신성이나 마지막 실행의 성공을 보장하지 않는다. 이 표는 지연 임계값을 판정하지 않으며 Dashboard 날짜·주문
 상태 필터의 영향을 받지 않는다. 모바일에서는 표를 가로로 스크롤해 남은 열을 볼 수 있다.
 
-2026-11-12 검증: 최신 게시 `e34cbcfc-6ea1-4aee-9eed-97bb927af43b`, 내보내기
+2026-11-12 보류 사례 검증: 당시 게시 `e34cbcfc-6ea1-4aee-9eed-97bb927af43b`, 내보내기
 `106c5954-1910-4d7a-8b9b-fece9fd30fea`에서 주문 정상·구독 2회 연속 보류를 확인했다.
 [보류 화면](screenshots/domain-status-held-2026-11-12.png)과
 [모바일 화면](screenshots/domain-status-mobile-2026-11-12.png)은 실제 Serving 결과다.
@@ -90,21 +89,31 @@ Customer는 기존 카드 너비의 행별 합이 24칸보다 작아 화면 왼�
 재시작했다. 당시 Serving `facts.fct_order`는 99,541행, 최근 2일 주문은 30건이었다.
 이전 전체기간·최근 기간 PNG는 모두 화면 이력으로 보존한다.
 
-Customer Dashboard의 card 56 `Region Analysis (주문 시점)`은 `fct_order.customer_state`별
+Customer Dashboard의 card 56 `Orders by Region (주문 시점 주별 주문 수)`은 `fct_order.customer_state`별
 `order_count`를 내림차순으로 표시하는 `bar`다. Brazil 주 코드에 대응하는 기본 Region Map이 없는
 Metabase 환경에서도 같은 사건 시점 지역 분포를 화면에 안정적으로 표시하도록 `map`을 사용하지 않는다.
 
-card 54 `Subscription Status Trend`는 `metrics.rpt_subscription_funnel_daily`의 이벤트 날짜와
-계약 시작·활성·결제 실패·해지 신청·이탈·재가입 측정값을 line 차트로 표시한다. 논리 시각
+card 54 `Subscription Transition Events (구독 상태 전이 건수 · 전체 기간)`는 `metrics.rpt_subscription_funnel_daily`의 이벤트 날짜와
+계약 시작·활성·결제 실패·해지 신청·이탈·재가입 측정값을 막대 차트로 표시한다. 논리 시각
 2026-09-10까지의 재증적은 구독 계약 4건과 실패 Profile·재시도로 생성한 결제 2건을 포함해 빈 차트가 아닌 상태 전이 시계열을
 확인했다. 정규 자동 청구는 첫 계약의 예정일인 2026-10-04 이후라 이번 구간에는 없다.
 
-card 59 `Current Subscription Status Distribution`은
+card 59 `Current Subscription Status (현재 구독 계약 상태 분포 · 날짜 필터 제외)`는
 `metabase/queries/dashboard_subscription_status_distribution.sql`에서 `is_current = true`인
 계약 Version만 상태별로 세는 bar다. 현재 시점 계약 상태 분포이므로, card 54의 상태 전이 이벤트
 퍼널 시계열과 혼용하지 않는다.
 
-card 58 `Membership Tier Trend (주문 시점)`은
+card 58 `Daily Ordering Customers by Tier (주문 시점 등급별 일별 고객 수 · 전체 기간)`는
 `metabase/queries/dashboard_membership_tier_trend.sql`의 날짜별 거래 실적 등급 고객 수를 line 차트로
 표시한다. `rpt_membership_tier_performance`와 동일하게 주문 Fact와 주문 시점 고객 SCD2 버전을 결합하되,
-날짜 축으로 펼친다. 따라서 card 55의 등급별 주문·GMV 집계 및 card 57의 현재 등급 분포와 혼용하지 않는다.
+날짜 축으로 펼친다. 따라서 card 55의 등급별 주문·GMV 집계 및 card 57의 현재 등급 분포와 혼용하지 않는다. 날짜별 고객 수는 서로 다른 날짜나 등급을 넘어 합산하지 않는다.
+
+## 2026-11-12 화면 범위 개선
+
+- 제목은 `English (한국어)` 형식을 사용한다. 변경 금지 대상으로 지정된 독립 카드 43–45는 기존 제목과 정의를 보존했다.
+- Sales의 주문 상태 필터는 일별 주문 수(card 47)에만 적용된다. 거래액(card 46)과 주문당 평균 거래액(card 48)은 배송 완료 주문 기준이며 평균의 분모는 같은 날의 배송 완료 주문 수다. 주문일 필터는 세 카드에 모두 적용된다.
+- Customer의 주문일 필터는 첫 주문 고객(52), 재구매 고객(53), 지역별 주문(56)에만 적용된다. 구독 전이(54), 주문 시점 등급 지표(55), 등급별 일별 고객(58)은 전체 기간이고 현재 등급(57)과 구독 상태(59)는 현재 시점이다. 첫 주문일은 알려진 주문 이력 기준이며 같은 날 후속 주문은 신규로 분류된다.
+- 등급 지표(55)는 단위가 다른 고객 수·주문 수·배송 완료 거래액·주문당 평균 거래액을 별도 열로 표시한다. 고객 수는 날짜나 등급 간 합산할 수 없다. 상품 화면은 배송 완료 항목 기준 상위 10개를 표로 보여 상품 식별자를 읽을 수 있다.
+- 도메인 상태의 마지막 사건 시각은 참고용이며 지연 임계값 판정이 아니다. 이 표만으로 전체 게시 실행 상태나 행 수 감소 경보를 판단할 수 없다.
+
+개선 후 실제 화면: [Sales](screenshots/dashboard-2-scope-2026-11-12.png), [Product](screenshots/dashboard-3-scope-2026-11-12.png), [Customer](screenshots/dashboard-4-scope-2026-11-12.png). Sales는 `CANCELED` 주문 상태와 2026-11-10~11 주문일 필터, Customer는 같은 주문일 필터를 적용한 화면이다. Product는 전체 기간이다. 세 화면 모두 실제 Serving 결과를 응답 대체 없이 캡처했다.

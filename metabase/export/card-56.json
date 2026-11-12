@@ -32,7 +32,7 @@
   "description": "사건 발생 시점. 주문이 발생했을 때 기록한 customer_state별 order_count를 집계한다.",
   "display": "bar",
   "id": 56,
-  "name": "Region Analysis (주문 시점)",
+  "name": "Orders by Region (주문 시점 주별 주문 수)",
   "parameter_mappings": [],
   "parameters": [],
   "type": "question",

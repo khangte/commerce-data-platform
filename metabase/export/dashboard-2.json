@@ -99,7 +99,7 @@
   ],
   "description": "배송 완료 GMV·AOV와 전체 주문 수를 UTC 날짜 기준으로 보여준다. 주문 상태 Filter는 Orders 카드에만 적용해 GMV 정의를 바꾸지 않는다.",
   "id": 2,
-  "name": "Sales Dashboard",
+  "name": "Sales Dashboard (매출 대시보드)",
   "parameters": [
     {
       "id": "3f961a4f-fd94-4ca0-bd0c-21db1dc718d1",
@@ -109,7 +109,7 @@
     },
     {
       "id": "72dce7b6-c440-4316-ab5f-e82a80526b7f",
-      "name": "주문 상태",
+      "name": "주문 상태 (일별 주문 수만)",
       "slug": "order-status",
       "type": "category"
     }

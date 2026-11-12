@@ -70,7 +70,7 @@
   "description": "배송 완료 GMV를 배송 완료 주문 수로 나눈 값. Mart Grain 계약 §3.1의 gross_order_value와 order_count를 그대로 집계한다.",
   "display": "scalar",
   "id": 41,
-  "name": "AOV (배송 완료)",
+  "name": "Delivered AOV (배송 완료 주문당 평균 거래액)",
   "parameter_mappings": [],
   "parameters": [],
   "type": "metric",

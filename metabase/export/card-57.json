@@ -11,10 +11,10 @@
       }
     ]
   },
-  "description": "현재 시점. dim_customer에서 is_current=true인 고객 버전만 사용한 현재 거래 실적 등급 분포다. 주문 시점 지역 분석과 결합하지 않는다.",
+  "description": "현재 시점. dim_customer에서 is_current=true인 고객 버전만 사용한 현재 거래 실적 등급 분포다. 주문 시점 지역 분석과 결합하지 않는다. 현재 시점 전체 분포이며 UTC 주문일 필터가 적용되지 않는다.",
   "display": "bar",
   "id": 57,
-  "name": "Current Membership Tier Distribution",
+  "name": "Current Membership Tier (현재 고객 등급 분포 · 날짜 필터 제외)",
   "parameter_mappings": [],
   "parameters": [],
   "type": "question",

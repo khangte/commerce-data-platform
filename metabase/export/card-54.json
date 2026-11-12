@@ -7,28 +7,28 @@
     "stages": [
       {
         "lib/type": "mbql.stage/native",
-        "native": "select event_date_key, contract_started_count, activated_count, payment_failed_count,\n    cancel_requested_count, churned_count, rejoined_count\nfrom metrics.rpt_subscription_funnel_daily\norder by event_date_key"
+        "native": "select event_date_key as \"사건일\", contract_started_count as \"계약 시작\", activated_count as \"활성\", payment_failed_count as \"결제 실패\", cancel_requested_count as \"해지 신청\", churned_count as \"이탈\", rejoined_count as \"재가입\"\nfrom metrics.rpt_subscription_funnel_daily\norder by event_date_key"
       }
     ]
   },
-  "description": "사건 발생 시점. 구독 상태 진입 일별 Mart Report를 다시 계산하지 않고 조회한다.",
-  "display": "line",
+  "description": "사건 발생 시점. 구독 상태 진입 일별 Mart Report를 다시 계산하지 않고 조회한다. 상태별 현재 계약 잔량이 아니라 일별 전이 사건 수다. UTC 주문일 필터는 적용되지 않는다.",
+  "display": "bar",
   "id": 54,
-  "name": "Subscription Status Trend",
+  "name": "Subscription Transition Events (구독 상태 전이 건수 · 전체 기간)",
   "parameter_mappings": [],
   "parameters": [],
   "type": "question",
   "visualization_settings": {
     "graph.dimensions": [
-      "event_date_key"
+      "사건일"
     ],
     "graph.metrics": [
-      "contract_started_count",
-      "activated_count",
-      "payment_failed_count",
-      "cancel_requested_count",
-      "churned_count",
-      "rejoined_count"
+      "계약 시작",
+      "활성",
+      "결제 실패",
+      "해지 신청",
+      "이탈",
+      "재가입"
     ]
   }
 }

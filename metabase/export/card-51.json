@@ -29,10 +29,10 @@
       }
     ]
   },
-  "description": "배송 완료(DELIVERED) 주문에 속한 항목만 집계한다. 상품 항목 Grain. 상품별 주문 상품 항목 행 수를 판매 수량으로 센다.",
-  "display": "bar",
+  "description": "배송 완료(DELIVERED) 주문에 속한 항목만 집계한다. 상품 항목 Grain. 상품별 주문 상품 항목 행 수를 판매 수량으로 센다. UTC 주문일 필터가 적용되며 배송 완료 주문 항목만 포함한다.",
+  "display": "table",
   "id": 51,
-  "name": "Sales Volume",
+  "name": "Product Item Count Top 10 (배송 완료 상품 항목 수 상위 10)",
   "parameter_mappings": [],
   "parameters": [],
   "type": "question",

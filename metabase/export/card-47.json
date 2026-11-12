@@ -45,10 +45,10 @@
       }
     ]
   },
-  "description": "사건 발생 시점. order_count를 UTC 주문일·선택한 주문 상태별로 합산한다.",
+  "description": "사건 발생 시점. order_count를 UTC 주문일·선택한 주문 상태별로 합산한다. 주문 상태 필터가 적용되는 유일한 카드다. 배송 완료 거래액·평균 거래액은 배송 완료 주문만 포함한다.",
   "display": "line",
   "id": 47,
-  "name": "Daily Orders",
+  "name": "Daily Orders (일별 주문 수 · 주문 상태 필터 적용)",
   "parameter_mappings": [],
   "parameters": [],
   "type": "question",

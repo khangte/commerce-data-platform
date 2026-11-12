@@ -11,10 +11,10 @@
       }
     ]
   },
-  "description": "현재 시점. dim_subscription에서 is_current=true인 계약 Version만 사용한 구독 상태별 계약 수 분포다. 상태 전이 퍼널 시계열과 혼용하지 않는다.",
+  "description": "현재 시점. dim_subscription에서 is_current=true인 계약 Version만 사용한 구독 상태별 계약 수 분포다. 상태 전이 퍼널 시계열과 혼용하지 않는다. 현재 시점 전체 분포이며 UTC 주문일 필터가 적용되지 않는다.",
   "display": "bar",
   "id": 59,
-  "name": "Current Subscription Status Distribution",
+  "name": "Current Subscription Status (현재 구독 계약 상태 분포 · 날짜 필터 제외)",
   "parameter_mappings": [],
   "parameters": [],
   "type": "question",

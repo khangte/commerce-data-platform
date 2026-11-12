@@ -22,7 +22,7 @@
       ],
       "row": 4,
       "size_x": 8,
-      "size_y": 4,
+      "size_y": 10,
       "visualization_settings": {}
     },
     {
@@ -46,7 +46,7 @@
       ],
       "row": 4,
       "size_x": 8,
-      "size_y": 4,
+      "size_y": 10,
       "visualization_settings": {}
     },
     {
@@ -70,7 +70,7 @@
       ],
       "row": 4,
       "size_x": 8,
-      "size_y": 4,
+      "size_y": 10,
       "visualization_settings": {}
     },
     {
@@ -88,7 +88,7 @@
   ],
   "description": "상품 항목 Grain만 사용한다. 카테고리·상품·판매 수량 카드에 UTC 주문일 Filter를 적용하며 주문 Fact를 결합하지 않는다.",
   "id": 3,
-  "name": "Product Dashboard",
+  "name": "Product Dashboard (상품 대시보드)",
   "parameters": [
     {
       "id": "9db1d201-e069-4d01-93e8-3a45a2f3fe73",

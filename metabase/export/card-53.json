@@ -29,10 +29,10 @@
       }
     ]
   },
-  "description": "사건 발생 시점. Mart Report의 customer_kind='repeat' 값을 UTC 주문일별로 그대로 조회한다.",
+  "description": "사건 발생 시점. Mart Report의 customer_kind='repeat' 값을 UTC 주문일별로 그대로 조회한다. 최초 주문일은 알려진 주문 이력 기준이다. 첫 주문과 같은 날의 후속 주문도 신규로 분류하며 날짜별 고객 수는 기간을 넘어 합산할 수 없다.",
   "display": "line",
   "id": 53,
-  "name": "Repeat Customers",
+  "name": "Repeat Purchasing Customers (일별 재구매 고객)",
   "parameter_mappings": [],
   "parameters": [],
   "type": "question",

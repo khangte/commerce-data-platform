@@ -148,11 +148,11 @@
   ],
   "description": "신규·재구매·구독 상태·거래 실적 등급·지역을 기준 시점별로 분리한다.",
   "id": 4,
-  "name": "Customer Dashboard",
+  "name": "Customer Dashboard (고객 대시보드)",
   "parameters": [
     {
       "id": "05f500a8-9a49-46ec-a25c-8aa4b6f69f26",
-      "name": "UTC 주문일",
+      "name": "UTC 주문일 (신규·재구매·지역만)",
       "slug": "utc-order-date",
       "type": "date/range"
     }

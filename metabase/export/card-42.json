@@ -31,7 +31,7 @@
   "description": "모든 주문의 order_count 합계. order_count는 주문 1건당 상수 1이며 Mart Grain 계약 §3.1의 Additive Measure다.",
   "display": "scalar",
   "id": 42,
-  "name": "Orders",
+  "name": "Orders (전체 주문 수)",
   "parameter_mappings": [],
   "parameters": [],
   "type": "metric",

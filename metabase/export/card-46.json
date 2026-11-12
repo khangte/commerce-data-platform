@@ -29,10 +29,10 @@
       }
     ]
   },
-  "description": "사건 발생 시점. 배송 완료 주문의 gross_order_value를 UTC 주문일별로 합산한다. 최근 일자 매출은 이후 실행에서 기존 주문 상태가 실행당 최대 한 단계씩 전이되어 배송 완료에 도달하면 증가할 수 있음.",
+  "description": "사건 발생 시점. 배송 완료 주문의 gross_order_value를 UTC 주문일별로 합산한다. 최근 일자 매출은 이후 실행에서 기존 주문 상태가 실행당 최대 한 단계씩 전이되어 배송 완료에 도달하면 증가할 수 있음. UTC 주문일 필터만 적용한다. 주문 상태 필터는 일별 주문 수에만 적용한다.",
   "display": "line",
   "id": 46,
-  "name": "Daily GMV (배송 완료)",
+  "name": "Daily Delivered GMV (일별 배송 완료 거래액)",
   "parameter_mappings": [],
   "parameters": [],
   "type": "question",

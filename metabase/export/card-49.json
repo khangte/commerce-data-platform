@@ -7,7 +7,7 @@
     "stages": [
       {
         "lib/type": "mbql.stage/native",
-        "native": "select coalesce(dim_product.category_name, '미분류') as category_name, sum(fct_order_item.line_gross_value) as category_gmv\nfrom facts.fct_order_item\ninner join dimensions.dim_product on fct_order_item.product_id = dim_product.product_id\ninner join dimensions.dim_date on fct_order_item.purchase_date_key = dim_date.date_key\nwhere fct_order_item.order_status = 'DELIVERED'\n[[and {{utc_order_date}}]]\ngroup by coalesce(dim_product.category_name, '미분류')\norder by category_gmv desc",
+        "native": "select coalesce(dim_product.category_name, '미분류') as category_name, sum(fct_order_item.line_gross_value) as category_gmv\nfrom facts.fct_order_item\ninner join dimensions.dim_product on fct_order_item.product_id = dim_product.product_id\ninner join dimensions.dim_date on fct_order_item.purchase_date_key = dim_date.date_key\nwhere fct_order_item.order_status = 'DELIVERED'\n[[and {{utc_order_date}}]]\ngroup by coalesce(dim_product.category_name, '미분류')\norder by category_gmv desc\nlimit 10",
         "template-tags": [
           {
             "dimension": [
@@ -29,10 +29,10 @@
       }
     ]
   },
-  "description": "배송 완료(DELIVERED) 주문에 속한 항목만 집계한다. 상품 항목 Grain. line_gross_value를 카테고리별로 합산하며 주문 Fact를 결합하지 않는다.",
-  "display": "bar",
+  "description": "배송 완료(DELIVERED) 주문에 속한 항목만 집계한다. 상품 항목 Grain. line_gross_value를 카테고리별로 합산하며 주문 Fact를 결합하지 않는다. UTC 주문일 필터가 적용되며 배송 완료 주문 항목만 포함한다.",
+  "display": "table",
   "id": 49,
-  "name": "Category GMV",
+  "name": "Category GMV Top 10 (배송 완료 카테고리 거래액 상위 10)",
   "parameter_mappings": [],
   "parameters": [],
   "type": "question",
