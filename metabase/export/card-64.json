@@ -1,0 +1,22 @@
+{
+  "collection_id": 6,
+  "database_id": 3,
+  "dataset_query": {
+    "database": 3,
+    "lib/type": "mbql/query",
+    "stages": [
+      {
+        "lib/type": "mbql.stage/native",
+        "native": "SELECT to_char(recorded_at AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS') AS \"판정 기록 시각 (UTC)\", dag_run_id AS \"실행 ID\", CASE WHEN ok IS TRUE THEN '성공' WHEN ok IS FALSE THEN '판정 있음' ELSE '확인 불가' END AS \"판정\", COALESCE(publish_status,'확인 불가') AS \"게시 상태\", COALESCE(alert_codes,'판정 없음') AS \"알림 대상 코드\", COALESCE(failure_codes,'판정 없음') AS \"전체 판정 코드\", COALESCE(round(dag_elapsed_s::numeric)::text,'확인 불가') AS \"실행 시간 (초)\" FROM public.warehouse_run_report_status ORDER BY recorded_at DESC,dag_run_id DESC LIMIT 20"
+      }
+    ]
+  },
+  "description": "최근 20건의 기록 당시 판정. 조회 시점에 오래된 기록을 확인 불가로 바꾸는 status는 사용하지 않는다.",
+  "display": "table",
+  "id": 64,
+  "name": "Recent Runs (최근 실행 이력)",
+  "parameter_mappings": [],
+  "parameters": [],
+  "type": "question",
+  "visualization_settings": {}
+}

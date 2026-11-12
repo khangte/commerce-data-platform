@@ -1,0 +1,30 @@
+{
+  "collection_id": 6,
+  "database_id": 3,
+  "dataset_query": {
+    "database": 3,
+    "lib/type": "mbql/query",
+    "stages": [
+      {
+        "lib/type": "mbql.stage/native",
+        "native": "WITH selected AS (\n SELECT * FROM public.warehouse_run_report_status\n [[WHERE dag_run_id = {{run_id}}]]\n ORDER BY recorded_at DESC, dag_run_id DESC LIMIT 1\n)\nSELECT x.\"항목\", x.\"값\" FROM (SELECT 1) seed LEFT JOIN selected s ON true\nCROSS JOIN LATERAL (VALUES\n (1,'선택 상태', CASE WHEN s.dag_run_id IS NULL THEN '기록 없음' WHEN s.status = '확인 불가' THEN '확인 불가 (지난 실행)' ELSE s.status END),\n (2,'실행 ID', COALESCE(s.dag_run_id,'확인 불가')),\n (3,'논리 시각 (UTC)', COALESCE(to_char(s.logical_date AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS'),'확인 불가')),\n (4,'판정 기록 시각 (UTC)', COALESCE(to_char(s.recorded_at AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS'),'확인 불가')),\n (5,'기록 후 경과 (초 · 조회 시점)', COALESCE(round(s.record_age_s::numeric)::text,'확인 불가')),\n (6,'게시 상태', COALESCE(s.publish_status,'확인 불가')),\n (7,'내보내기 상태', COALESCE(s.serving_export_status,'확인 불가')),\n (8,'Metabase 재지정 상태', COALESCE(s.metabase_repoint_status,'확인 불가')),\n (9,'판정 당시 Dashboard 최신 여부', CASE WHEN s.fresh IS TRUE THEN '최신' WHEN s.fresh IS FALSE THEN '최신 아님' ELSE '확인 불가' END)\n) x(ord,\"항목\",\"값\") WHERE s.dag_run_id IS NOT NULL OR x.ord = 1 ORDER BY x.ord",
+        "template-tags": [
+          {
+            "display-name": "실행 ID",
+            "id": "22092854-da68-465f-bdd3-7475e408e08e",
+            "name": "run_id",
+            "type": "text"
+          }
+        ]
+      }
+    ]
+  },
+  "description": "마지막으로 끝난 실행을 표시한다. 오래된 기록은 확인 불가이며 선택한 실행의 과거 값이 남는다. UTC.",
+  "display": "table",
+  "id": 61,
+  "name": "Last Run (마지막 실행)",
+  "parameter_mappings": [],
+  "parameters": [],
+  "type": "question",
+  "visualization_settings": {}
+}

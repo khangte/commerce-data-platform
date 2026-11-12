@@ -198,14 +198,28 @@ graph LR
 
 - Metabase DB 연결 `Pipeline Metadata` 등록(Role `metabase_ops_ro`), Card 4개, Dashboard 1개, `metabase/export/` Snapshot.
 
-완료조건:
+**화면 명세:** 상단에 실행 ID 선택과 기준 시각·사업 화면과의 차이 안내를 둔다. 기본값은 마지막으로 끝난 실행이다. 왼쪽에는 상태·시각·게시·내보내기·재지정·당시 최신 여부를 세로 표로 배치하고, 오른쪽에는 알림 대상과 전체 판정 코드(한 코드 한 행), 주문·도메인 지연과 임계값을 배치한다. 아래 최근 20건 이력은 조회 시각에 따라 변하는 `status`를 사용하지 않고 기록 당시 결과를 표시한다. 지연·코드는 기록 시점, 기록 후 경과와 오래된 기록 판정은 조회 시점 기준이다. 누락값은 확인 불가로 표시하며, 값이 없는 실행은 마지막 실행 카드에 기록 없음 한 행을 보인다. 모든 시간은 UTC다.
 
-1. 네 Card가 §3.3의 내용을 담고 View 2개만 읽는다. Card와 Dashboard 제목이 §3.3의 `English (한글)` 제목과 같다.
-2. 실행 ID Filter로 실제 기록 3건의 화면 증적이 있다: 정상 실행, 부분 게시 실행(`PUBLISH_PARTIAL:<domain>`), 전체 차단 실행(`PUBLISH_FAILED`). 세 종류 모두 기존 이력 28건 안에 있다.
-3. `확인 불가`(오래된 기록)와 `기록 없음`(빈 Table), NULL 칸의 화면 증적이 있다. 실제 기록으로 만들 수 없는 것은 대체 방법을 증적에 적는다.
-4. `ROW_COUNT_DROP`은 이력에 없다. Card SQL을 임시 데이터로 실행한 결과로 대신하고 그렇게 적는다.
-5. 화면에 UTC 표시, "판정 기록 시각 기준" 범위 표시, card 60과의 차이 안내가 있다.
-6. Metabase 관리 화면에서 새 연결에 View 2개만 보인다.
+**완료조건 (2026-11-12 uiux 구현·검수, architect 판정 대기):**
+
+- [x] 네 Card는 View 2개만 읽고 지정된 `English (한글)` 제목을 쓴다. Dashboard ID 5, Card ID 61–64, 연결 ID 3이다. 새 연결·카드는 수집 대상 Collection 6에 둔다.
+- [x] 실행 ID 선택으로 실제 [정상 실행](../../bi/screenshots/ops-status-success-2026-11-12.png)(`manual__2026-11-12T02:20:00+00:00`), [부분 게시](../../bi/screenshots/ops-status-partial-2026-11-12.png)(`verify_partial_on`), [전체 차단](../../bi/screenshots/ops-status-failed-2026-11-12.png)(`verify_partial_off`)을 확인했다. 조회 시 세 기록 모두 오래돼 상태는 확인 불가이며, 각각의 당시 게시 상태와 판정 코드는 그대로 보인다.
+- [x] 실제 오래된 기록·전체 차단 실행의 NULL 값을 확인했다. [390px 모바일 화면](../../bi/screenshots/ops-status-mobile-2026-11-12.png)의 기준 안내와 첫 카드를 확인했다. 빈 Table을 만들기 위해 실제 이력을 지우지 않고, [없는 실행 ID 선택](../../bi/screenshots/ops-status-no-match-2026-11-12.png)으로 동일한 빈 선택 결과를 화면에서 확인했다. 별도로 읽기 전용 Role의 PostgreSQL 임시 Table이 빈 상태에서 card 61 SQL이 기록 없음 한 행을 반환함을 확인했다.
+- [x] 실제 이력에 없는 `ROW_COUNT_DROP:facts.fct_order`를 PostgreSQL 임시 Table에만 넣어 card 62·64 SQL을 실행하고 알림 대상과 전체 판정에 모두 나타남을 확인했다. 실제 운영 이력은 변경하지 않았다.
+- [x] UTC, 판정 기록 시각 기준, 사업 Dashboard의 마지막 성공 Serving 상태와의 차이를 화면에 표시했다. 캐시 설정 `enable-query-caching=false`를 확인했다.
+- [x] [Metabase 관리 화면](../../bi/screenshots/ops-status-database-2026-11-12.png)과 DB metadata에서 `warehouse_run_report_status`, `warehouse_run_report_domain_status` 두 View만 보임을 확인했다. `metabase_ops_ro`로 연결한 결과도 동일하다.
+
+**파일·폴더별 변경 요약 (uiux, 2026-11-12)**
+
+| 파일·대상 | 변경 |
+| ---- | ---- |
+| `metabase/export/card-{61,62,63,64}.json` | 두 운영 View를 읽는 마지막 실행·판정 코드·지연·최근 이력 카드와 실행 ID 필터 쿼리 |
+| `metabase/export/dashboard-5.json` | Collection 6의 운영 Dashboard, 실행 ID 필터 3개 카드 매핑, 기준 안내와 배치 |
+| `docs/bi/screenshots/ops-status-{success,partial,failed,no-match,database,mobile}-2026-11-12.png` | 실제 기록 3건·없는 실행 선택·Metabase 관리 화면 증적 |
+| 이 계획서 | 화면 명세·완료조건·검증 이력과 변경 요약 |
+| Metabase 연결 `Pipeline Metadata` | PostgreSQL DB ID 3, `metabase_ops_ro` 사용. 연결 비밀은 Snapshot에 저장하지 않는다 |
+
+**검증 한계:** 화면의 기록 없음은 실제 빈 Table이 아니라 없는 실행 ID를 선택한 대체 증적이다. 정상·부분·차단 기록은 실제이나 조회 시점에 오래돼 `정상`/`알림 대상` 현재 상태 배지는 재현되지 않았다. SQL 임시 Table 결과는 실제 이력이나 화면 캡처가 아니다. 최근 이력의 긴 코드와 추가 행은 표 안에서 스크롤해야 한다. 모바일 카드도 추가 행을 보려면 표 안을 스크롤해야 한다. PostgreSQL이 중단되면 같은 DB를 앱 저장소로 쓰는 Metabase 자체가 열리지 않는다.
 
 ### Phase 4. 리뷰 (reviewer)
 

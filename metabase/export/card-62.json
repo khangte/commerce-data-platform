@@ -1,0 +1,30 @@
+{
+  "collection_id": 6,
+  "database_id": 3,
+  "dataset_query": {
+    "database": 3,
+    "lib/type": "mbql/query",
+    "stages": [
+      {
+        "lib/type": "mbql.stage/native",
+        "native": "WITH selected AS (\n SELECT * FROM public.warehouse_run_report_status [[WHERE dag_run_id = {{run_id}}]]\n ORDER BY recorded_at DESC, dag_run_id DESC LIMIT 1\n)\nSELECT x.kind AS \"구분\", x.code AS \"코드\" FROM (SELECT 1) seed LEFT JOIN selected s ON true\nCROSS JOIN LATERAL (\n SELECT 0 AS ord, '알림 대상' AS kind, unnest(CASE WHEN s.dag_run_id IS NULL THEN ARRAY['기록 없음'] ELSE string_to_array(COALESCE(s.alert_codes,'판정 없음'), ', ') END) AS code\n UNION ALL\n SELECT 1, '전체 판정', unnest(CASE WHEN s.dag_run_id IS NULL THEN ARRAY['기록 없음'] ELSE string_to_array(COALESCE(s.failure_codes,'판정 없음'), ', ') END)\n) x ORDER BY x.ord",
+        "template-tags": [
+          {
+            "display-name": "실행 ID",
+            "id": "22092854-da68-465f-bdd3-7475e408e08e",
+            "name": "run_id",
+            "type": "text"
+          }
+        ]
+      }
+    ]
+  },
+  "description": "기록된 전체 판정과 domain_publish_alert 대상 코드다. 외부 알림을 발송했다는 뜻은 아니다.",
+  "display": "table",
+  "id": 62,
+  "name": "Verdict Codes (판정 코드)",
+  "parameter_mappings": [],
+  "parameters": [],
+  "type": "question",
+  "visualization_settings": {}
+}

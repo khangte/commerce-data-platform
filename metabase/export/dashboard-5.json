@@ -1,0 +1,122 @@
+{
+  "collection_id": 6,
+  "dashcards": [
+    {
+      "card_id": 61,
+      "col": 0,
+      "dashboard_tab_id": null,
+      "id": 54,
+      "inline_parameters": [],
+      "parameter_mappings": [
+        {
+          "card_id": 61,
+          "parameter_id": "d98dfe37-2b5a-40af-9bd8-4b6479096996",
+          "target": [
+            "variable",
+            [
+              "template-tag",
+              "run_id"
+            ]
+          ]
+        }
+      ],
+      "row": 4,
+      "size_x": 12,
+      "size_y": 12,
+      "visualization_settings": {}
+    },
+    {
+      "card_id": 62,
+      "col": 12,
+      "dashboard_tab_id": null,
+      "id": 55,
+      "inline_parameters": [],
+      "parameter_mappings": [
+        {
+          "card_id": 62,
+          "parameter_id": "d98dfe37-2b5a-40af-9bd8-4b6479096996",
+          "target": [
+            "variable",
+            [
+              "template-tag",
+              "run_id"
+            ]
+          ]
+        }
+      ],
+      "row": 4,
+      "size_x": 12,
+      "size_y": 7,
+      "visualization_settings": {}
+    },
+    {
+      "card_id": 63,
+      "col": 12,
+      "dashboard_tab_id": null,
+      "id": 56,
+      "inline_parameters": [],
+      "parameter_mappings": [
+        {
+          "card_id": 63,
+          "parameter_id": "d98dfe37-2b5a-40af-9bd8-4b6479096996",
+          "target": [
+            "variable",
+            [
+              "template-tag",
+              "run_id"
+            ]
+          ]
+        }
+      ],
+      "row": 11,
+      "size_x": 12,
+      "size_y": 5,
+      "visualization_settings": {}
+    },
+    {
+      "card_id": 64,
+      "col": 0,
+      "dashboard_tab_id": null,
+      "id": 57,
+      "inline_parameters": [],
+      "parameter_mappings": [],
+      "row": 16,
+      "size_x": 24,
+      "size_y": 9,
+      "visualization_settings": {}
+    },
+    {
+      "card_id": null,
+      "col": 0,
+      "dashboard_tab_id": null,
+      "id": 58,
+      "inline_parameters": [],
+      "parameter_mappings": [],
+      "row": 0,
+      "size_x": 24,
+      "size_y": 4,
+      "visualization_settings": {
+        "text": "지연과 임계값은 판정 기록 시각 기준입니다. 기록 후 경과와 확인 불가는 조회 시점 기준입니다. 사업 대시보드의 도메인 게시 상태는 마지막으로 성공한 Serving 게시본이므로 실패한 마지막 실행을 반영하지 않을 수 있습니다.",
+        "virtual_card": {
+          "archived": false,
+          "display": "text",
+          "name": null,
+          "visualization_settings": {}
+        }
+      }
+    }
+  ],
+  "description": "마지막으로 끝난 실행의 판정 기록. 지연은 판정 기록 시각 기준이며 사업 Dashboard의 마지막 성공 Serving 상태와 다를 수 있다.",
+  "id": 5,
+  "name": "Pipeline Operations Status (Pipeline 운영 상태)",
+  "parameters": [
+    {
+      "id": "d98dfe37-2b5a-40af-9bd8-4b6479096996",
+      "name": "실행 ID (비우면 마지막 완료 실행)",
+      "slug": "run-id",
+      "type": "category"
+    }
+  ],
+  "tabs": [],
+  "width": "full"
+}

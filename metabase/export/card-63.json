@@ -1,0 +1,30 @@
+{
+  "collection_id": 6,
+  "database_id": 3,
+  "dataset_query": {
+    "database": 3,
+    "lib/type": "mbql/query",
+    "stages": [
+      {
+        "lib/type": "mbql.stage/native",
+        "native": "WITH selected AS (\n SELECT * FROM public.warehouse_run_report_status\n [[WHERE dag_run_id = {{run_id}}]]\n ORDER BY recorded_at DESC, dag_run_id DESC LIMIT 1\n)\nSELECT x.label AS \"대상\", COALESCE(round(x.lag_s::numeric)::text,'확인 불가') AS \"지연 (초)\", COALESCE(round(s.stale_after_s::numeric)::text,'확인 불가') AS \"임계값 (초)\", CASE WHEN x.ord = 1 THEN '해당 없음' ELSE COALESCE(x.holds::text,'확인 불가') END AS \"연속 보류 횟수\" FROM (SELECT 1) seed LEFT JOIN selected s ON true\nLEFT JOIN public.warehouse_run_report_domain_status od ON od.dag_run_id=s.dag_run_id AND od.domain='orders'\nLEFT JOIN public.warehouse_run_report_domain_status sd ON sd.dag_run_id=s.dag_run_id AND sd.domain='subscriptions'\nCROSS JOIN LATERAL (VALUES (1,'주문 데이터',s.data_lag_s,NULL::integer), (2,'주문 도메인',od.lag_s,od.consecutive_holds), (3,'구독 도메인',sd.lag_s,sd.consecutive_holds)) x(ord,label,lag_s,holds)\nORDER BY x.ord",
+        "template-tags": [
+          {
+            "display-name": "실행 ID",
+            "id": "22092854-da68-465f-bdd3-7475e408e08e",
+            "name": "run_id",
+            "type": "text"
+          }
+        ]
+      }
+    ]
+  },
+  "description": "지연과 임계값은 판정 기록 시각 기준이며 조회 시점에 재계산하지 않는다. 주문 데이터 지연에는 도메인 보류 횟수가 없다.",
+  "display": "table",
+  "id": 63,
+  "name": "Lag vs Threshold (지연과 임계값)",
+  "parameter_mappings": [],
+  "parameters": [],
+  "type": "question",
+  "visualization_settings": {}
+}
