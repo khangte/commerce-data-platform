@@ -330,7 +330,7 @@ with DAG(
 
     @task(task_id="domain_publish_alert", retries=0)
     def domain_publish_alert_task(summary: dict) -> None:
-        """Run report 기록 뒤 부분 게시·도메인 지연·전체 차단 판정이 있으면 DagRun을 실패로 드러낸다.
+        """Run report 기록 뒤 부분 게시·도메인 지연·전체 차단·행 수 급감 판정이 있으면 DagRun을 실패로 드러낸다.
 
         게시·내보내기·재지정이 끝난 뒤의 Leaf라 게시 결과는 바꾸지 않는다. 같은 XCom을 다시 읽을 뿐이라
         재시도하지 않는다.

@@ -23,12 +23,13 @@ from src.warehouse.publish_metadata import get_domain_holds
 RUN_LIMIT_SECONDS = 600
 STALE_AFTER_INTERVALS = 2
 ROW_COUNT_DROP_TOLERANCE = 0.01
-# 콜론이 있는 DATA_STALE:만 잡아 주문 사건 시각 기준 DATA_STALE은 제외한다.
-ALERT_FAILURE_PREFIXES = ("PUBLISH_PARTIAL:", "DATA_STALE:", "PUBLISH_FAILED")
+# 부분 게시·도메인 지연·전체 차단·행 수 급감. 콜론이 있는 DATA_STALE:만 잡아 주문 사건 시각 기준
+# DATA_STALE은 제외한다. 행 수 급감은 모든 Task가 성공한 채 잘못된 데이터가 게시됐을 수 있다는 신호다.
+ALERT_FAILURE_PREFIXES = ("PUBLISH_PARTIAL:", "DATA_STALE:", "PUBLISH_FAILED", "ROW_COUNT_DROP:")
 
 
 def alert_failures(failures: list[str]) -> list[str]:
-    """Run report 판정 중 Task 실패로 드러낼 부분 게시·도메인 지연·전체 차단 코드만 고른다."""
+    """Run report 판정 중 Task 실패로 드러낼 부분 게시·도메인 지연·전체 차단·행 수 급감 코드만 고른다."""
     return [code for code in failures if code.startswith(ALERT_FAILURE_PREFIXES)]
 
 

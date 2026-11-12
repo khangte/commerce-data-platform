@@ -6,18 +6,20 @@ from src.observability.run_report import alert_failures
 
 
 @pytest.mark.parametrize(
-    "code", ["PUBLISH_PARTIAL:subscriptions", "DATA_STALE:orders", "PUBLISH_FAILED"]
+    "code",
+    ["PUBLISH_PARTIAL:subscriptions", "DATA_STALE:orders", "PUBLISH_FAILED", "ROW_COUNT_DROP:fct_order"],
 )
 def test_alert_failures_selects_publish_gate_codes(code):
-    """부분 게시·도메인 지연·전체 차단 코드는 고른다."""
+    """부분 게시·도메인 지연·전체 차단·행 수 급감 코드는 고른다."""
     assert alert_failures([code]) == [code]
 
 
 @pytest.mark.parametrize(
-    "code", ["DATA_STALE", "DBT_TEST_WARN", "PUBLISH_SKIPPED", "SERVING_EXPORT_FAILED"]
+    "code",
+    ["DATA_STALE", "DBT_TEST_WARN", "PUBLISH_SKIPPED", "SERVING_EXPORT_FAILED", "SLOW_RUN", "NOT_FRESH"],
 )
 def test_alert_failures_ignores_other_codes(code):
-    """주문 사건 시각 지연·경고·Build 이전 실패·내보내기 실패는 고르지 않는다."""
+    """주문 사건 시각 지연·경고·Build 이전 실패·내보내기 실패·느린 실행·최신 아님은 고르지 않는다."""
     assert alert_failures([code]) == []
 
 
