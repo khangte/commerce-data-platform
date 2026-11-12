@@ -109,8 +109,10 @@ DAG에는 dbt var Param이 없다. DAG 게시까지 되돌리려면 `dbt/dbt_pro
 
 `error` 등급 Test 실패가 한 도메인(`orders` 또는 `subscriptions`)에만 귀속되면 그 도메인만 직전
 게시 값으로 되돌리고 나머지를 게시한다([ADR 021](../adr/021-split-publish-gate-by-domain.md)).
-이때 `dbt_build` Task는 **성공**으로 끝나고 상태는 `PUBLISHED`다. Task 실패 알림으로는 보이지
-않으므로 Run report로 확인한다. 보류 도메인의 Table은 직전 게시 시점, 나머지는 최신 시점이다.
+이때 `dbt_build` Task는 **성공**으로 끝나고 상태는 `PUBLISHED`다. 대신 마지막 Task
+`domain_publish_alert`가 실패하고 DagRun이 `failed`가 된다. 실패 메시지
+`DOMAIN_PUBLISH_ALERT: <판정 코드>`에 보류된 도메인이 있다. 이 실패는 게시가 안 됐다는 뜻이 아니다.
+나머지 도메인은 게시됐고 Serving 내보내기와 Metabase 재지정도 끝났다. 자세한 내용은 Run report로 확인한다. 보류 도메인의 Table은 직전 게시 시점, 나머지는 최신 시점이다.
 
 확인:
 

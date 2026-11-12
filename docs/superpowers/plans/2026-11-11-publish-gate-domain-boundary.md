@@ -51,7 +51,7 @@ Mart 13개를 `ref`와 `error` Test 공동 참조로 이으면 한 덩어리다.
 | 기본 CI | 하지 않는다. GitHub Actions를 만들지 않고 범위 밖으로 적는다 | 사용자 확정 |
 | Phase 구성 | 아래 §4의 5개. Phase 5는 2026-11-12 사용자 결정으로 uiux가 명세·구현·검수를 담당 | 사용자 확정 |
 | 도메인 선언 수단 | dbt `group` + `owner` | lead 선택 |
-| 알림 | 하지 않고 이유를 적는다 | lead 선택 |
+| 알림 | 하지 않고 이유를 적는다. **2026-11-12 변경:** 외부 채널 없이 DAG 마지막 Task의 실패로 드러낸다(`docs/superpowers/plans/2026-11-12-publish-gate-minimal-alert.md`) | lead 선택 |
 | 공유 Model Contract | dbt-duckdb 1.11이 지원할 때만 Phase 1에 포함 | lead 선택 |
 
 기각한 선택지: `catalog` 3번째 도메인(얻는 Test 4개), staging 실패의 도메인 귀속(원천이 깨진 채 게시하는 다른 성격의 결정), `meta`·`tags`로 선언(`meta`는 dbt가 뜻을 모르고 `tags`는 한 Model에 여러 개가 붙는다).
@@ -251,7 +251,7 @@ Dashboard(Metabase)는 Serving 파일(`Commerce Mart Serving`) 하나만 읽는�
 | ---- | ---- |
 | CI(GitHub Actions) | 사용자 결정. 기준 단언과 테스트는 로컬 `pytest`로 돌린다 |
 | Slim CI·`--defer` | CI가 없고, 전체 빌드가 수 초라 변경분만 빌드할 이유가 없다 |
-| 알림 | README의 의도적 비목표다. 걸 자리는 Run report의 `ok=false`다. 부분 게시 때 `dbt_build` Task는 성공하므로 Task 실패에 걸면 놓친다 |
+| 외부 알림 채널 | README의 의도적 비목표다. 2026-11-12에 Task `domain_publish_alert`의 실패로 드러내는 최소안만 했다. 부분 게시 때 `dbt_build` Task는 성공하므로 거기에 걸면 놓친다 |
 | 소유 조직 기준 도메인, 다중 Project | 소유자가 한 명이다 |
 | Table 단위 Snapshot 게시 | ADR 016 기준(1GB 또는 복사 60초)에 못 미친다(현재 44.5MB) |
 | dbt `source freshness` | Bronze를 dbt Source가 아니라 Macro로 읽는다. 가장 가까운 판정은 Run report `DATA_STALE`(게시본 `fct_order`의 최신 주문 시각 기준)이고 구독 원천에는 대응 판정이 없다. `NOT_FRESH`는 Metabase가 최신 Serving 내보내기를 보는지라 다른 판정이다(2026-11-12 정정) |

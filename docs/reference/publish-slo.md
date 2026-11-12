@@ -27,7 +27,19 @@
 - 마지막 비보류 게시를 찾지 못하면(이력 없음, 사슬 1,000건 초과) 값이 `null`이고 판정하지 않는다.
 - 같은 값이 Serving 파일의 `serving_domain_status`(`domain`, `as_of`, `refreshed_at`, `held`, `consecutive_holds`)에 있다. Sales·Product·Customer Dashboard 맨 위의 `도메인 게시 상태` 표(card 60)가 이 Table을 보여 준다([BI 문서](../bi/dashboards.md)). 표는 임계값 판정을 하지 않는다.
 
+## Task 실패로 드러나는 판정
+
+DAG의 마지막 Task `domain_publish_alert`는 Run report를 기록한 뒤 아래 판정이 하나라도 있으면 실패한다. DagRun 상태가 `failed`가 되고 메시지 `DOMAIN_PUBLISH_ALERT: <판정 코드>`가 남는다. 게시·Serving 내보내기·Metabase 재지정이 끝난 뒤에 돌아 게시 결과는 바꾸지 않는다.
+
+| 판정 | 뜻 |
+| ---- | ---- |
+| `PUBLISH_PARTIAL:<domain>` | 그 도메인이 보류된 부분 게시 |
+| `DATA_STALE:<domain>` | 그 도메인의 보류가 원천 주기 2회를 넘겨 이어짐 |
+| `PUBLISH_FAILED` | 전체 차단 |
+
+나머지 판정은 `ok=false`로 기록만 한다. `DATA_STALE`(주문 사건 시각)은 상시 운영이 아니면 늘 뜨고, `DBT_TEST_WARN`은 경고다. `SERVING_EXPORT_FAILED`처럼 이미 실패한 Task가 있는 판정도 있다. `NOT_FRESH`·`SLOW_RUN`·`ROW_COUNT_DROP`은 Task 실패 없이 기록만 남는다.
+
 ## 하지 않는 것
 
 - 목표 비율(예: 99%)과 측정 기간을 정하지 않았다. 판정은 실행 한 건 단위다. 오류 예산도 계산하지 않는다.
-- 알림을 보내지 않는다. 위반은 `warehouse_run_reports`를 조회해야 보인다. 알림을 건다면 자리는 `ok=false`다. 부분 게시 때 `dbt_build` Task는 성공하므로 Task 실패에 걸면 놓친다.
+- 외부 채널(Slack·메일·호출)로 알리지 않는다. 드러나는 곳은 Airflow의 Task·DagRun 상태뿐이다. 건다면 자리는 `domain_publish_alert`의 실패다. 부분 게시 때 `dbt_build` Task는 성공하므로 거기에 걸면 놓친다.
