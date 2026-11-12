@@ -25,7 +25,7 @@
 - 사건 시각 최댓값은 `domain_as_of`에 참고로 싣고 판정에 쓰지 않는다.
 - 연속 보류 횟수는 `consecutive_holds`에 있다. 정상 게시 한 번이면 0으로 돌아간다.
 - 마지막 비보류 게시를 찾지 못하면(이력 없음, 사슬 1,000건 초과) 값이 `null`이고 판정하지 않는다.
-- 같은 값이 Serving 파일의 `serving_domain_status`(`domain`, `as_of`, `refreshed_at`, `held`, `consecutive_holds`)에 있다. Dashboard Card는 아직 없다.
+- 같은 값이 Serving 파일의 `serving_domain_status`(`domain`, `as_of`, `refreshed_at`, `held`, `consecutive_holds`)에 있다. Sales·Product·Customer Dashboard 맨 위의 `도메인 게시 상태` 표(card 60)가 이 Table을 보여 준다([BI 문서](../bi/dashboards.md)). 표는 임계값 판정을 하지 않는다.
 
 ## 하지 않는 것
 

@@ -254,7 +254,7 @@ Dashboard(Metabase)는 Serving 파일(`Commerce Mart Serving`) 하나만 읽는�
 | 알림 | README의 의도적 비목표다. 걸 자리는 Run report의 `ok=false`다. 부분 게시 때 `dbt_build` Task는 성공하므로 Task 실패에 걸면 놓친다 |
 | 소유 조직 기준 도메인, 다중 Project | 소유자가 한 명이다 |
 | Table 단위 Snapshot 게시 | ADR 016 기준(1GB 또는 복사 60초)에 못 미친다(현재 44.5MB) |
-| dbt `source freshness` | Bronze를 dbt Source가 아니라 Macro로 읽는다. 같은 판정을 Run report `NOT_FRESH`가 한다 |
+| dbt `source freshness` | Bronze를 dbt Source가 아니라 Macro로 읽는다. 가장 가까운 판정은 Run report `DATA_STALE`(게시본 `fct_order`의 최신 주문 시각 기준)이고 구독 원천에는 대응 판정이 없다. `NOT_FRESH`는 Metabase가 최신 Serving 내보내기를 보는지라 다른 판정이다(2026-11-12 정정) |
 | 오류 예산 | SLO는 문서로 두고 예산 계산은 하지 않는다 |
 | staging 실패의 도메인 귀속 | 원천이 깨진 채 부분 게시하는 결정이라 별도 ADR 감이다 |
 

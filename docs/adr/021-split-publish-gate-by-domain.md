@@ -164,6 +164,6 @@ F·G·H의 수치와 명령은 [08 §6](../benchmarks/08-publish-gate-domain-spl
 | 알림 | README의 의도적 비목표다. 걸 자리는 Run report의 `ok=false`다 |
 | 소유 조직 기준 도메인, 다중 dbt Project | 소유자가 한 명이다 |
 | Table 단위 Snapshot 게시 | ADR 016의 전환 기준(1GB 또는 복사 60초)에 못 미친다 |
-| dbt `source freshness` | Bronze를 dbt Source가 아니라 Macro로 읽는다. 같은 판정을 Run report `NOT_FRESH`가 한다 |
+| dbt `source freshness` | Bronze를 dbt Source가 아니라 Macro로 읽는다. 가장 가까운 판정은 Run report `DATA_STALE`(게시본 `fct_order`의 최신 주문 시각 기준)이고 구독 원천에는 대응 판정이 없다. `NOT_FRESH`는 Metabase가 최신 Serving 내보내기를 보는지라 다른 판정이다 |
 | 오류 예산 | [게시 SLO](../reference/publish-slo.md)는 실행 단위 조건만 둔다 |
 | staging 실패의 도메인 귀속 | 위 "알려진 한계"의 마지막 항목 |
