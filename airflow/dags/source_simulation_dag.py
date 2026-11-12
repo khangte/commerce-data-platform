@@ -73,7 +73,9 @@ with DAG(
         """Params를 검증해 Phase 2 Generator API를 실행하고 결과 증적만 반환한다."""
         params = context["params"]
         settings = PostgresSettings.from_environment()
-        logical_date = params["logical_date"] or context["logical_date"].isoformat()
+        # Airflow 3 수동 실행은 logical_date가 없어 Context 키가 빠지므로 run_after로 대체한다.
+        dag_run = context["dag_run"]
+        logical_date = params["logical_date"] or (dag_run.logical_date or dag_run.run_after).isoformat()
         source_snapshot_id = params["source_snapshot_id"] or resolve_source_snapshot_id(settings)
 
         config = GeneratorConfig.from_values(
@@ -105,7 +107,7 @@ with DAG(
     trigger_warehouse_pipeline = TriggerDagRunOperator(
         task_id="trigger_warehouse_pipeline",
         trigger_dag_id="warehouse_pipeline_dag",
-        logical_date="{{ params.logical_date or logical_date }}",
+        logical_date="{{ params.logical_date or dag_run.logical_date or dag_run.run_after }}",
         wait_for_completion=False,
         skip_when_already_exists=True,
         fail_when_dag_is_paused=True,

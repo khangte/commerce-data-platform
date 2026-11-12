@@ -11,11 +11,15 @@ import os
 import re
 import subprocess
 import uuid
+from datetime import UTC, datetime
 from functools import partial
 from pathlib import Path
 from types import SimpleNamespace
 
+import jinja2
 import pytest
+
+from src.ingestion.control.batch import BatchIdentity
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -411,6 +415,92 @@ def test_repoint_task_fails_when_repoint_result_is_failed(tmp_path: Path) -> Non
     with pytest.raises(StubAirflowException, match="METABASE_REPOINT_FAILED") as error:
         namespace["repoint_metabase_serving_task"]({"export_id": "x"})
     assert type(error.value) is StubAirflowException
+
+
+_RUN_AFTER = datetime(2026, 11, 12, 2, 24, 31, tzinfo=UTC)
+# Airflow 3 수동 실행(--logical-date 없음)은 Context에 logical_date 키 자체가 없다.
+_MANUAL_DAG_RUN = SimpleNamespace(logical_date=None, run_after=_RUN_AFTER)
+
+
+def _dag_task_function(dag_file: str, name: str, namespace: dict):
+    """DAG 파일의 Task 함수 본문만 Airflow 없이 실행 가능한 함수로 꺼낸다."""
+    source = (PROJECT_ROOT / "airflow/dags" / dag_file).read_text(encoding="utf-8")
+    block = next(node for node in ast.parse(source).body if isinstance(node, ast.With))
+    node = next(
+        node for node in block.body if isinstance(node, ast.FunctionDef) and node.name == name
+    )
+    node.decorator_list = []
+    module = ast.fix_missing_locations(ast.Module(body=[node], type_ignores=[]))
+    exec(compile(module, dag_file, "exec"), namespace)  # noqa: S102
+    return namespace[name]
+
+
+def test_source_task_uses_run_after_when_manual_run_has_no_logical_date() -> None:
+    """logical_date 없는 수동 실행은 run_after를 Generator 기준 시각으로 쓴다."""
+    captured = {}
+
+    def from_values(**kwargs):
+        """Generator 설정 인자를 기록한다."""
+        captured.update(kwargs)
+        return kwargs
+
+    run_source_simulation = _dag_task_function("source_simulation_dag.py", "run_source_simulation", {
+        "PostgresSettings": SimpleNamespace(from_environment=lambda: object()),
+        "resolve_source_snapshot_id": lambda settings: "snapshot",
+        "GeneratorConfig": SimpleNamespace(from_values=from_values),
+        "GENERATOR_VERSION": "test",
+        "run_generator": lambda config, settings: SimpleNamespace(
+            generator_run_id=uuid.uuid4(), result_counts={}, logical_content_hash="h",
+            reused_successful_run=False,
+        ),
+    })
+    params = {
+        "logical_date": None, "seed": 0, "orders": 1, "progress_time_scale": 1,
+        "anomaly_profile": "default", "source_snapshot_id": None,
+    }
+    run_source_simulation(params=params, dag_run=_MANUAL_DAG_RUN)
+    assert captured["logical_date"] == _RUN_AFTER.isoformat()
+
+
+def _trigger_logical_date_template() -> str:
+    """원천 DAG가 Warehouse 트리거에 넘기는 logical_date 템플릿 문자열을 꺼낸다."""
+    source = (PROJECT_ROOT / "airflow/dags/source_simulation_dag.py").read_text(encoding="utf-8")
+    call = next(
+        node for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.Call) and getattr(node.func, "id", None) == "TriggerDagRunOperator"
+    )
+    return next(kw.value.value for kw in call.keywords if kw.arg == "logical_date")
+
+
+@pytest.mark.parametrize(
+    ("params_date", "dag_run", "expected"),
+    [
+        (None, _MANUAL_DAG_RUN, str(_RUN_AFTER)),
+        (None, SimpleNamespace(logical_date=datetime(2026, 11, 12, 2, 20, tzinfo=UTC),
+                               run_after=_RUN_AFTER), str(datetime(2026, 11, 12, 2, 20, tzinfo=UTC))),
+        ("2026-09-11T00:00:00+00:00", _MANUAL_DAG_RUN, "2026-09-11T00:00:00+00:00"),
+    ],
+)
+def test_trigger_logical_date_template_renders_without_logical_date(params_date, dag_run, expected) -> None:
+    """Airflow와 같은 StrictUndefined에서 logical_date 키가 없어도 비지 않은 값으로 렌더링한다."""
+    template = jinja2.Environment(undefined=jinja2.StrictUndefined).from_string(
+        _trigger_logical_date_template()
+    )
+    # 수동 실행 Context처럼 logical_date 키를 넣지 않는다.
+    assert template.render(params={"logical_date": params_date}, dag_run=dag_run) == expected
+
+
+def test_warehouse_initialize_run_uses_run_after_when_manual_run_has_no_logical_date() -> None:
+    """Runbook의 conf만 준 수동 트리거도 run_after로 Batch ID를 만든다."""
+    initialize_run = _dag_task_function("warehouse_pipeline_dag.py", "initialize_run", {
+        "BatchIdentity": BatchIdentity, "UTC": UTC,
+        "dag": SimpleNamespace(dag_id="warehouse_pipeline_dag"),
+    })
+    result = initialize_run(params={"partial_publish": False}, dag_run=_MANUAL_DAG_RUN)
+    assert result == {
+        "batch_id": BatchIdentity(dag_id="warehouse_pipeline_dag", logical_date=_RUN_AFTER).batch_id,
+        "logical_date": _RUN_AFTER.isoformat(),
+    }
 
 
 def _warehouse_dbt_runner(full_refresh: bool, partial_publish: bool = True):

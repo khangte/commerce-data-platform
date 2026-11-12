@@ -122,7 +122,9 @@ with DAG(
     @task
     def initialize_run(**context) -> dict:
         """DagRun Logical Date로 표준 Batch ID를 만들어 이후 Task에 전달한다."""
-        logical_date = context["logical_date"]
+        # Airflow 3 수동 실행(--logical-date 없음)은 logical_date가 없어 run_after로 대체한다.
+        dag_run = context["dag_run"]
+        logical_date = dag_run.logical_date or dag_run.run_after
         if logical_date.utcoffset() is None:
             raise ValueError("logical_date must include a UTC offset")
         batch = BatchIdentity(dag_id=dag.dag_id, logical_date=logical_date.astimezone(UTC))

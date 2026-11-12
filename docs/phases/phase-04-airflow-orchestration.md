@@ -75,6 +75,8 @@ Context Manager를 Task 경계 전체에 걸쳐 사용할 수 없다. 아래 계
 
 - `batch_id`는 `{dag_id}__{logical_date_utc:%Y%m%dT%H%M%SZ}`를 사용한다. 동일 DAG Run의 Airflow
   재시도와 같은 논리 실행의 수동 재실행은 같은 `batch_id`를 사용한다.
+- `logical_date` 없이 수동 트리거한 Warehouse DAG Run(Airflow 3는 Context에 `logical_date` 키를 넣지
+  않는다)은 `dag_run.run_after`로 `batch_id`를 만든다. 우선순위는 `dag_run.logical_date` > `dag_run.run_after`다.
 - `run_id`는 Task 실행 시도별 새 UUID다. `pipeline_runs`에는 시도별 이력을 남기고, 이미
   `COMMITTED`인 동일 `batch_id`/Table은 재사용한다.
 - `attempt_number`는 Airflow `ti.try_number`를 관측값으로만 기록한다. 최종 Bronze 객체 Key와 Batch
@@ -112,6 +114,10 @@ Context Manager를 Task 경계 전체에 걸쳐 사용할 수 없다. 아래 계
 - [x] 2026-09-29 원천 DAG 주기를 `SOURCE_DAG_SCHEDULE` 환경 변수로 설정하고 미설정·빈 값의 매시간 기본값과 로컬 10분 cron 주기 확인
 - [x] 2026-10-12 057 `SOURCE_DAG_ORDERS`·`SOURCE_PROGRESS_TIME_SCALE`을 예약 Run Param 기본값에 연결하고 CLI·Compose 예시와 AST 단위 테스트를 갱신했다. 대상 테스트 110건 통과, Airflow smoke 5건은 미실행(skip).
 - [x] 2026-09-28 실제로 읽히지 않는 `WAREHOUSE_DAG_SCHEDULE` Compose·환경 변수 예시 항목 제거
+- [x] 2026-11-12 `logical_date` 없는 수동 트리거의 `KeyError: 'logical_date'` 수정. Source Task와 Warehouse 트리거는
+  `params.logical_date` > `dag_run.logical_date` > `dag_run.run_after`, Warehouse `initialize_run`은
+  `dag_run.logical_date` > `dag_run.run_after` 순으로 기준 시각을 정한다. 회귀 테스트 5건 추가, 대상 테스트 85건
+  통과·Airflow smoke 5건 skip. 실제 수동 트리거 End-to-End와 smoke는 미검증(아래 변경 요약 참고).
 
 Runtime 계약:
 
@@ -180,7 +186,8 @@ Health Check를 추가했다.
 
 `P4-05`에서는 `source_simulation_dag`를 추가했다. `seed`/`logical_date`/`orders`/`anomaly_profile`/
 `source_snapshot_id`를 Airflow Param JSON Schema로 검증한 뒤 `GeneratorConfig.from_values`와
-`run_generator`에 그대로 전달한다. `logical_date` 미지정 시 DagRun의 `logical_date`를 사용하고,
+`run_generator`에 그대로 전달한다. `logical_date` 미지정 시 DagRun의 `logical_date`를, 그것도 없는
+수동 실행(Airflow 3는 Context에서 `logical_date` 키를 뺀다)이면 `dag_run.run_after`를 사용하고,
 `source_snapshot_id` 미지정 시 `resolve_source_snapshot_id`로 최신 성공 Seed를 사용한다. Task는
 Generator 실행 로직을 복제하지 않고 Phase 2 API(`run_generator`)만 호출하며, 원천 데이터 동시성
 잠금 획득·해제는 `run_generator` 내부 계약을 그대로 사용한다. XCom에는 `generator_run_id`,
@@ -566,6 +573,22 @@ Phase 5는 `sync_bronze_catalog`가 만든 메타데이터 기반 Bronze 파일 
 Project/CLI와 Test를 완성한 뒤, Warehouse DAG의 `dbt_build` 호출 경계를 활성화한다.
 
 ## 파일·폴더별 변경 요약
+
+수동 트리거 `logical_date` 대체값(2026-11-12):
+
+| 경로 | 변경 | 요약 |
+| --- | --- | --- |
+| `airflow/dags/source_simulation_dag.py` | 수정 | Task 기준 시각과 Warehouse 트리거 템플릿을 `params.logical_date` > `dag_run.logical_date` > `dag_run.run_after` 순으로 정한다. 템플릿 환경이 `StrictUndefined`라 템플릿에서 최상위 `logical_date`를 참조하지 않는다. |
+| `airflow/dags/warehouse_pipeline_dag.py` | 수정 | `initialize_run`이 `dag_run.logical_date` > `dag_run.run_after`로 `batch_id`를 만든다. Runbook의 `--conf`만 준 수동 트리거가 실패하지 않는다. |
+| `tests/test_airflow_dags.py` | 수정 | 회귀 5건: `logical_date` 없는 Source Task, 트리거 템플릿 렌더링 3건(수동·예약·Param 지정, `StrictUndefined`), `logical_date` 없는 Warehouse `initialize_run`. |
+| `docs/phases/phase-04-airflow-orchestration.md` | 수정 | 체크리스트·`P4-05` 동작 설명·실행 식별자 계약·변경 요약을 갱신했다. |
+
+검증 결과: 수정 전 `KeyError`·`UndefinedError`로 4건 실패를 확인한 뒤 구현했다.
+`uv run pytest tests/test_airflow_dags.py tests/observability -q` 85 passed, 5 skipped(Airflow smoke),
+대상 파일 `ruff check` 통과. 실행 중인 Airflow 3.3.1 Scheduler 컨테이너에서 DAG Run 없이 실제 템플릿 환경으로
+렌더링(`2026-11-12 02:24:31+00:00`, `timezone.parse` 통과)과 `initialize_run`
+(`warehouse_pipeline_dag__20261112T022431Z`)을 확인했다. 실제 수동 트리거 End-to-End와 Airflow smoke는
+게시 상태 변경·`compose down`을 피하려고 실행하지 않았다.
 
 Bronze 검증 경량화(2026-10-15):
 
