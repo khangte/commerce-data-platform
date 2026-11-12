@@ -1,7 +1,7 @@
 # 데이터 흐름: Source → Data Lake → Data Warehouse → Serving
 
 > 상태: Reference
-> 기준 문서: [PRD v1.32](../../PRD_v1.32.md), [Phase 3](../phases/phase-03-incremental-ingestion.md), [Phase 4](../phases/phase-04-airflow-orchestration.md), [Phase 5](../phases/phase-05-bronze-catalog-and-staging.md), [Phase 7](../phases/phase-07-data-quality-publish.md), [Phase 10](../phases/phase-10-bi.md)
+> 기준 문서: [PRD v1.33](../../PRD_v1.33.md), [Phase 3](../phases/phase-03-incremental-ingestion.md), [Phase 4](../phases/phase-04-airflow-orchestration.md), [Phase 5](../phases/phase-05-bronze-catalog-and-staging.md), [Phase 7](../phases/phase-07-data-quality-publish.md), [Phase 10](../phases/phase-10-bi.md)
 
 이 문서는 하나의 주문 레코드가 PostgreSQL 원천에서 Metabase가 읽는 Serving 파일에 도달할 때까지의 전체 경로를 정리한다. 3-8절은 이름, 타입, 값, Grain이 어느 지점에서 왜 바뀌는지와, 그 변환을 다른 지점에서 했을 때 무엇이 깨지는지를 기록한다. 9-13절은 Mart가 만들어진 뒤 Build, Publish, Serving Export, Metabase 재지정, 운영 기록으로 이어지는 구간을 단계별 동작과 실패 시 동작 중심으로 정리한다. 이 구간에서는 데이터 값이 바뀌지 않는다. 바뀌는 것은 파일 위치와 가시성이다.
 
@@ -559,7 +559,7 @@ Export는 PostgreSQL에 행을 쓰지 않는다. 어느 Publish Run을 담았는
 | `REPOINT_<status>` | 재지정이 `SUCCESS`가 아님. `SKIPPED`도 실패로 본다 |
 | `NOT_FRESH` | 최신성 검사가 `fresh=false` |
 | `DATA_STALE` | 게시 파일의 최신 주문 구매 시각이 수집 시각보다 원천 DAG 간격의 2배 넘게 뒤처짐. 지난 `logical_date`로 원천을 보충 실행하면 데이터가 정상이어도 날 수 있다([R-11](../runbooks/r11-missing-schedule.md)) |
-| `ROW_COUNT_DROP:<relation>` | 이번 PUBLISHED Run의 행 수가 직전 PUBLISHED Run보다 1% 넘게 감소. Full Refresh Run은 제외. Publish는 막지 않는다 |
+| `ROW_COUNT_DROP:<relation>` | 이번 PUBLISHED Run의 행 수가 직전 PUBLISHED Run보다 1% 넘게 감소. Full Refresh Run은 제외. Publish는 막지 않는다. 게시 뒤 Task `domain_publish_alert`가 실패해 DagRun이 `failed`가 된다 |
 | `EXPORTS_COUNT_<n>` | `exports/` 파일 수가 보존 개수(3)와 다름 |
 | `FAILED_BUILDS_OVER_RETENTION` | `failed/` 파일 수가 보존 개수(3) 초과 |
 | `BUILD_DIR_NOT_EMPTY` | Warehouse 또는 Serving `build/`에 잔여 파일 |
@@ -609,4 +609,4 @@ docker compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$PIPELINE_ME
 - [Warehouse Publish 오류 유형](../troubleshooting/warehouse-publish.md) — Publish Error Type별 원인과 조치
 - [Metabase Serving 연결](../../metabase/README.md) — Metabase 등록, 재지정 CLI, 최신성 확인
 - Architect 판정: [058 Publish 파일 Identity](../architect-review/058_publish-file-identity.md), [059 Serving 갱신 경로 단일화](../architect-review/059_serving-refresh-single-path.md), [060 Metabase 계층 정리](../architect-review/060_metabase-layer-cleanup.md), [061 Publish Heartbeat Lease](../architect-review/061_publish-heartbeat-lease.md)
-- [PRD v1.32](../../PRD_v1.32.md) — Section 7.1 상태 Mapping, Section 14 dbt Model, Section 15 이력 추적, Section 17 Data Quality와 Publish, Section 18 Observability
+- [PRD v1.33](../../PRD_v1.33.md) — Section 7.1 상태 Mapping, Section 14 dbt Model, Section 15 이력 추적, Section 17 Data Quality와 Publish, Section 18 Observability

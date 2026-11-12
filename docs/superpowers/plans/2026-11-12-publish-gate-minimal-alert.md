@@ -3,7 +3,7 @@
 > 작성: architect, 2026-11-12 · Branch: `feat/publish-gate-split`
 > 선행: `docs/superpowers/plans/2026-11-11-publish-gate-domain-boundary.md`, [ADR 021](../../adr/021-split-publish-gate-by-domain.md)
 > 커밋은 lead가 한다. backend·reviewer는 커밋하지 않는다.
-> 상태: Phase 1·2 완료(2026-11-12), 커밋 대기. lead가 2026-11-12에 "알림 안 함" 선택을 뒤집고 최소안을 승인했다. 같은 날 §5의 두 항목도 확정됐다(PRD v1.32, `PUBLISH_FAILED` 포함).
+> 상태: Phase 1·2 완료·커밋(`7a0bc71`, `0295712`). Phase 3 완료(2026-11-12), 커밋 대기. lead가 2026-11-12에 "알림 안 함" 선택을 뒤집고 최소안을 승인했다. 같은 날 §5의 두 항목도 확정됐다(PRD v1.32, `PUBLISH_FAILED` 포함).
 
 ## 1. 목표
 
@@ -126,6 +126,48 @@ graph LR
 - [x] 2. 네 문서에 "알림을 보내지 않는다"·"Task 실패 알림으로는 보이지 않는다"는 문장이 남지 않았다. 남은 "알림"은 외부 채널을 하지 않는다는 문장이다.
 - [x] 3. `PRD_v1.31.md`를 `PRD.bak/`로 옮기고 `PRD_v1.32.md`를 썼다(§0 변경 요약, §13.2 Task 목록, §17 부분 게시 문장). `README.md`, `data-transformation-flow.md`의 참조를 v1.32로 고쳤다.
 - [x] 4. `tests/test_doc_links.py`는 새 PRD를 임시 Git index에 넣어 돌렸다. 실제 index에는 넣지 않았다. 결과는 lead 보고에 있다.
+
+### Phase 3. `ROW_COUNT_DROP`을 알림 판정에 추가 (backend → reviewer → architect 문서)
+
+**검토 (architect, 2026-11-12).** Task 실패 없이 기록만 남는 세 판정을 알림 접두사에 넣을지 봤다. 근거는 코드와 `warehouse_run_reports` 이력 28건(2026-10-19 ~ 2026-11-12, 경과 시간 중앙값 57.7초, p95 757.9초, 최대 2,775.6초)이다.
+
+| 판정 | 알리는 것 | 오탐 위험 | 빨갛게 만드는 가치 | 이력 | 권장 |
+| ---- | ---- | ---- | ---- | ---- | ---- |
+| `SLOW_RUN` | DagRun 시작부터 요약 Task까지 600초 이상(`now − start_date`) | 높다. 재시도 대기(60초부터 최대 10분, 2회)와 Queue 대기가 포함된다. 오래된 DagRun의 Task를 Clear해 다시 돌리면 `start_date`가 그대로라 몇 시간으로 잡힌다. 첫 적재와 Full refresh도 길다 | 낮다. 게시는 이미 끝났고 데이터는 맞다. 600초는 로컬 장비 기준 값이다 | 2건. 둘 다 수동 검증 실행(952초, 2,776초)이고 둘 다 이미 실패한 Task가 있었다 | **넣지 않는다** |
+| `NOT_FRESH` | Metabase가 읽는 Serving 내보내기가 최신 `PUBLISHED`와 다름 | 낮다. Metabase 설정이 없으면 판정하지 않는다 | 낮다. 원인이 재지정 실패면 `repoint_metabase_serving` Task가 이미 빨갛다. 전체 차단이면 최신 `PUBLISHED`가 이전 것이라 뜨지 않고 `PUBLISH_FAILED`가 잡는다. 남는 경우는 재지정이 성공했는데 Metabase가 다른 파일을 읽는 불일치뿐이다 | 0건 | **넣지 않는다** |
+| `ROW_COUNT_DROP:<relation>` | 게시된 Mart Relation의 행 수가 직전 게시보다 1% 넘게 줄어듦 | 낮다. Full refresh는 이미 제외된다. 보류된 도메인은 직전 값 그대로라 줄지 않는다. 다음 실행은 이번 실행과 비교하므로 한 번 뜨고 스스로 풀린다. 작은 Relation(`fct_subscription_payment` 9행)은 1행만 줄어도 뜨지만 결제 행이 사라지는 것은 정상 동작이 아니다. 원천을 다시 Seed한 개발 실행에서는 뜬다(실제로 줄었으므로 맞는 신호다) | 높다. 셋 중 유일하게 모든 Task가 성공하고 dbt Test도 통과한 채 잘못된 데이터가 게시됐을 수 있다는 신호다. 지금은 조회해야만 보인다 | 0건 | **넣는다** |
+
+`ROW_COUNT_DROP`은 [062 판정](../../architect-review/062_run-report-data-stale-row-count-drop.md)에서 "차단하지 않고 표시만"으로 정했다. 이 Task는 게시가 끝난 뒤에 실패하므로 차단이 아니고, 062가 든 이유(다음 실행이 계속 막힌다)도 생기지 않는다.
+
+**승인 (lead, 2026-11-12):** `ROW_COUNT_DROP:`만 넣는다. PRD는 v1.33으로 올리고 v1.32는 `PRD.bak/`로 옮긴다. 문서·PRD는 backend 구현과 reviewer 승인 뒤에 architect가 한다.
+
+**변경**
+
+- `src/observability/run_report.py`: `ALERT_FAILURE_PREFIXES`에 `"ROW_COUNT_DROP:"`를 더한다. 상수 주석과 `alert_failures` Docstring에 행 수 급감을 더한다.
+- `airflow/dags/warehouse_pipeline_dag.py`: `domain_publish_alert_task`의 Docstring만 고친다. Task 이름과 메시지 접두사 `DOMAIN_PUBLISH_ALERT`는 그대로 둔다.
+- `tests/observability/test_run_report_alert.py`: 고르는 코드에 `ROW_COUNT_DROP:fct_order`를, 고르지 않는 코드에 `SLOW_RUN`·`NOT_FRESH`를 더한다.
+- 문서(architect): `publish-slo.md` "Task 실패로 드러나는 판정" 표와 그 아래 문장, R-14 Runbook, ADR 021 "운영 변화", `README.md` 243행, `PRD_v1.33.md`(§0 변경 요약, §13.2, §17). `PRD_v1.32.md`는 `PRD.bak/`로 옮기고 `README.md`·`data-transformation-flow.md`의 참조를 v1.33으로 고친다.
+
+**완료조건**
+
+1. `alert_failures(["ROW_COUNT_DROP:fct_order"])`가 그 코드를 고르고 `SLOW_RUN`·`NOT_FRESH`는 고르지 않는 테스트가 있다.
+2. `tests/test_airflow_dags.py`와 `tests/observability/test_run_report.py`는 수정 없이 통과한다.
+3. Marker 없는 `pytest` 전체와 `ruff check`가 통과한다.
+4. 루트에는 `PRD_v1.33.md`만 있고 `PRD_v1.32.md`는 `PRD.bak/`에 있다.
+5. 위 문서가 네 판정(`PUBLISH_PARTIAL:<domain>`, `DATA_STALE:<domain>`, `PUBLISH_FAILED`, `ROW_COUNT_DROP:<relation>`)을 같은 목록으로 적는다.
+
+**완료 (2026-11-12, backend 구현 → reviewer 승인(지적 없음) → architect 문서·완료조건 대조)**
+
+- [x] 1. `tests/observability/test_run_report_alert.py`: `ROW_COUNT_DROP:fct_order`는 고르고 `SLOW_RUN`·`NOT_FRESH`는 고르지 않는다.
+- [x] 2. `tests/test_airflow_dags.py`와 `tests/observability/test_run_report.py`는 변경이 없다.
+- [x] 3. reviewer가 따로 돌렸다: `uv run pytest -q` 856 통과·148 건너뜀, `uv run ruff check .`와 `git diff --check` 통과.
+- [x] 4. `PRD_v1.32.md`를 `PRD.bak/`로 옮기고 `PRD_v1.33.md`를 썼다(§0, §13.2, §17). `README.md`, `data-transformation-flow.md`의 참조를 v1.33으로 고쳤다.
+- [x] 5. `publish-slo.md`, ADR 021, R-14 Runbook, `README.md`, `PRD_v1.33.md`, `data-transformation-flow.md` §13의 판정 표가 같은 네 판정을 적는다.
+
+변경 파일(코드): `src/observability/run_report.py`, `airflow/dags/warehouse_pipeline_dag.py`(Docstring), `tests/observability/test_run_report_alert.py`.
+변경 파일(문서): `PRD_v1.33.md`(신규), `PRD.bak/PRD_v1.32.md`(이동), `README.md`, `docs/reference/publish-slo.md`, `docs/reference/data-transformation-flow.md`, `docs/runbooks/r14-dbt-failure.md`, `docs/adr/021-split-publish-gate-by-domain.md`, 이 계획서.
+
+미검증: 실제 Airflow 실행에서 DagRun이 `failed`로 끝나는 것은 Phase 1과 마찬가지로 확인하지 않았다. 이력 28건에 `ROW_COUNT_DROP`이 한 번도 없어 오탐률도 적중률도 측정값이 없다. 상시 운영에서 정상 감소가 1%를 넘는 Relation이 나오면 뺀다.
 
 ## 5. 결정 기록 (lead, 2026-11-12)
 

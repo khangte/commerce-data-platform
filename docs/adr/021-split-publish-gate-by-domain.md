@@ -109,7 +109,7 @@ graph LR
 | 유지 | 파일 단위 원자 교체. 도메인 안의 정합성(도메인 Relation은 함께 되돌린다). 공유 Dimension·staging·Model 오류의 전체 차단 |
 | 보완 | 경계 Test 재검증, 귀속 불가 시 전체 차단, `held_domains`·`PUBLISH_PARTIAL` 기록, 되돌리기 전 Build 보존, 끄는 스위치. Sales·Product·Customer Dashboard 맨 위의 `도메인 게시 상태` 표(card 60)가 `serving_domain_status`의 도메인별 보류 여부·마지막 정상 게시 시각·연속 보류 횟수를 보여 준다([BI 문서](../bi/dashboards.md)) |
 | 미보완 | 도메인을 가로지르는 분석(같은 고객의 주문과 구독)은 시점이 어긋난 값을 볼 수 있다. 상태 표는 어긋남을 알려 줄 뿐 없애지 않는다. 표는 지연 임계값을 판정하지 않고(판정은 Run report의 `DATA_STALE:<domain>`), 개별 카드에는 보류 표시가 없다 |
-| 운영 변화 | `dbt_build` Task가 Test 실패에도 성공으로 끝난다. 대신 마지막 Task `domain_publish_alert`가 `PUBLISH_PARTIAL:<domain>`·`DATA_STALE:<domain>`·`PUBLISH_FAILED` 판정에서 실패해 DagRun이 `failed`가 된다(2026-11-12 추가). 내용은 Run report로 확인한다([R-14 Runbook](../runbooks/r14-dbt-failure.md)). 보류가 원천 주기 2회를 넘겨 이어지면 `DATA_STALE:<domain>`이 뜬다([게시 SLO](../reference/publish-slo.md)) |
+| 운영 변화 | `dbt_build` Task가 Test 실패에도 성공으로 끝난다. 대신 마지막 Task `domain_publish_alert`가 `PUBLISH_PARTIAL:<domain>`·`DATA_STALE:<domain>`·`PUBLISH_FAILED`·`ROW_COUNT_DROP:<relation>` 판정에서 실패해 DagRun이 `failed`가 된다(2026-11-12 추가). 내용은 Run report로 확인한다([R-14 Runbook](../runbooks/r14-dbt-failure.md)). 보류가 원천 주기 2회를 넘겨 이어지면 `DATA_STALE:<domain>`이 뜬다([게시 SLO](../reference/publish-slo.md)) |
 
 게시 파일이 지키는 불변식: 통과 도메인은 이번 Build의 `error` Test를 모두 통과했고, 보류 도메인은 직전 게시 값과 같으며 경계 Test를 다시 통과했다.
 
@@ -161,7 +161,7 @@ F·G·H의 수치와 명령은 [08 §6](../benchmarks/08-publish-gate-domain-spl
 | 항목 | 이유 |
 | ---- | ---- |
 | CI(GitHub Actions), Slim CI | 하지 않기로 했다. 경계 단언과 테스트는 로컬 `pytest`로 돈다. 전체 Build가 수 초라 변경분만 Build할 이유도 없다 |
-| 외부 알림 채널 | README의 의도적 비목표다. 부분 게시·도메인 지연·전체 차단은 Task `domain_publish_alert`의 실패로만 드러낸다. 채널을 건다면 자리는 그 Task의 실패다 |
+| 외부 알림 채널 | README의 의도적 비목표다. 부분 게시·도메인 지연·전체 차단·행 수 급감은 Task `domain_publish_alert`의 실패로만 드러낸다. 채널을 건다면 자리는 그 Task의 실패다 |
 | 소유 조직 기준 도메인, 다중 dbt Project | 소유자가 한 명이다 |
 | Table 단위 Snapshot 게시 | ADR 016의 전환 기준(1GB 또는 복사 60초)에 못 미친다 |
 | dbt `source freshness` | Bronze를 dbt Source가 아니라 Macro로 읽는다. 가장 가까운 판정은 Run report `DATA_STALE`(게시본 `fct_order`의 최신 주문 시각 기준)이고 구독 원천에는 대응 판정이 없다. `NOT_FRESH`는 Metabase가 최신 Serving 내보내기를 보는지라 다른 판정이다 |

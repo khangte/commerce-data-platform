@@ -36,8 +36,9 @@ DAG의 마지막 Task `domain_publish_alert`는 Run report를 기록한 뒤 아�
 | `PUBLISH_PARTIAL:<domain>` | 그 도메인이 보류된 부분 게시 |
 | `DATA_STALE:<domain>` | 그 도메인의 보류가 원천 주기 2회를 넘겨 이어짐 |
 | `PUBLISH_FAILED` | 전체 차단 |
+| `ROW_COUNT_DROP:<relation>` | 게시된 Relation의 행 수가 직전 게시보다 1% 넘게 줄어듦. dbt Test가 모두 통과하고 게시도 정상인 채 뜬다 |
 
-나머지 판정은 `ok=false`로 기록만 한다. `DATA_STALE`(주문 사건 시각)은 상시 운영이 아니면 늘 뜨고, `DBT_TEST_WARN`은 경고다. `SERVING_EXPORT_FAILED`처럼 이미 실패한 Task가 있는 판정도 있다. `NOT_FRESH`·`SLOW_RUN`·`ROW_COUNT_DROP`은 Task 실패 없이 기록만 남는다.
+나머지 판정은 `ok=false`로 기록만 한다. `DATA_STALE`(주문 사건 시각)은 상시 운영이 아니면 늘 뜨고, `DBT_TEST_WARN`은 경고다. `SERVING_EXPORT_FAILED`처럼 이미 실패한 Task가 있는 판정도 있다. `NOT_FRESH`와 `SLOW_RUN`은 Task 실패 없이 기록만 남는다. `SLOW_RUN`은 재시도 대기와 수동 재실행으로 부풀고(이력 28건 중 2건, 둘 다 수동 검증 실행), `NOT_FRESH`의 원인은 대개 재지정 Task 실패로 이미 드러난다.
 
 ## 하지 않는 것
 
