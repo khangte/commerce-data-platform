@@ -117,3 +117,35 @@ card 58 `Daily Ordering Customers by Tier (주문 시점 등급별 일별 고객
 - 도메인 상태의 마지막 사건 시각은 참고용이며 지연 임계값 판정이 아니다. 이 표만으로 전체 게시 실행 상태나 행 수 감소 경보를 판단할 수 없다.
 
 개선 후 실제 화면: [Sales](screenshots/dashboard-2-scope-2026-11-12.png), [Product](screenshots/dashboard-3-scope-2026-11-12.png), [Customer](screenshots/dashboard-4-scope-2026-11-12.png). Sales는 `CANCELED` 주문 상태와 2026-11-10~11 주문일 필터, Customer는 같은 주문일 필터를 적용한 화면이다. Product는 전체 기간이다. 세 화면 모두 실제 Serving 결과를 응답 대체 없이 캡처했다.
+
+## Pipeline Operations Status (Pipeline 운영 상태)
+
+사업 Dashboard 3종과 따로 둔 운영 Dashboard다(ID `5`, Collection 6, [ADR 022](../adr/022-run-report-as-second-metabase-source.md)). 사업 Dashboard와 원천이 다르다. `Pipeline Metadata`(PostgreSQL, database ID `3`) 연결로 `pipeline_metadata`의 View 2개만 읽는다. 연결 방법은 [`metabase/README.md`](../../metabase/README.md)에 있다.
+
+| Card | 원천 View | 내용 |
+| --- | --- | --- |
+| 61 `Last Run (마지막 실행)` | `warehouse_run_report_status` | 선택 상태, 실행 ID, 논리 시각, 판정 기록 시각(UTC), 기록 후 경과, 게시·내보내기·재지정 상태, 판정 당시 Dashboard 최신 여부 |
+| 62 `Verdict Codes (판정 코드)` | `warehouse_run_report_status` | 알림 대상 판정과 전체 판정을 한 코드 한 행으로 보인다. 없으면 `판정 없음` |
+| 63 `Lag vs Threshold (지연과 임계값)` | 두 View | 주문 데이터 지연, 주문·구독 도메인 갱신 지연, 임계값(초), 연속 보류 횟수 |
+| 64 `Recent Runs (최근 실행 이력)` | `warehouse_run_report_status` | 최근 20건의 기록 시각, 판정, 게시 상태, 알림 대상 코드, 전체 판정 코드, 실행 시간 |
+
+Filter `실행 ID`를 비우면 마지막으로 끝난 실행이다. 실행 ID를 넣으면 card 61~63이 그 실행을 보인다. card 64는 Filter와 무관하다.
+
+읽는 법:
+
+- **기준 시각.** 지연, 임계값, 판정 코드, 게시 상태는 Run report를 기록한 시각의 값이다. 조회 시각으로 계산하는 값은 `기록 후 경과` 하나다.
+- **선택 상태.** `정상`, `판정 있음`(기록만 남는 판정), `알림 대상`(`domain_publish_alert`가 실패한 실행), `확인 불가 (지난 실행)`, `기록 없음` 가운데 하나다.
+- **`확인 불가`의 뜻.** 기록이 그 실행의 임계값(`stale_after_s`)보다 오래됐다는 뜻이다. 실패가 아니라 "마지막 실행 뒤에 무슨 일이 있었는지 모른다"는 표시다. 상시 운영이 아니므로 평소에는 이 상태다. 그 실행의 게시 상태와 판정 코드는 아래 칸과 card 62에 그대로 보인다.
+- **칸의 `확인 불가`.** 값이 NULL인 칸이다. 0이나 `정상`으로 바꾸지 않는다. 전체 차단 실행은 도메인 지연이 없어 `확인 불가`다.
+- **card 64의 `판정`.** 기록 당시의 `ok`다(`성공`, `판정 있음`). 조회 시각에 따라 바뀌는 선택 상태를 쓰지 않는다.
+- **card 60과 어긋날 때.** card 60은 마지막으로 성공한 내보내기 시점의 값이다. 전체 차단이나 내보내기 실패 뒤에는 card 60이 정상이고 운영 Dashboard가 실패 판정을 보인다. 옳은 쪽은 운영 Dashboard다. 행 수 급감(`ROW_COUNT_DROP`)도 운영 Dashboard에만 나타난다.
+
+보이지 않는 것:
+
+- Run report가 남지 않은 실행(`publish_run_summary` 실패, 저장 실패, 시작하지 못한 DagRun, 진행 중인 실행). 직전 기록이 보이고 오래되면 `확인 불가`가 된다.
+- PostgreSQL이 멈춘 상태. Metabase 앱 DB가 같은 PostgreSQL이라 Metabase가 열리지 않는다.
+- 알림 시각. 따로 저장하지 않는다. `판정 기록 시각`이 가장 가까운 값이다.
+
+2026-11-12 검증: 실제 기록 3건을 실행 ID로 골라 확인했다. [정상 실행](screenshots/ops-status-success-2026-11-12.png)(`manual__2026-11-12T02:20:00+00:00`), [부분 게시](screenshots/ops-status-partial-2026-11-12.png)(`verify_partial_on`, `PUBLISH_PARTIAL:orders`), [전체 차단](screenshots/ops-status-failed-2026-11-12.png)(`verify_partial_off`, `PUBLISH_FAILED`). 세 기록 모두 조회할 때 임계값보다 오래돼 선택 상태는 `확인 불가 (지난 실행)`이다. 그래서 `정상`과 `알림 대상` 선택 상태는 화면이 아니라 View 통합 테스트(`tests/integration/test_run_report_views_integration.py`)로 확인했다. [없는 실행 ID](screenshots/ops-status-no-match-2026-11-12.png)는 `기록 없음`을 보인다. 실제 이력을 지우지 않으려고 빈 Table 대신 쓴 증적이다. `ROW_COUNT_DROP`은 실제 이력에 없어 PostgreSQL 임시 Table에서 card 62·64의 SQL만 실행해 확인했다. [모바일 화면](screenshots/ops-status-mobile-2026-11-12.png)과 최근 이력의 긴 코드는 표 안에서 스크롤한다.
+
+Snapshot은 `metabase/export/card-{61,62,63,64}.json`과 `dashboard-5.json`이다. Card JSON은 연결 ID `3`을 그대로 담는다. 앱 DB를 새로 만들어 연결 ID가 달라지면 Card JSON의 `database` 값을 새 ID로 맞춘다.

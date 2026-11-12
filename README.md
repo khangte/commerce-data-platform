@@ -274,7 +274,7 @@ data/warehouse/failed/            ← 실패 Build는 최근 3개만 보존
 
 ### 8. BI
 
-Metabase 3종 Dashboard(Sales · Product · Customer)가 `Commerce Mart Serving` 하나만 조회한다. 재현 절차: [`docs/bi/dashboards.md`](docs/bi/dashboards.md)
+Metabase 3종 Dashboard(Sales · Product · Customer)가 `Commerce Mart Serving` 하나만 조회한다. 운영 Dashboard `Pipeline Operations Status`는 따로 두고 실행별 판정 기록(Run report)을 읽기 전용 View로 읽는다. 게시가 실패한 실행도 여기서 보인다([ADR 022](docs/adr/022-run-report-as-second-metabase-source.md)). 재현 절차: [`docs/bi/dashboards.md`](docs/bi/dashboards.md)
 
 ---
 

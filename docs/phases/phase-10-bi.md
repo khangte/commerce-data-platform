@@ -11,7 +11,7 @@ Metabase에서 검증 완료된 Mart만 사용해 Sales, Product, Customer Dashb
 
 ## 핵심 계약
 
-- Dashboard는 Source, Bronze, Staging을 직접 조회하지 않는다.
+- Dashboard는 Source, Bronze, Staging을 직접 조회하지 않는다. 운영 Dashboard만 예외로 `pipeline_metadata`의 운영 View 2개를 읽는다([ADR 022](../adr/022-run-report-as-second-metabase-source.md)).
 - Phase 6에서 정의한 Fact Grain과 Measure 의미를 변경하지 않는다.
 - Metric 정의는 [Mart Grain 계약](../reference/mart-grain.md)의 Measure 계약을 따른다. 주문 금액과 실제 결제 금액을 같은 것으로 취급하지 않는다.
 - Metabase/DuckDB 연결이 불안정하면 PostgreSQL Serving DB 대안을 검증하고 ADR로 결정한다.
@@ -317,10 +317,23 @@ reviewer 후속 최종 검증: 전체 pytest 494개 통과·140개 생략(89.17�
 - [x] 표는 지연 임계값을 판정하지 않고 날짜·주문 상태 필터의 영향을 받지 않는다. 값을 알 수 없으면 `확인 불가`다.
 - [x] 검증: 실제 Serving의 보류 화면·모바일 화면·전 도메인 정상 화면, 응답 대체로 빈 결과·HTTP 500·확인 불가를 확인했다. 실행 식별자와 화면은 [Dashboard 문서](../bi/dashboards.md)와 [증적](../bi/evidence.md)에 있다. Serving DB 2의 `sync_schema` 뒤 metadata에서 Table과 필드 5개를 확인했다.
 
+## 운영 상태 Dashboard (2026-11-12)
+
+계획: `docs/superpowers/plans/2026-11-12-metabase-ops-status-dashboard.md`. card 60은 Serving 파일만 읽어서 전체 차단, 내보내기 실패, 행 수 급감이 Metabase에서 보이지 않았다. Run report를 두 번째 원천으로 연결해 메웠다([ADR 022](../adr/022-run-report-as-second-metabase-source.md)).
+
+- [x] PRD v1.34와 ADR 022로 "Mart만 조회" 계약에 예외 하나를 두었다. 범위는 View 2개이고 읽기 전용 Role `metabase_ops_ro`로 강제한다. 사업 Dashboard 3종은 그대로 Serving 파일만 읽는다.
+- [x] View `warehouse_run_report_status`(실행 1건에 1행)와 `warehouse_run_report_domain_status`(실행 × 도메인)를 추가했다. `report` JSON 통째는 내보내지 않는다. View 적용이 실패해도 Run report 기록과 DAG는 영향을 받지 않는다.
+- [x] Metabase 연결 `Pipeline Metadata`(database ID 3), Card 61~64, Dashboard 5 `Pipeline Operations Status (Pipeline 운영 상태)`를 추가했다. 마지막으로 끝난 실행의 상태, 판정 코드와 알림 대상 여부, 지연과 임계값, 최근 20건 이력을 보인다.
+- [x] 지연과 판정은 기록 시각의 값이다. 조회 시각으로 계산하는 값은 기록 후 경과 하나이고, 기록이 임계값보다 오래되면 `확인 불가`다. card 60과 어긋나면 운영 Dashboard가 옳다.
+- [x] 검증: 권한 경계와 상태 판정은 PostgreSQL 통합 테스트, 화면은 실제 기록 3건(정상, 부분 게시, 전체 차단)으로 확인했다. `정상`·`알림 대상` 선택 상태와 `ROW_COUNT_DROP`은 화면 증적이 없다. 읽는 법은 [Dashboard 문서](../bi/dashboards.md), 화면은 [증적](../bi/evidence.md), 연결과 기존 Volume의 Role 추가는 [Metabase 안내](../../metabase/README.md)에 있다.
+
 ## 파일·폴더별 변경 요약
 
 | 경로 | 변경 내용 |
 | ---- | --------- |
+| `sql/metadata/007_create_warehouse_run_report_views.sql`, `src/observability/run_report.py`, `sql/bootstrap/01-create-databases-and-roles.sh`, `.env.example`, `compose.yaml`, `scripts/metabase_import.py`, `tests/integration/test_run_report_views_integration.py`, `tests/observability/test_run_report*.py`, `tests/test_metabase_import.py` | 운영 상태 Dashboard: 운영 View 2개와 읽기 전용 Role, Run report 기록 뒤 View 적용, PostgreSQL 연결 Card의 Serving 최신 여부 검사 생략, 권한·판정·접두사 일치 테스트를 추가했다. |
+| `metabase/export/card-{61,62,63,64}.json`, `metabase/export/dashboard-5.json`, `docs/bi/screenshots/ops-status-*-2026-11-12.png` | 운영 상태 Dashboard: Card 4개와 Dashboard Snapshot, 화면 증적 6장을 추가했다. |
+| `PRD_v1.34.md`, `docs/adr/022-run-report-as-second-metabase-source.md`, `docs/reference/publish-slo.md`, `docs/bi/dashboards.md`, `docs/bi/evidence.md`, `metabase/README.md`, `README.md` | 운영 상태 Dashboard: 계약 예외, 결정 근거, 읽는 법, 증적, 연결 절차와 기존 Volume용 Role 추가 명령을 적었다. |
 | `metabase/export/card-60.json`, `metabase/export/dashboard-{2,3,4}.json`, `docs/bi/dashboards.md`, `docs/bi/evidence.md`, `docs/bi/screenshots/domain-status-*-2026-11-12.png`, `metabase/README.md` | card 60 `도메인 게시 상태`와 세 Dashboard 배치 Snapshot, 화면 증적 4장, `serving_domain_status`를 숨기지 않는다는 안내를 추가했다. |
 | `src/common/schedule.py`, `airflow/dags/source_simulation_dag.py`, `tests/test_schedule.py`, `tests/test_airflow_dags.py` | 062: 원천 주기 기본값과 지원하는 고정 간격 해석을 공통화하고 환경 변수·지원 범위·잘못된 주기·DAG 연결을 검증한다. |
 | `src/observability/run_report.py`, `tests/observability/test_run_report.py`, `tests/integration/test_run_report_integration.py` | 062: 게시 파일의 UTC 최신 구매 시각·지연·임계값과 이번·직전 게시 행 수·전체 재구축 여부를 독립 수집한다. 지연·감소 경계, 빈 데이터, 주기 오류 격리, 실제 PostgreSQL 게시 이력 조회를 검증한다. |

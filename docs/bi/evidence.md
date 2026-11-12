@@ -101,3 +101,18 @@ PNG를 저장했다. 기본 화면 뒤 8초의 카드 렌더링 대기를 두어
 | 구독 행을 정상으로 대체 | 위 보류 Export | 브라우저 응답 대체 | [정상 대역](screenshots/domain-status-normal-fixture-2026-11-12.png) |
 
 Card 정의는 `metabase/export/card-60.json`, 배치는 `metabase/export/dashboard-{2,3,4}.json`이다. 검증 경위는 [Dashboard 문서](dashboards.md)에 있다.
+
+## Pipeline 운영 상태 Dashboard (dashboard 5, 2026-11-12)
+
+원천은 `Pipeline Metadata`(PostgreSQL, database ID `3`)의 View 2개다. 기록은 모두 실제 `warehouse_run_reports` 행이다.
+
+| 화면 | 실행 ID | 판정 | Screenshot |
+| --- | --- | --- | --- |
+| 정상 실행 | `manual__2026-11-12T02:20:00+00:00` | 판정 없음, `PUBLISHED` | [정상](screenshots/ops-status-success-2026-11-12.png) |
+| 부분 게시 | `verify_partial_on` | `PUBLISH_PARTIAL:orders`, `PUBLISHED` | [부분 게시](screenshots/ops-status-partial-2026-11-12.png) |
+| 전체 차단 | `verify_partial_off` | `PUBLISH_FAILED`, `FAILED` | [전체 차단](screenshots/ops-status-failed-2026-11-12.png) |
+| 기록 없음 | 없는 실행 ID(빈 Table 대체) | `기록 없음` | [없는 실행](screenshots/ops-status-no-match-2026-11-12.png) |
+| 모바일(390px) | 마지막으로 끝난 실행 | | [모바일](screenshots/ops-status-mobile-2026-11-12.png) |
+| 관리 화면 | | 새 연결에 View 2개만 보인다 | [Table 메타데이터](screenshots/ops-status-database-2026-11-12.png) |
+
+세 실제 기록은 조회 시점에 임계값보다 오래돼 선택 상태가 `확인 불가 (지난 실행)`이다. `정상`·`알림 대상` 선택 상태와 `ROW_COUNT_DROP`은 화면 증적이 없고 테스트와 임시 Table SQL로 확인했다. Card 정의는 `metabase/export/card-{61,62,63,64}.json`, 배치는 `metabase/export/dashboard-5.json`이다. 읽는 법과 한계는 [Dashboard 문서](dashboards.md)에 있다.

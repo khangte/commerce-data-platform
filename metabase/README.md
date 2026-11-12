@@ -80,6 +80,45 @@ uv run python -m src.serving status
 되돌린 다음 `METABASE_SERVING_DATABASE_ID`를 비운다. 순서를 지켜야 이후 정리에서
 Metabase가 가리키는 버전 파일이 제거되지 않는다(050).
 
+## 운영 Dashboard 연결 (Pipeline Metadata)
+
+운영 Dashboard `Pipeline Operations Status (Pipeline 운영 상태)`는 Serving 파일이 아니라 PostgreSQL `pipeline_metadata`의 View 2개를 읽는다([ADR 022](../docs/adr/022-run-report-as-second-metabase-source.md)). Metabase 관리 화면에서 PostgreSQL 연결을 하나 더 등록한다.
+
+| 항목 | 값 |
+| ---- | ---- |
+| 이름 | `Pipeline Metadata` |
+| Host / Port | `postgres` / `5432` |
+| Database | `.env`의 `PIPELINE_METADATA_DB` |
+| 계정 | `metabase_ops_ro` / `.env`의 `METABASE_OPS_DB_PASSWORD` |
+
+- `metabase_ops_ro`는 `warehouse_run_report_status`, `warehouse_run_report_domain_status`만 읽는다. 원본 Table은 권한 오류가 난다. 관리 화면의 Table 메타데이터에도 이 둘만 보여야 한다.
+- Role 이름은 `sql/metadata/007_create_warehouse_run_report_views.sql`에 고정돼 있다. `METABASE_OPS_DB_USER`를 바꾸지 않는다.
+- View와 권한은 `warehouse_pipeline_dag`가 Run report를 기록할 때마다 다시 적용한다(멱등).
+- `scripts/metabase_import.py --apply`는 PostgreSQL 연결의 Card에서 Serving 최신 여부 검사를 건너뛴다.
+- 연결 비밀번호는 Metabase 앱 DB에만 있고 `metabase/export/`에는 저장되지 않는다.
+
+### 기존 Volume에 Role 추가
+
+`sql/bootstrap/01-create-databases-and-roles.sh`는 빈 Volume에서만 돈다. 이미 쓰던 Volume에는 `.env`에 `METABASE_OPS_DB_PASSWORD`를 넣은 뒤 아래를 한 번 실행한다. 두 명령 모두 다시 실행해도 된다.
+
+```bash
+# 1) Role 생성 (이미 있으면 아무것도 하지 않는다)
+PW=$(grep '^METABASE_OPS_DB_PASSWORD=' .env | cut -d= -f2-)
+docker compose exec -T postgres sh -c \
+  'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d postgres -v pw="$1"' sh "$PW" <<'SQL'
+SELECT format('CREATE ROLE metabase_ops_ro LOGIN PASSWORD %L', :'pw')
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'metabase_ops_ro')
+\gexec
+SQL
+
+# 2) View와 권한 적용 (DAG를 한 번 돌려도 같은 결과다)
+docker compose exec -T postgres sh -c \
+  'psql -v ON_ERROR_STOP=1 -U "$PIPELINE_DB_USER" -d "$PIPELINE_METADATA_DB"' \
+  < sql/metadata/007_create_warehouse_run_report_views.sql
+```
+
+2번은 `CREATE VIEW` 두 줄과 `DO`를 출력한다. 비밀번호를 바꾸려면 `ALTER ROLE metabase_ops_ro PASSWORD '...'`을 실행하고 Metabase 연결 설정도 고친다.
+
 ## 내부 테이블과 샘플 콘텐츠
 
 `serving_manifest`는 내부 검증용 테이블이므로 관리 화면의 Table Metadata에서 이름으로 찾아 숨긴다.

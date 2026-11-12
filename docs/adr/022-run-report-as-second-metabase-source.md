@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (2026-11-12). 구현 전이다. [ADR 012](012-metabase-serving-strategy.md)·[ADR 019](019-serving-file-visibility-for-metabase.md)를 보완한다. 사업 Dashboard가 Serving 파일만 읽는 구조는 그대로다.
+Accepted (2026-11-12). 같은 날 구현했다. [ADR 012](012-metabase-serving-strategy.md)·[ADR 019](019-serving-file-visibility-for-metabase.md)를 보완한다. 사업 Dashboard가 Serving 파일만 읽는 구조는 그대로다.
 
 계획: `docs/superpowers/plans/2026-11-12-metabase-ops-status-dashboard.md`
 
@@ -76,11 +76,20 @@ A안을 고른 근거:
 
 ## Validation
 
-구현 전이다. 아래는 계획서의 Phase별 완료조건이고, 구현이 끝나면 결과로 바꾼다.
+2026-11-12 결과다. 전체 `uv run pytest`는 862 통과, PostgreSQL 통합(Run report·View)은 14 통과다.
 
-| 근거 | 기대 결과 |
+| 근거 | 결과 |
 | ---- | ---- |
-| Postgres 통합 테스트: `metabase_ops_ro` 권한 | View 2개는 읽힌다. `warehouse_run_reports`와 `mart_publish_runs`는 권한 오류다 |
-| 통합 테스트: 판정이 다른 기록 4건 | 알림 대상 판정과 상태가 계획서 표와 같다. 오래된 기록은 `확인 불가`다 |
-| 단위 테스트: View SQL의 접두사 | `ALERT_FAILURE_PREFIXES`와 같다 |
-| 화면 증적: 실제 기록 3건(정상, 부분 게시, 전체 차단) | 세 실행이 서로 다른 상태로 보인다 |
+| `tests/integration/test_run_report_views_integration.py::test_ops_role_reads_only_views` | `metabase_ops_ro`로 View 2개는 읽힌다. `warehouse_run_reports`와 `mart_publish_runs`는 `InsufficientPrivilege`다. 이 Role의 `information_schema.tables`에는 View 2개만 보인다 |
+| `test_status_and_alert_codes` | 정상 → `정상`, `PUBLISH_FAILED` → `알림 대상`, `ROW_COUNT_DROP:facts.fct_order` → `알림 대상`, `SLOW_RUN` → `판정 있음`. 1,300초 전 기록과 `stale_after_s`가 NULL인 기록 → `확인 불가` |
+| `test_domain_view_rows` | 도메인 값이 없거나 JSON null인 기록은 도메인 View에 행이 없다. 값이 있으면 도메인별 1행이다 |
+| `tests/observability/test_run_report_alert.py::test_view_sql_alert_prefixes_match_alert_failure_prefixes` | View SQL의 `starts_with` 접두사 집합이 `ALERT_FAILURE_PREFIXES`와 같다. `LIKE`는 `_`가 임의 한 글자라서 쓰지 않는다 |
+| `test_view_apply_failure_keeps_record_and_does_not_raise` | View 적용이 실패해도 Run report 기록은 남고 예외가 나가지 않는다(`RUN_REPORT_VIEW_APPLY_FAILED` 로그) |
+| 화면: 실제 기록 3건 | 정상(`manual__2026-11-12T02:20:00+00:00`), 부분 게시(`verify_partial_on`), 전체 차단(`verify_partial_off`)의 게시 상태와 판정 코드가 각각 다르게 보인다. [증적](../bi/evidence.md) |
+| Metabase 관리 화면 | 새 연결에 View 2개만 보인다 |
+
+화면으로 확인하지 못한 것:
+
+- 선택 상태 `정상`과 `알림 대상`. 실제 기록이 모두 임계값보다 오래돼 화면에서는 `확인 불가`만 나왔다. 위 통합 테스트로만 확인했다.
+- `ROW_COUNT_DROP`. 실제 이력에 없다. PostgreSQL 임시 Table에서 Card SQL만 실행했다.
+- 빈 Table의 `기록 없음`. 실제 이력을 지우지 않고 없는 실행 ID 선택으로 대신했다.

@@ -1,7 +1,7 @@
 # 게시 SLO
 
 > 기준: `src/observability/run_report.py`의 `judge_run_report`. 이 문서는 코드에 이미 있는 판정을 한 표로 모은 것이고 새 임계값을 만들지 않는다.
-> 관련: [ADR 021](../adr/021-split-publish-gate-by-domain.md), [R-14 Runbook](../runbooks/r14-dbt-failure.md)
+> 관련: [ADR 021](../adr/021-split-publish-gate-by-domain.md), [ADR 022](../adr/022-run-report-as-second-metabase-source.md), [R-14 Runbook](../runbooks/r14-dbt-failure.md)
 
 `warehouse_pipeline_dag` 실행이 끝날 때마다 Run report 한 건이 `warehouse_run_reports`에 남는다. 아래 조건을 모두 만족하면 `ok=true`다.
 
@@ -40,7 +40,16 @@ DAG의 마지막 Task `domain_publish_alert`는 Run report를 기록한 뒤 아�
 
 나머지 판정은 `ok=false`로 기록만 한다. `DATA_STALE`(주문 사건 시각)은 상시 운영이 아니면 늘 뜨고, `DBT_TEST_WARN`은 경고다. `SERVING_EXPORT_FAILED`처럼 이미 실패한 Task가 있는 판정도 있다. `NOT_FRESH`와 `SLOW_RUN`은 Task 실패 없이 기록만 남는다. `SLOW_RUN`은 재시도 대기와 수동 재실행으로 부풀고(이력 28건 중 2건, 둘 다 수동 검증 실행), `NOT_FRESH`의 원인은 대개 재지정 Task 실패로 이미 드러난다.
 
+## Metabase에서 보는 곳
+
+Dashboard `Pipeline Operations Status (Pipeline 운영 상태)`가 이 문서의 판정을 실행 한 건 단위로 보여 준다([ADR 022](../adr/022-run-report-as-second-metabase-source.md), [BI 문서](../bi/dashboards.md)). 원천은 `warehouse_run_reports` 위의 View 2개다.
+
+- 지연, 임계값, 판정 코드, 게시 상태는 Run report를 기록한 시각의 값이다. 화면을 열 때 다시 계산하지 않는다.
+- 조회 시각으로 계산하는 값은 "기록 후 경과" 하나다. 마지막 기록이 그 실행의 `stale_after_s`보다 오래되면 상태는 `확인 불가`다. 실패가 아니라 "마지막 실행 뒤를 모른다"는 뜻이다.
+- 위 표의 네 판정은 `알림 대상`으로, 나머지 판정은 `판정 있음`으로 보인다.
+- card 60은 마지막으로 성공한 내보내기 시점의 값이다. 전체 차단 뒤에는 card 60이 정상이고 운영 Dashboard가 `PUBLISH_FAILED`를 보인다. 이때 옳은 쪽은 운영 Dashboard다.
+
 ## 하지 않는 것
 
 - 목표 비율(예: 99%)과 측정 기간을 정하지 않았다. 판정은 실행 한 건 단위다. 오류 예산도 계산하지 않는다.
-- 외부 채널(Slack·메일·호출)로 알리지 않는다. 드러나는 곳은 Airflow의 Task·DagRun 상태뿐이다. 건다면 자리는 `domain_publish_alert`의 실패다. 부분 게시 때 `dbt_build` Task는 성공하므로 거기에 걸면 놓친다.
+- 외부 채널(Slack·메일·호출)로 알리지 않는다. 드러나는 곳은 Airflow의 Task·DagRun 상태와 Metabase 운영 Dashboard다. 둘 다 사람이 열어 봐야 한다. 건다면 자리는 `domain_publish_alert`의 실패다. 부분 게시 때 `dbt_build` Task는 성공하므로 거기에 걸면 놓친다.

@@ -231,15 +231,18 @@ Phase 2 코드와 Phase 3 Snapshot. Phase 2 코드는 Phase 3을 시작하기 �
 
 완료조건:
 
-1. 위 문서가 Dashboard 이름, Card 4개, 원천 View, `확인 불가`의 뜻, card 60과 어긋날 때 어느 쪽이 옳은지를 적는다.
-2. `docs/bi/evidence.md`가 Phase 3의 화면 증적을 가리킨다.
-3. `tests/test_doc_links.py` 통과.
+- [x] 1. 위 문서가 Dashboard 이름, Card 4개, 원천 View, `확인 불가`의 뜻, card 60과 어긋날 때 어느 쪽이 옳은지를 적는다.
+   - 결과(architect, 2026-11-12): `docs/bi/dashboards.md`의 새 절에 다섯 항목이 모두 있다. `publish-slo.md`, `phase-10-bi.md`, README는 요약과 링크를 둔다.
+- [x] 2. `docs/bi/evidence.md`가 Phase 3의 화면 증적을 가리킨다.
+   - 결과: 화면 6장을 표로 가리킨다.
+- [x] 3. `tests/test_doc_links.py` 통과.
+- [x] 추가: ADR 022의 Validation을 실제 결과로 바꿨다. 기존 Volume용 Role 추가 명령을 `metabase/README.md`에 적고 실행 중인 PostgreSQL에서 두 명령을 돌려 확인했다(둘 다 멱등).
 
 ## 5. 가정과 확인하지 않은 것
 
 - 가정: 운영 Dashboard는 사업 Dashboard와 같은 Metabase 계정으로 본다. 계정·Group별 권한 분리는 하지 않는다(사용자가 한 명이다).
 - 가정: `확인 불가`의 임계값은 새 값을 만들지 않고 그 실행의 `stale_after_s`(원천 주기 2배)를 쓴다.
-- 확인하지 않음: Metabase v0.63이 Postgres View를 Table처럼 동기화하는지. 일반적으로 되지만 이 환경에서 돌려 보지 않았다. Phase 3 첫 단계에서 확인한다. 안 되면 Card를 Native SQL로만 쓰면 된다.
+- 확인함(Phase 3): 동기화된다. 관리 화면에 View 2개가 보인다. 처음 적은 내용 → Metabase v0.63이 Postgres View를 Table처럼 동기화하는지. 일반적으로 되지만 이 환경에서 돌려 보지 않았다. Phase 3 첫 단계에서 확인한다. 안 되면 Card를 Native SQL로만 쓰면 된다.
 - 확인하지 않음: `scripts/metabase_snapshot.py`·`metabase_import.py`가 DB 연결이 둘인 Snapshot을 다른 환경에서 되살릴 때 DB ID를 어떻게 맞추는지. Card 60은 `database: 2`가 고정돼 있다. 새 연결의 ID는 환경마다 다를 수 있다.
-- 확인하지 않음: 기존 Volume에서 Role을 추가하는 1회 명령.
+- 확인함(Phase 5): 기존 Volume에서 Role을 추가하는 1회 명령. `metabase/README.md`에 있다.
 - 이력의 `stale_after_s`는 실행마다 다를 수 있다(최근 기록은 1,200초). View는 행마다 자기 값을 쓴다.
