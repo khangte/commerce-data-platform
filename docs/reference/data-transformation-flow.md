@@ -27,6 +27,7 @@ data/serving/exports/{export_id}.duckdb  Serving 파일 (mart.duckdb와 같은 i
 Metabase                                 BI 조회
         ↓ publish_run_summary            DagRun마다 운영 기록 1행
 pipeline_metadata.warehouse_run_reports
+        ↓ domain_publish_alert           부분 게시·도메인 지연·전체 차단·행 수 급감이면 Task 실패
 ```
 
 각 구간의 책임은 겹치지 않는다.
@@ -443,6 +444,7 @@ initialize_run → acquire_source_snapshot_lease → extract_validate_load ×9 �
                                                                             └→ verify_bronze_commit_task      │
    → prepare_warehouse_build → dbt_build → publish_mart → export_serving_mart → repoint_metabase_serving     │
    → publish_run_summary (trigger_rule=all_done, release 이후) ←─────────────────────────────────────────────┘
+   → domain_publish_alert
 ```
 
 | Task | 재시도 | 하는 일 | 실패 시 |
@@ -453,6 +455,7 @@ initialize_run → acquire_source_snapshot_lease → extract_validate_load ×9 �
 | `export_serving_mart` | 0 | Published에서 Serving 파일을 만든다 | `SERVING_EXPORT_FAILED`. Publish 결과는 `PUBLISHED`로 남는다 |
 | `repoint_metabase_serving` | 기본값(2회) | Metabase 연결을 새 Export로 바꾸고 검증한다 | `METABASE_REPOINT_FAILED`. 옛 Export 정리 안 함 |
 | `publish_run_summary` | 기본값(2회) | Summary와 운영 기록을 남긴다 | 운영 기록 수집·저장 실패는 DAG를 실패시키지 않는다 |
+| `domain_publish_alert` | 0 | 운영 기록 판정에 `PUBLISH_PARTIAL:<domain>`·`DATA_STALE:<domain>`·`PUBLISH_FAILED`·`ROW_COUNT_DROP:<relation>`이 있으면 실패한다 | DagRun이 `failed`가 된다. 게시 결과는 바꾸지 않는다([게시 SLO](publish-slo.md)) |
 
 dbt·Publish·Export를 재시도하지 않는 이유는 부분 실행 결과를 덮어쓰지 않고 실패 Build를 원인 분석용으로 보존하기 위해서다. 실패 Error Type별 조치는 [Warehouse Publish 오류 유형](../troubleshooting/warehouse-publish.md)이 정본이다.
 
@@ -554,11 +557,14 @@ Export는 PostgreSQL에 행을 쓰지 않는다. 어느 Publish Run을 담았는
 | 코드 | 조건 |
 | --- | --- |
 | `TASK_NOT_SUCCESS:<task_id>` | 종료 Task 중 `success`가 아닌 것 |
-| `PUBLISH_<status>` | Publish 상태가 `PUBLISHED`가 아님 |
+| `PUBLISH_<status>` | Publish 상태가 `PUBLISHED`가 아님. `PUBLISH_FAILED`면 `domain_publish_alert`가 실패한다 |
 | `SERVING_EXPORT_FAILED` | Export가 `SUCCESS`가 아님 |
 | `REPOINT_<status>` | 재지정이 `SUCCESS`가 아님. `SKIPPED`도 실패로 본다 |
 | `NOT_FRESH` | 최신성 검사가 `fresh=false` |
+| `DBT_TEST_WARN` | `warn` 등급 Test 경고가 1건 이상(`tests_warned > 0`). 게시는 진행된다 |
+| `PUBLISH_PARTIAL:<domain>` | 그 도메인이 보류된 부분 게시(`held_domains`). `domain_publish_alert`가 실패한다 |
 | `DATA_STALE` | 게시 파일의 최신 주문 구매 시각이 수집 시각보다 원천 DAG 간격의 2배 넘게 뒤처짐. 지난 `logical_date`로 원천을 보충 실행하면 데이터가 정상이어도 날 수 있다([R-11](../runbooks/r11-missing-schedule.md)) |
+| `DATA_STALE:<domain>` | 그 도메인이 마지막으로 보류 없이 게시된 지 원천 DAG 간격의 2배 초과. `domain_publish_alert`가 실패한다 |
 | `ROW_COUNT_DROP:<relation>` | 이번 PUBLISHED Run의 행 수가 직전 PUBLISHED Run보다 1% 넘게 감소. Full Refresh Run은 제외. Publish는 막지 않는다. 게시 뒤 Task `domain_publish_alert`가 실패해 DagRun이 `failed`가 된다 |
 | `EXPORTS_COUNT_<n>` | `exports/` 파일 수가 보존 개수(3)와 다름 |
 | `FAILED_BUILDS_OVER_RETENTION` | `failed/` 파일 수가 보존 개수(3) 초과 |

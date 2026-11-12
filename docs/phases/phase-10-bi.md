@@ -308,10 +308,20 @@ reviewer 후속 최종 검증: 전체 pytest 494개 통과·140개 생략(89.17�
 
 환경 복구·검증 이력: Docker 엔진과 PostgreSQL·SeaweedFS가 중단되어 초기 통합 검사는 연결 거부였다. Docker Desktop과 기존 두 컨테이너를 시작한 뒤 통합 검사가 통과했다. 첫 전체 새로고침 Run `a6f27a29-f753-4248-b5b2-87294cc805ca`는 SeaweedFS 볼륨 등록 전 HTTP 500으로 실패했고, 등록 후 재실행해 성공했다. Airflow·Metabase 서비스 시작과 Serving 내보내기·재지정은 수행하지 않았다. 검증 로그는 `/tmp/dq-judgments-*.log`에 남겼다. 설계 이탈은 없다.
 
+## 도메인 게시 상태 Card (2026-11-12)
+
+계획: `docs/superpowers/plans/2026-11-11-publish-gate-domain-boundary.md` Phase 5. 도메인 부분 게시([ADR 021](../adr/021-split-publish-gate-by-domain.md)) 뒤 Dashboard만 보는 사람이 어느 도메인이 이전 값인지 알 수 없던 것을 메운다.
+
+- [x] card 60 `도메인 게시 상태`를 Sales·Product·Customer Dashboard 맨 위에 배치했다. `Commerce Mart Serving`의 `serving_domain_status`만 읽고 `orders`·`subscriptions`를 한 행씩 보여 준다(게시 상태, 마지막 정상 게시 시각 UTC, 연속 보류 횟수).
+- [x] `serving_domain_status`는 Mart가 아니라 Serving Export가 만드는 Table이다. Mart-only 계약의 예외는 이 Table 하나다. `serving_manifest`와 달리 Card가 쓰므로 숨기지 않는다.
+- [x] 표는 지연 임계값을 판정하지 않고 날짜·주문 상태 필터의 영향을 받지 않는다. 값을 알 수 없으면 `확인 불가`다.
+- [x] 검증: 실제 Serving의 보류 화면·모바일 화면·전 도메인 정상 화면, 응답 대체로 빈 결과·HTTP 500·확인 불가를 확인했다. 실행 식별자와 화면은 [Dashboard 문서](../bi/dashboards.md)와 [증적](../bi/evidence.md)에 있다. Serving DB 2의 `sync_schema` 뒤 metadata에서 Table과 필드 5개를 확인했다.
+
 ## 파일·폴더별 변경 요약
 
 | 경로 | 변경 내용 |
 | ---- | --------- |
+| `metabase/export/card-60.json`, `metabase/export/dashboard-{2,3,4}.json`, `docs/bi/dashboards.md`, `docs/bi/evidence.md`, `docs/bi/screenshots/domain-status-*-2026-11-12.png`, `metabase/README.md` | card 60 `도메인 게시 상태`와 세 Dashboard 배치 Snapshot, 화면 증적 4장, `serving_domain_status`를 숨기지 않는다는 안내를 추가했다. |
 | `src/common/schedule.py`, `airflow/dags/source_simulation_dag.py`, `tests/test_schedule.py`, `tests/test_airflow_dags.py` | 062: 원천 주기 기본값과 지원하는 고정 간격 해석을 공통화하고 환경 변수·지원 범위·잘못된 주기·DAG 연결을 검증한다. |
 | `src/observability/run_report.py`, `tests/observability/test_run_report.py`, `tests/integration/test_run_report_integration.py` | 062: 게시 파일의 UTC 최신 구매 시각·지연·임계값과 이번·직전 게시 행 수·전체 재구축 여부를 독립 수집한다. 지연·감소 경계, 빈 데이터, 주기 오류 격리, 실제 PostgreSQL 게시 이력 조회를 검증한다. |
 | `dbt/models/intermediate/int_order_fact_ready.sql`, `dbt/models/marts/facts/fct_order.sql`, `dbt/models/marts/facts/schema.yml`, `tests/test_fact_layer_contract.py` | 062: 승인된 `purchase_at` 추가와 필수값 검사를 구현한다. 전체 새로고침 1회가 필요하며 Phase 6에도 기록한다. |

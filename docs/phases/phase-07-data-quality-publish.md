@@ -419,7 +419,22 @@ Normal E2E Unknown Key = 0
   - Postgres 통합 `tests/integration/test_publish_metadata_integration.py` 20개 통과. 사슬 테스트 `test_domain_holds_follow_published_chain`이 포함된다.
   - Metabase에서 새 Table이 Sync되는지는 확인하지 않았다(Phase 5 범위).
 
+## Publish Gate 최소 알림: 판정이 있으면 DagRun 실패 (2026-11-12)
+
+계획: `docs/superpowers/plans/2026-11-12-publish-gate-minimal-alert.md`. 부분 게시에서는 `dbt_build`가 성공으로 끝나고, 전체 차단에서도 마지막 Task `publish_run_summary`(`all_done`)가 성공해 DagRun이 `success`로 남았다. 실패가 Run report에만 있고 Airflow 화면에는 없던 구멍을 메운다. 외부 채널(Slack·메일·호출)은 하지 않는다.
+
+- [x] 판정 선별(`src/observability/run_report.py`): `ALERT_FAILURE_PREFIXES`와 `alert_failures`가 Run report 판정 중 `PUBLISH_PARTIAL:<domain>`, `DATA_STALE:<domain>`, `PUBLISH_FAILED`, `ROW_COUNT_DROP:<relation>`만 고른다.
+  - 콜론이 없는 `DATA_STALE`(주문 사건 시각)은 상시 운영이 아니면 늘 떠서 뺐다.
+  - `SLOW_RUN`은 재시도 대기와 수동 재실행으로 부풀고(이력 28건 중 2건, 둘 다 수동 검증 실행), `NOT_FRESH`의 원인은 대개 재지정 Task 실패로 이미 드러나서 뺐다.
+- [x] DAG(`airflow/dags/warehouse_pipeline_dag.py`): `publish_run_summary` 뒤에 마지막 Task `domain_publish_alert`(`retries=0`)를 추가했다. 고른 판정이 있으면 `AirflowFailException("DOMAIN_PUBLISH_ALERT: <판정 코드>")`로 실패한다. `publish_run_summary`의 반환값에 `run_report_failures`를 더했고 기록되는 Run report는 그대로다.
+- [x] 게시에는 영향이 없다. 게시·Serving 내보내기·Metabase 재지정이 끝난 뒤에 돈다. Task 실패가 "아무것도 게시되지 않았다"는 뜻은 아니다.
+- [x] 검증: 단위 856개 통과·148개 건너뜀, Ruff 통과(reviewer 승인). 새 테스트 `tests/observability/test_run_report_alert.py`와 `tests/test_airflow_dags.py`의 구조·Task 함수 테스트.
+- [ ] 확인하지 않은 것: 실제 Airflow 실행에서 DagRun이 `failed`로 바뀌는지는 돌려 보지 않았다. `ROW_COUNT_DROP`은 이력에서 한 번도 뜬 적이 없어 오탐률을 모른다.
+
 ## 파일·폴더별 변경 요약
+
+- `src/observability/run_report.py`, `airflow/dags/warehouse_pipeline_dag.py`, `tests/observability/test_run_report_alert.py`, `tests/test_airflow_dags.py`, `tests/observability/test_run_report.py`: 알림 대상 판정 선별 `alert_failures`와 마지막 Task `domain_publish_alert`를 추가했다. Summary 반환값에 `run_report_failures`가 생겨 기존 Summary 테스트 1개의 기대값을 맞췄다.
+- `README.md`, `docs/reference/publish-slo.md`, `docs/reference/data-transformation-flow.md`, `docs/runbooks/r14-dbt-failure.md`, `docs/troubleshooting/warehouse-publish.md`, `docs/adr/021-split-publish-gate-by-domain.md`, `PRD_v1.33.md`: Task 실패로 드러나는 판정 4개와 비목표 문구(외부 알림 채널)를 동기화했다.
 
 - `src/warehouse/domain_gate.py`, `src/warehouse/publish_metadata.py`, `src/observability/run_report.py`, `src/serving/export.py`, `src/serving/cli.py`, `airflow/dags/warehouse_pipeline_dag.py`: 도메인 기준 시각·연속 보류 공용 계산, Run report `DATA_STALE:<domain>`(마지막 비보류 게시 기준)·`consecutive_holds`, Serving `serving_domain_status`와 그 호출을 추가했다.
 - `tests/test_warehouse_domain_status.py`, `tests/observability/test_run_report_domains.py`, `tests/serving/test_export_domain_status.py`, `tests/serving/test_cli.py`, `tests/test_warehouse_domain_boundary.py`, `tests/integration/test_publish_metadata_integration.py`: 위 동작의 단위·통합 테스트를 추가하고 CLI Fixture에 보류 조회 대역을 넣었다.

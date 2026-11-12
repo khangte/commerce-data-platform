@@ -91,3 +91,13 @@ PNG를 저장했다. 기본 화면 뒤 8초의 카드 렌더링 대기를 두어
 차트로 저장한다. 논리 시각 2026-09-10까지 재증적에서 card 54의 상태 전이 시계열과 card 59의 현재 상태 분포가
 빈 화면이 아닌 것을 확인하기 위해 Snapshot과 Customer PNG를 다시 생성했다. API JSON Snapshot은 Dashboard·카드·Filter의
 재생성 기준으로 계속 보존하고, PNG는 실제 화면 증적으로 사용한다.
+
+## 도메인 게시 상태 Card (card 60, 2026-11-12)
+
+| 화면 | Publish Run / Export | 출처 | Screenshot |
+| --- | --- | --- | --- |
+| 주문 정상·구독 2회 연속 보류 | `e34cbcfc-6ea1-4aee-9eed-97bb927af43b` / `106c5954-1910-4d7a-8b9b-fece9fd30fea` | 실제 Serving | [보류](screenshots/domain-status-held-2026-11-12.png), [모바일](screenshots/domain-status-mobile-2026-11-12.png) |
+| 두 도메인 정상·연속 보류 0회 | Export `ec871ab0-6bb6-428e-9538-a9ff18cce6c6` | 실제 Serving (Customer Dashboard) | [정상](screenshots/domain-status-normal-real-2026-11-12.png) |
+| 구독 행을 정상으로 대체 | 위 보류 Export | 브라우저 응답 대체 | [정상 대역](screenshots/domain-status-normal-fixture-2026-11-12.png) |
+
+Card 정의는 `metabase/export/card-60.json`, 배치는 `metabase/export/dashboard-{2,3,4}.json`이다. 검증 경위는 [Dashboard 문서](dashboards.md)에 있다.

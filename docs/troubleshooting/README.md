@@ -18,4 +18,5 @@
 | `UNKNOWN_ERROR` (Abandoned Run) | —(문서 근거) | `PUBLISH_LEASE`(마지막 Heartbeat 뒤 5분)가 경과한 Building/Publishing Run | 다음 실행이 자동 회수, Published 파일 일치만 확인 | [Warehouse Publish](warehouse-publish.md) |
 | `PublishInProgressError` | —(문서 근거) | 다른 활성 Publish Run 존재 | 종료 대기 또는 자동 Abandoned 회수 대기 | [Warehouse Publish](warehouse-publish.md) |
 | `PublishedWalError` | —(문서 근거) | Published 파일 옆 WAL 잔존 | CHECKPOINT 상태 확인 후 WAL 제거 | [Warehouse Publish](warehouse-publish.md) |
+| `DOMAIN_PUBLISH_ALERT: <판정 코드>` | —(문서 근거) | 마지막 Task `domain_publish_alert`가 부분 게시·도메인 지연·전체 차단·행 수 급감 판정에서 실패 | 판정 코드별 조치. `PUBLISH_FAILED`가 아니면 게시본은 이미 교체됨 | [Warehouse Publish](warehouse-publish.md), [게시 SLO](../reference/publish-slo.md) |
 | `SOURCE_CONNECTION_ERROR` | R-15 | `psycopg.OperationalError`(Snapshot 연결 열기 실패) | 재시도 가능. Object/Watermark 불변이므로 같은 `batch_id`로 즉시 재시도 | [Source 연결 실패](../runbooks/r15-source-connection-failure.md), [Ingestion 오류](ingestion-errors.md) |

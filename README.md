@@ -141,7 +141,10 @@ initialize_run → acquire_lease → extract (Table별 mapped, 동시 3개)
                                      └─ verify_bronze_commit
                                               → prepare_build → dbt_build → publish_mart
                                               → export_serving_mart → repoint_metabase_serving
+                                              → publish_run_summary (all_done) → domain_publish_alert
 ```
+
+`publish_run_summary`는 앞 Task가 실패해도 Run report 한 건을 남긴다. `domain_publish_alert`는 그 판정에 부분 게시·도메인 지연·전체 차단·행 수 급감이 있으면 실패해 DagRun을 `failed`로 만든다([게시 SLO](docs/reference/publish-slo.md)).
 
 ---
 
@@ -249,7 +252,7 @@ data/warehouse/failed/            ← 실패 Build는 최근 3개만 보존
 - dbt Singular Test 30여 개: Grain 유일성, SCD2 구간 겹침 없음, 현재 버전 정확히 1개, 상태 전이 유효성, 주문 합계 일치 등
 - `schema.yml`: `not_null`, `unique`, `relationships`, `accepted_values`
 - 심각도: 지표 계층 Test 13개는 `warn`(게시 진행·경고 기록), 나머지는 `error`(게시 차단)
-- pytest 테스트 함수 332개 (`def test_` 선언 기준, 매개변수화 확장 케이스는 별도. 단위·통합·Reliability)
+- pytest 테스트 함수 555개 (`def test_` 선언 기준, 매개변수화 확장 케이스는 별도. 단위·통합·Reliability)
 
 ### 6. Reliability Suite (R-01 ~ R-15)
 
@@ -410,9 +413,10 @@ docker compose --profile bi up -d metabase
 │   ├── ingestion/       증분 추출, Bronze Commit, Manifest, Quarantine, 재처리
 │   ├── warehouse/       dbt 실행, Publish Gate, Mart Hash
 │   ├── serving/         Serving Export, Metabase Repoint
+│   ├── observability/   Run report 수집·판정
 │   └── benchmark/       Benchmark 실험 Harness
 ├── tests/               unit · integration · reliability
 ├── metabase/            Dashboard Query
 ├── scripts/             init, clean-clone 검증, 데이터 다운로드
-└── docs/                phases · runbooks · troubleshooting · benchmarks · bi · reference
+└── docs/                phases · adr · runbooks · troubleshooting · benchmarks · bi · reference
 ```

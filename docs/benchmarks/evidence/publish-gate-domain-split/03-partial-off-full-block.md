@@ -114,4 +114,4 @@ publish_run_summary              map=-1 state=success try=1 start=2026-11-11T06:
 
 - WSL 메모리 5.9GB(swap 2GB 소진)에 Metabase 1.3GB가 겹쳐 `dbt_build` 프로세스가 예외 없이 두 번 종료됐다(scheduler: `executor_state=failed, state=None`). Airflow가 `retries=0`이어도 이를 재큐잉해 attempt 3에서 정상 판정(FAILED/DBT_TEST_ERROR)으로 끝났다. 같은 `publish_run_id`로 재진입해도 결과 행은 1개만 남았다.
 - 같은 구간의 `Publish 생존 신호 갱신 실패: OperationalError` 경고도 메모리 고갈 때만 나왔다. 메모리가 정상인 run(02, 04 attempt 3)에서는 0건이었고, 같은 함수를 직접 호출해도 정상 반환했다.
-- DagRun state가 `success`인 것은 leaf task `publish_run_summary`(`trigger_rule=all_done`)가 성공했기 때문이다. 기존 DAG 구조 그대로이고 이 브랜치의 변경이 아니다. 실패 판정은 run report(`ok=false`, `PUBLISH_FAILED`)로 한다.
+- DagRun state가 `success`인 것은 leaf task `publish_run_summary`(`trigger_rule=all_done`)가 성공했기 때문이다. 기존 DAG 구조 그대로이고 이 브랜치의 변경이 아니다. 실패 판정은 run report(`ok=false`, `PUBLISH_FAILED`)로 한다. (2026-11-12 이후에는 마지막 Task `domain_publish_alert`가 이 판정에서 실패해 DagRun이 `failed`가 된다.)

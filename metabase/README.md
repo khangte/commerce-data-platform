@@ -83,6 +83,7 @@ Metabase가 가리키는 버전 파일이 제거되지 않는다(050).
 ## 내부 테이블과 샘플 콘텐츠
 
 `serving_manifest`는 내부 검증용 테이블이므로 관리 화면의 Table Metadata에서 이름으로 찾아 숨긴다.
+`serving_domain_status`는 card 60 `도메인 게시 상태`가 읽으므로 숨기지 않는다.
 API를 쓰면 해당 DB의 테이블 ID를 확인하고 `PUT /api/table/{id}`에
 `{"visibility_type": "hidden"}`을 보낸다. 앱 DB를 새로 만들면 ID가 바뀔 수 있다.
 숨긴 뒤에도 Native Query로 읽을 수 있어 재지정 검증과 최신 여부 검사는 동작한다.

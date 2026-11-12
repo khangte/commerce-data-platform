@@ -4,6 +4,8 @@
 
 Accepted (2026-09-20, Phase 7)
 
+파일 단위 교체는 그대로다. "Test가 하나라도 실패하면 게시하지 않는다"는 판정은 [ADR 020](020-split-publish-gate-by-severity.md)(심각도)과 [ADR 021](021-split-publish-gate-by-domain.md)(도메인)이 고쳤다.
+
 ## Context
 
 Published Warehouse에 직접 dbt build를 실행하면 Test 실패 후에도 마지막 성공 Mart를 보존할 수 없다. Airflow Task가 별도 Process로 실행되므로 파일 Lock만으로 동시 Publish를 안전하게 제어할 수도 없다.
