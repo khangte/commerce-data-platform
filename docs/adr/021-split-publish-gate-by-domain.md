@@ -145,7 +145,6 @@ F·G·H의 수치와 명령은 [08 §6](../benchmarks/08-publish-gate-domain-spl
 - 경계 Test 실패가 운영에서 저절로 생기는 경우: 정상 수집에서는 `customer_key`가 바뀌지 않는다(관측이 뒤에만 붙고 등급이 내려가지 않는다). 실험 G는 소급 관측을 주입했다. 실제로는 재적재·Backfill에서만 생길 조건이다.
 - 실행 H는 Canary SQL의 var 기본값을 잠시 바꿔 만들었다. DAG에 dbt var를 넘기는 Param이 없다.
 - 소요 시간은 1회 측정이다.
-- Dashboard 상태 표의 정상 화면: 실제 Serving이 두 도메인 모두 정상인 실행이 아니라 카드 응답 대역으로 확인했다. 보류 화면과 Metabase의 `serving_domain_status` 조회는 실제 Serving으로 확인했다([BI 문서](../bi/dashboards.md)).
 
 ## 실무 관행과의 거리
 

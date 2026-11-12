@@ -226,7 +226,7 @@ Dashboard(Metabase)는 Serving 파일(`Commerce Mart Serving`) 하나만 읽는�
 **완료조건**
 
 - [x] 세 Dashboard의 첫 화면에서 상태 표가 기존 카드와 겹치지 않는다. 카드에 필터 매핑이 없고 Sales에서 날짜 필터 적용 후에도 같은 보류 상태를 확인했다.
-- [x] 정상 상태는 격리된 카드 응답 대역으로 두 도메인의 상태·시각·횟수를 확인했다. 실제 Serving이 정상 상태인 실행은 아니며 대역 값은 BI 문서에 적었다.
+- [x] 실제 전체 정상 Serving 내보내기 `ec871ab0-6bb6-428e-9538-a9ff18cce6c6`에서 두 도메인의 정상 상태·시각·연속 보류 0회를 응답 대체 없이 확인했다. 이전 카드 응답 대역 확인도 BI 문서에 이력으로 남겼다.
 - [x] 실제 Serving에서 구독 `보류`·이전 정상 게시 시각·2회 및 주문 `정상`·0회가 일치한다. 검증용 데이터는 격리하고 실제 Serving 게시 파일을 변조하지 않았다.
 - [x] 정상·보류 화면을 각각 Playwright MCP로 캡처하고 증적과 출처를 BI 문서에 기록했다. 390px 화면의 가로 스크롤, 빈 결과·HTTP 500·시각 없음 표시도 확인했다.
 - [x] Metabase 카드·Dashboard Snapshot과 `docs/bi/dashboards.md`를 실제 적용 결과에 맞춰 갱신했다.
@@ -236,10 +236,13 @@ Dashboard(Metabase)는 Serving 파일(`Commerce Mart Serving`) 하나만 읽는�
 
 **판정 (2026-11-12, architect):** reviewer 승인(지적 없음) 후 완료조건 6개를 산출물과 대조해 충족으로 판정했다. 화면 증적은 Customer Dashboard 기준이며 Sales·Product는 Snapshot의 같은 배치(row 0, 24×4, 필터 매핑 없음)로 확인했다. ADR 021의 "미보완"·"검증하지 못한 것"을 화면 표시 반영 상태로 고쳤다.
 
+**추가 검증 (2026-11-12):** 실제 전체 정상 Serving 내보내기 `ec871ab0-6bb6-428e-9538-a9ff18cce6c6`를 읽는 Customer Dashboard를 Playwright MCP로 응답 대체 없이 캡처했다. 주문·구독 모두 정상, 연속 보류 0회, 마지막 정상 게시 시각 `2026-11-12 02:25:47` UTC다. Sales·Product·Customer의 전체 Dashboard 캡처 스크립트도 모든 카드 완료 후 성공했다.
+
 **파일·폴더별 변경 요약**
 
 - `metabase/export/card-60.json`, `metabase/export/dashboard-{2,3,4}.json`: 상태 카드 SQL·문구와 세 Dashboard 배치를 저장했다.
 - `docs/bi/dashboards.md`, `docs/bi/screenshots/domain-status-{held,mobile,normal-fixture}-2026-11-12.png`: 표시 의미와 검증 출처·화면 증적을 기록했다.
+- `docs/bi/screenshots/domain-status-normal-real-2026-11-12.png`, `docs/bi/dashboards.md`, `docs/adr/021-split-publish-gate-by-domain.md`: 실제 전체 정상 게시 화면과 출처를 추가하고 기존 미검증 설명을 갱신했다.
 - 이 계획서: 담당 변경, 화면 명세, 완료조건과 검증 이력을 기록했다.
 
 ## 5. 범위 밖 (ADR 021에 이유와 함께 적는다)
@@ -266,6 +269,7 @@ Dashboard(Metabase)는 Serving 파일(`Commerce Mart Serving`) 하나만 읽는�
   | ---- | ---- | ---- |
   | Serving 검증(`_validate_serving_file`)이 새 Table을 허용하는지 | 허용하지 않았다. 허용 목록에 `serving_domain_status`를 더했고(architect 승인) 기존 Serving 검증·Metabase 재지정 테스트가 통과한다 | Phase 3 조건 4 |
   | Metabase가 새 Table을 읽고 메타데이터에 동기화하는지 | 읽는다. card 60이 실제 Serving의 `serving_domain_status`를 조회했다. Serving DB 2의 `sync_schema` 요청(HTTP 200) 후 metadata에서 `main.serving_domain_status`와 `domain`, `as_of`, `refreshed_at`, `held`, `consecutive_holds` 필드 5개를 확인했다. 최초 발견 시점은 확인하지 않았다 | Phase 5 |
+  | 두 도메인 모두 정상인 실제 Serving 화면 | 내보내기 `ec871ab0-6bb6-428e-9538-a9ff18cce6c6`의 Customer Dashboard에서 응답 대체 없이 두 도메인 정상·연속 보류 0회를 확인했다([화면](../../bi/screenshots/domain-status-normal-real-2026-11-12.png)) | Phase 5 추가 검증 |
   | dbt-duckdb 1.11에서 `group`·Contract가 도는지 | 둘 다 돈다. `dim_date`·`dim_customer`에 Contract를 켰고 타입 불일치에서 Build가 실패한다 | Phase 1 조건 1·7 |
   | Test Node가 Model의 Group을 물려받는지 | 물려받지 않는다(151개 중 0개). 귀속이 Model 기준이라 영향이 없다 | Phase 1 조건 1 |
   | `dbt parse`만으로 기준 단언용 Manifest를 얻을 수 있는지 | 얻을 수 있다. 기준 단언은 `dbt parse` Manifest에서 통과한다 | Phase 1 조건 3 |

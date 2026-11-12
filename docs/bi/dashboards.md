@@ -19,9 +19,12 @@ Metabase Collection `Commerce Mart 대시보드`의 Dashboard ID는 Sales `2`, P
 `106c5954-1910-4d7a-8b9b-fece9fd30fea`에서 주문 정상·구독 2회 연속 보류를 확인했다.
 [보류 화면](screenshots/domain-status-held-2026-11-12.png)과
 [모바일 화면](screenshots/domain-status-mobile-2026-11-12.png)은 실제 Serving 결과다.
-[정상 화면](screenshots/domain-status-normal-fixture-2026-11-12.png)은 실제 Serving 파일을 바꾸지
-않고 브라우저에서 card 60의 응답 중 구독 행을 정상·0회·`2026-11-11 09:49:42` UTC로 대체한
-검증용 화면이다. 빈 결과·HTTP 500·확인 불가 응답도 브라우저에서 대체해 각각 `결과 없음`, 차트
+[정상 화면](screenshots/domain-status-normal-real-2026-11-12.png)은 실제 전체 정상 Serving 내보내기
+`ec871ab0-6bb6-428e-9538-a9ff18cce6c6`의 Customer Dashboard를 응답 대체 없이 캡처한 것이다.
+주문·구독 모두 정상·연속 보류 0회이며 마지막 정상 게시 시각은 `2026-11-12 02:25:47` UTC다.
+이전 [정상 대역 화면](screenshots/domain-status-normal-fixture-2026-11-12.png)은 실제 Serving 파일을 바꾸지
+않고 브라우저에서 card 60의 구독 행을 정상·0회·`2026-11-11 09:49:42` UTC로 대체한 검증 이력이다.
+빈 결과·HTTP 500·확인 불가 응답도 브라우저에서 대체해 각각 `결과 없음`, 차트
 오류, `확인 불가` 표시를 확인했다. NULL 값은 카드 SQL을 DuckDB 임시 테이블에 실행해 별도 확인했다.
 
 BI SQL의 배포 정본은 `metabase/export/card-<id>.json`의 `dataset_query`(카드 쿼리 설정)다.
