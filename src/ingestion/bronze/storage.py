@@ -161,6 +161,27 @@ def list_object_keys(settings: SeaweedFSSettings, prefix: str) -> tuple[str, ...
         continuation = response.get("NextContinuationToken")
 
 
+def delete_objects_if_present(
+    settings: SeaweedFSSettings, keys: tuple[str, ...]
+) -> tuple[str, ...]:
+    """Metadata가 없는 미확정 Object만 지운다. 호출자가 Table Lease와 Metadata 부재를 보장해야 한다.
+
+    없는 Key는 조용히 넘어가고 실제로 지운 Key만 반환한다. Prefix 단위 삭제는 하지 않는다.
+    """
+    client = seaweedfs_s3_client(settings)
+    deleted: list[str] = []
+    for key in keys:
+        try:
+            client.head_object(Bucket=settings.bucket, Key=key)
+        except ClientError as error:
+            if error.response.get("Error", {}).get("Code") in {"404", "NoSuchKey", "NotFound"}:
+                continue
+            raise
+        client.delete_object(Bucket=settings.bucket, Key=key)
+        deleted.append(key)
+    return tuple(deleted)
+
+
 def stored_object_from_head(settings: SeaweedFSSettings, key: str) -> StoredObject:
     """HEAD의 크기·SHA-256 Metadata를 검증 가능한 Object 증적으로 복원한다."""
     head = seaweedfs_s3_client(settings).head_object(Bucket=settings.bucket, Key=key)

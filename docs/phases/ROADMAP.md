@@ -1,6 +1,6 @@
 # ROADMAP: Commerce Analytics Data Platform
 
-> 기준 PRD: PRD v1.34
+> 기준 PRD: PRD v1.35
 > 상태: Phase 0~10 전체 Done. 이후는 Phase 외 리팩터링·계약 보정
 > 목적: Phase 0부터 Phase 10까지의 실제 개발 순서와 검증 기준 정의  
 > 원칙: 전체 아키텍처와 핵심 계약은 PRD를 기준으로 유지하고, 구현은 Phase 단위로 완료·검증한 뒤 다음 단계로 진행한다.
@@ -9,7 +9,7 @@
 
 ## Phase 실행 문서
 
-ROADMAP은 전체 순서와 범위를 관리하고, 아래 문서는 Phase별 Task, 산출물, 검증 Evidence, Definition of Done을 관리한다. 공통 Architecture와 데이터 계약의 Source of Truth는 [PRD v1.34](../../PRD_v1.34.md)이다.
+ROADMAP은 전체 순서와 범위를 관리하고, 아래 문서는 Phase별 Task, 산출물, 검증 Evidence, Definition of Done을 관리한다. 공통 Architecture와 데이터 계약의 Source of Truth는 [PRD v1.35](../../PRD_v1.35.md)이다.
 
 | Phase | 실행 문서                                                      | 주요 Gate                        |
 | ----- | -------------------------------------------------------------- | -------------------------------- |

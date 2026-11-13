@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import uuid
@@ -13,6 +14,7 @@ from psycopg.types.json import Jsonb
 from src.common.database import PostgresSettings
 from src.generator.core.ids import logical_hash
 from src.ingestion import service as ingestion_service
+from src.ingestion.bronze import orphan as orphan_cli
 from src.ingestion.bronze.orphan import (
     OrphanReconciliationError,
     find_orphan_candidates,
@@ -137,7 +139,7 @@ def test_r01_duplicate_batch_is_idempotent_across_three_runs(tmp_path) -> None:
 
 
 def test_r06_orphan_reconciliation_commits_a_match_and_rejects_a_mismatch(
-    monkeypatch, tmp_path
+    monkeypatch, tmp_path, capsys
 ) -> None:
     """Orphan 수용과 Quarantine 거부를 실제 상태 전이와 함께 검증한다."""
     postgres = PostgresSettings.from_environment()
@@ -167,10 +169,11 @@ def test_r06_orphan_reconciliation_commits_a_match_and_rejects_a_mismatch(
             marts=(),
             object_prefix=accepted_key.rsplit("/", 1)[0],
         )
-        accepted_candidate = next(
-            item for item in find_orphan_candidates(postgres, storage) if item.object_key == accepted_key
-        )
-        reconcile_orphan(postgres, storage, accepted_candidate, now=now)
+        assert orphan_cli.main([]) == 0
+        listed_candidates = json.loads(capsys.readouterr().out)
+        assert {"object_key": accepted_key, "manifest_key": accepted_manifest} in listed_candidates
+        assert orphan_cli.main(["--reconcile", accepted_key]) == 0
+        assert json.loads(capsys.readouterr().out)["status"] == "COMMITTED"
         accepted_after = collect_state(
             postgres,
             storage,
@@ -189,6 +192,8 @@ def test_r06_orphan_reconciliation_commits_a_match_and_rejects_a_mismatch(
         rejected_candidate = next(
             item for item in find_orphan_candidates(postgres, storage) if item.object_key == rejected_key
         )
+        assert orphan_cli.main(["--reconcile", rejected_key]) == 1
+        assert "Orphans with rejects require manual reconciliation" in capsys.readouterr().err
         with pytest.raises(
             OrphanReconciliationError,
             match="Orphans with rejects require manual reconciliation",
@@ -387,8 +392,8 @@ def test_r03_a_commit_crash_leaves_a_reconcilable_orphan(monkeypatch, tmp_path) 
         _cleanup(postgres, storage, request.pipeline_name, request)
 
 
-def test_r03_a_handled_commit_failure_refuses_automatic_reconciliation(monkeypatch, tmp_path) -> None:
-    """처리된 Commit 실패는 FAILED Orphan으로 남고 자동 재조정을 거부하는지 검증한다."""
+def test_r03_a_handled_commit_failure_refuses_reconciliation_and_recovers_on_retry(monkeypatch, tmp_path) -> None:
+    """처리된 Commit 실패는 자동 재조정을 거부하고, 같은 Batch 재시도가 지우고 다시 올린다(ADR 023)."""
     postgres = PostgresSettings.from_environment()
     storage = SeaweedFSSettings.from_environment()
     now = datetime(2026, 9, 20, tzinfo=UTC)
@@ -416,7 +421,16 @@ def test_r03_a_handled_commit_failure_refuses_automatic_reconciliation(monkeypat
         with postgres.pipeline_connection() as connection:
             catalog = connection.execute("SELECT count(*) FROM bronze_objects WHERE table_batch_id = %s", (f"{request.batch_id}__orders",)).fetchone()[0]
         assert catalog == 0
-        write_evidence("r03", {"batch_id": request.batch_id, "classified": classify_error(error.value), "exception": type(error.value).__name__, "injected_error": str(error.value), "object_key": object_key, "orphan_candidates": refused.orphan_candidates, "refusal": str(refusal.value), "stored_error_type": run[1], "watermarks": refused.watermarks})
+        retried = ingest_table(postgres, storage, request, local_directory=tmp_path, now=now)
+        recovered = collect_state(postgres, storage, warehouse_path=None, marts=(), object_prefix=object_key.rsplit("/", 1)[0])
+        with postgres.pipeline_connection() as connection:
+            committed = connection.execute("SELECT status FROM bronze_objects WHERE table_batch_id = %s", (f"{request.batch_id}__orders",)).fetchall()
+        assert retried.status == "SUCCESS"
+        assert committed == [("COMMITTED",)]
+        assert object_key in recovered.object_keys
+        assert object_key not in recovered.orphan_candidates
+        assert baseline.watermarks != recovered.watermarks
+        write_evidence("r03", {"batch_id": request.batch_id, "retry_status": retried.status, "retry_catalog_status": committed[0][0], "orphan_candidates_after_retry": recovered.orphan_candidates, "watermarks_after_retry": recovered.watermarks, "classified": classify_error(error.value), "exception": type(error.value).__name__, "injected_error": str(error.value), "object_key": object_key, "orphan_candidates": refused.orphan_candidates, "refusal": str(refusal.value), "stored_error_type": run[1], "watermarks": refused.watermarks})
     finally:
         _cleanup(postgres, storage, request.pipeline_name, request)
 

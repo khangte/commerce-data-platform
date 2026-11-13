@@ -350,8 +350,8 @@ customers → products → sellers → orders → order_items → order_payments
 | `SUCCESS_NO_DATA`                          | 정상 종료다. Object와 Watermark는 바뀌지 않는다.                                          |
 | Lease 충돌                                 | Source Read·최종 Bronze 객체 생성 없이 `FAILED`로 기록한다. 활성 실행 종료 후 재시도한다. |
 | Reject Rate 초과                           | Batch 실패이며 Watermark는 유지한다. Quarantine을 점검한다.                               |
-| 최종 Bronze 객체만 남음                    | Orphan 후보를 검증한다. Reject 없는 `RUNNING` Run만 자동 복구 대상이다.                   |
-| Manifest 유실·Quarantine 존재·`FAILED` Run | 자동 복구하지 않고 수동 점검한다.                                                         |
+| 최종 Bronze 객체만 남음                    | 같은 배치 재시도는 테이블 잠금과 메타데이터 부재 확인 후 자기 미확정 객체를 지우고 다시 수집한다. 재시도가 오지 않으면 고아 객체 후보를 검증한다. |
+| Manifest 유실·Quarantine 존재·`FAILED` Run | 고아 객체 자동 재조정은 거부한다. 같은 배치 재시도는 메타데이터 없는 자기 객체를 다시 수집할 수 있다. |
 
 ## Object 구조
 
@@ -584,3 +584,96 @@ feat: implement reliable incremental ingestion
 ## 다음 Phase 인계
 
 Phase 4는 이 Phase의 Python API와 상태 전이를 그대로 호출한다. DAG에 추출, 검증, Commit 로직을 복제하지 않는다.
+
+
+## 감사 보완: 상태 변경 테스트 격리 (2026-11-13)
+
+통합 테스트가 공유 원천 DB의 실제 시뮬레이션 행을 진행시키는 문제가 확인됐다.
+상태 변경 테스트는 `_it`로 끝나는 원천·메타데이터 DB와 `-it`로 끝나는 버킷에서만 실행한다.
+공유 DB는 Airflow 실행에 사용한다. 과거 검증 증적의 명령은 당시 기록이며, 새 실행에는 아래 명령을 쓴다.
+
+```bash
+# Airflow와 다른 상태 변경 테스트를 멈춘 뒤 한 담당자가 실행한다.
+# 기존 격리 데이터를 지우고, 복구가 끝난 공유 DB의 사본을 만든다.
+./scripts/setup_test_isolation.sh
+COMMERCE_SOURCE_DB=commerce_source_it PIPELINE_METADATA_DB=pipeline_metadata_it SEAWEEDFS_BUCKET=commerce-lake-it RUN_POSTGRES_INTEGRATION=1 RUN_SEAWEEDFS_INTEGRATION=1 uv run pytest tests/integration
+```
+
+사본의 수집·발행 카탈로그는 비워 새 버킷에 없는 객체를 참조하지 않게 하고,
+원천 기준선과 연결되는 Seed·Generator 이력은 보존한다. 같은 격리 환경의 테스트도 동시에 실행하지 않는다.
+`tests/conftest.py`는 상태 변경 플래그가 켜졌을 때 세 격리 이름을 수집 전에 확인하며 우회 옵션은 없다.
+
+- [x] 격리 DB·버킷만 재생성하는 준비 스크립트 추가.
+- [x] 테스트 수집 전 공유 환경 차단 6건과 준비 스크립트의 안전한 이름 검사 5건, 총 11건 통과.
+- [x] README·Runbook·새 Clone 검증 명령을 격리 실행으로 갱신.
+- [x] 복구 완료 후 준비 스크립트 두 번 실행과 공유 데이터 불변 확인.
+- [x] 격리 통합 테스트 125건 통과와 공유 데이터 불변 증거 기록.
+- [x] R-01~R-07 복구 시나리오의 격리 실행: `10 passed in 6.15s`.
+
+
+### 격리 검증 결과 (2026-11-13, lead 실행)
+
+준비 스크립트의 첫 통합 실행은 사본 DB가 관리자 소유여서 `public` 스키마의 생성 권한을
+얻지 못했다. 원본처럼 원천·메타데이터 실행 역할을 사본 DB의 소유자로 지정한 뒤 재검증했다.
+
+- 준비 스크립트 연속 2회 성공. 공유 원천 테이블별 행 수와 생성·수정 시각 최댓값,
+  생성기 커밋 72행의 해시, 실제 워터마크 9행, Bronze 카탈로그 585행, 공유 객체 1,177개가
+  준비 전·후와 통합 테스트 후에 모두 같았다.
+- 비격리 환경의 `RUN_POSTGRES_INTEGRATION=1 uv run pytest --collect-only tests/integration`은
+  공유 환경 사용 오류로 종료 코드 4를 반환했다. 테스트 수집과 DB 접속 전에 차단됐다.
+- 격리 `tests/integration`: `125 passed, 1 skipped in 403.71s`.
+  기존 오염으로 실패하던 12건을 포함해 실패 0건이다.
+- 기본 전체 테스트: `883 passed, 154 skipped in 119.82s`. 새 문서 파일을 임시 Git 인덱스에만
+  등록해 문서 링크도 검사했으며 실제 인덱스는 바꾸지 않았다.
+- 격리 안전 검사: `11 passed`.
+- 격리 R-01~R-07 복구 시나리오: `10 passed in 6.15s`. 격리 단계의 완료조건을 모두 충족했다.
+
+증거는 저장소 밖 `/tmp/commerce-audit-lead/`의 `shared-before.json`,
+`shared-after-setup.json`, `shared-after-integration.json`, `integration.log`, `full-suite.log`,
+`reliability.log`에 남겼다.
+
+### 파일·폴더별 변경 요약
+
+| 경로 | 변경 | 내용 |
+| --- | --- | --- |
+| `scripts/setup_test_isolation.sh` | 생성 | 공유 DB를 역할별 소유권을 가진 격리 사본으로 복사하고 수집 카탈로그 초기화, 테스트 버킷 재생성. 공유 대상 이름은 거부. |
+| `tests/conftest.py` | 생성 | 상태 변경 테스트의 원천·메타데이터 DB와 버킷 이름을 수집 전에 검사. |
+| `tests/test_integration_safety.py` | 생성 | 공유 대상 조합 6건의 수집 전 차단과 잘못된 준비 대상 5건의 접속 전 거부 검증. |
+| `scripts/verify_clean_clone.sh` | 수정 | 새 Clone에서도 격리 사본을 준비한 뒤 통합 테스트 실행. |
+| `README.md`, `docs/runbooks/*.md` | 수정 | 격리 준비·실행 명령과 단독 실행 규칙 기록. |
+| `docs/phases/phase-01-source-environment.md`, `docs/phases/phase-03-incremental-ingestion.md` | 수정 | 격리 동작·진행 체크리스트·검증·파일 요약 동기화. |
+
+
+## 감사 보완: 같은 배치 재시도와 고아 객체 CLI (2026-11-13)
+
+감사 보완 계획 `docs/superpowers/plans/2026-11-13-audit-remediation.md`의 Phase 1·4에 해당한다.
+
+- [x] 메타데이터가 없는 같은 배치의 미확정 객체를 업로드 전 정리하고 다시 수집한다. 커밋된 객체와 메타데이터가 있는 배치는 삭제하지 않는다.
+- [x] Manifest PUT·Bronze PUT·커밋 실패 후 같은 배치 재시도와 커밋된 객체 보존 테스트를 구현했다.
+- [x] `uv run python -m src.ingestion.bronze.orphan`으로 읽기 전용 후보 목록을 조회하고 `--reconcile <object_key>`로 한 건을 재조정한다. 거부 시 종료 코드 1, 후보 부재 시 2다.
+- [x] 지정 키 삭제·권한 오류 전파 및 고아 객체 CLI 단위 테스트 12건 통과.
+- [x] 격리 DB·버킷에서 네 통합 시나리오 및 R-01~R-07 재검증을 완료했다. `tests/integration` 125 passed / 1 skipped(403.71초), R-01~R-07 10 passed(6.15초).
+- [x] 실제 Airflow 재시도 증거와 R-02·R-03 관측을 기록했다. 진단 DAG 단일 태스크의 실제 스케줄러 재시도 검증이며 정규 Warehouse DAG 전체 재실행은 아니다.
+
+### 파일·폴더별 변경 요약
+
+| 경로 | 변경 | 요약 |
+| --- | --- | --- |
+| `src/ingestion/bronze/storage.py` | 수정 | 전달받은 객체 키만 삭제하고 없는 키는 건너뛴다. |
+| `src/ingestion/control/batch.py` | 수정 | 객체 삭제를 막는 Bronze·Quarantine 메타데이터 존재 여부를 확인한다. |
+| `src/ingestion/service.py` | 수정 | 업로드 전 잠금·메타데이터 조건을 확인하고 자기 배치의 미확정 객체 네 개를 정리한다. |
+| `src/ingestion/bronze/orphan.py` | 수정 | 고아 객체 조회·단건 재조정 CLI를 추가했다. |
+| `tests/integration/test_orders_ingestion_service_integration.py` | 수정 | 부분 업로드·커밋 실패 재시도와 커밋된 객체 보존을 검증한다. |
+| `tests/ingestion/test_storage.py`, `tests/ingestion/test_orphan.py` | 수정 | 삭제 경계와 CLI 동작을 단위 검증한다. |
+| `tests/reliability/test_r01_r07_ingestion_commit.py` | 수정 | R-03 동일 배치 재시도 복구와 R-06 CLI 후보 조회·수용·거부를 검증한다. |
+| `docs/runbooks/r02-upload-failure.md`, `docs/runbooks/r03-metadata-failure.md`, `docs/runbooks/r06-orphan-object.md` | 수정 | 부분 업로드 재시도와 단건 재조정 복구 절차를 기록한다. |
+| `docs/troubleshooting/ingestion-errors.md`, `docs/troubleshooting/commit-and-lease.md`, `docs/adr/023-same-batch-retry-clears-uncommitted-objects.md` | 수정 | 오류 조치·모듈 경로·재시도 계약을 현재 구현과 맞췄다. |
+| `docs/phases/phase-03-incremental-ingestion.md` | 수정 | 실패 대응 표와 이 체크리스트·변경 요약을 갱신했다. |
+
+
+### 감사 보완 검증 결과 (2026-11-13, lead 실행)
+
+Manifest PUT·Bronze PUT·메타데이터 커밋 실패 뒤 같은 요청 재시도 3건과 커밋 객체 바이트 보존 1건이 모두 통과했다. R-03의 처리된 실패는 자동 재조정을 거부하지만 동일 배치 재시도로 `SUCCESS`·`COMMITTED`가 되며 고아 후보가 사라졌다(`data/reliability/r03/20261113T034854794449Z.json`). R-06 CLI 후보 조회·단건 재조정 수용·Quarantine 거부도 통과했다(`data/reliability/r06/20261113T034851139833Z.json`). R-02 실패 전후 워터마크 불변은 `data/reliability/r02/20261113T034853349061Z.json`에서 재확인했다. 실제 Airflow 진단 DAG `audit_retry_probe`의 같은 수집 함수가 Manifest PUT 503 뒤 두 번째 시도로 성공했다. 정규 Warehouse DAG 전체 재실행과는 구분하며, 세부 증거·범위는 [Phase 4](phase-04-airflow-orchestration.md)의 실제 Airflow 재시도 관측 절에 기록했다.
+
+
+기본 전체 테스트도 임시 Git 인덱스에 현재 문서 변경을 반영한 상태에서 `uv run pytest tests/ -q`로 883 passed / 154 skipped(119.82초)를 확인했다. 실제 인덱스와 기존 `.gitignore`는 바꾸지 않았고 무시된 계획서는 포함하지 않았다. 격리 상태 변경 검증은 별도 통합 125건·신뢰성 10건 결과로 확인했다.

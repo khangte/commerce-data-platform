@@ -7,7 +7,7 @@ Full Refresh와 값·Hash까지 똑같이 재현하는지 확인한다. 재현�
 
 ## 재현 조건과 명령
 
-`RUN_POSTGRES_INTEGRATION=1 RUN_SEAWEEDFS_INTEGRATION=1 RUN_DBT_PUBLISH_INTEGRATION=1 uv run pytest tests/reliability/test_r11_r15_reprocess_and_source.py -v`를 실행한다.
+`COMMERCE_SOURCE_DB=commerce_source_it PIPELINE_METADATA_DB=pipeline_metadata_it SEAWEEDFS_BUCKET=commerce-lake-it RUN_POSTGRES_INTEGRATION=1 RUN_SEAWEEDFS_INTEGRATION=1 RUN_DBT_PUBLISH_INTEGRATION=1 uv run pytest tests/reliability/test_r11_r15_reprocess_and_source.py -v`를 실행한다.
 첫 Batch를 수집하고 그 시점을 `--full-refresh`로 Build해 Control Hash를 남긴 뒤(`pipeline_name`은
 `test_r12_*`), 둘째(지연) Batch를 마저 수집한다. 첫 Build의 `control.bronze_files.committed_at`
 최댓값을 `bronze_as_of` 경계로 삼아 Replay Build를 실행한다. 테스트의 직접 dbt 호출은

@@ -9,7 +9,7 @@ Mart Hash·Row Count도 그대로 유지되는지 확인한다. 격리 대신 Pu
 
 ## 재현 조건과 명령
 
-`RUN_POSTGRES_INTEGRATION=1 RUN_SEAWEEDFS_INTEGRATION=1 RUN_DBT_PUBLISH_INTEGRATION=1 uv run pytest tests/reliability -k r14 -v`를
+`COMMERCE_SOURCE_DB=commerce_source_it PIPELINE_METADATA_DB=pipeline_metadata_it SEAWEEDFS_BUCKET=commerce-lake-it RUN_POSTGRES_INTEGRATION=1 RUN_SEAWEEDFS_INTEGRATION=1 RUN_DBT_PUBLISH_INTEGRATION=1 uv run pytest tests/reliability -k r14 -v`를
 실행한다. 정상 `dbt build`로 첫 Publish(`first`)를 성공시킨 뒤, `publish_gate_canary` Var로
 Singular Test 하나를 고의로 실패시키는 `CANARY_RUNNER`(`tests/integration/test_publish_gate_dbt_integration.py`)로
 두 번째 Publish(`failing`)를 실행하고, 그 실패가 격리·정리된 뒤 다시 정상 `dbt build`로 세 번째

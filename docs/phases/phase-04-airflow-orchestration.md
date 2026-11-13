@@ -572,6 +572,83 @@ feat: orchestrate ingestion with airflow
 Phase 5는 `sync_bronze_catalog`가 만든 메타데이터 기반 Bronze 파일 목록만 입력으로 사용한다. Phase 5가 dbt
 Project/CLI와 Test를 완성한 뒤, Warehouse DAG의 `dbt_build` 호출 경계를 활성화한다.
 
+## Airflow Image의 `uv.lock` 설치와 관리자 자격 증명 제거 (2026-11-13)
+
+감사 보완 계획(`docs/superpowers/plans/2026-11-13-audit-remediation.md`) Phase 2·Phase 3.
+
+### Phase 2. Airflow Image가 `uv.lock`을 쓴다
+
+`airflow/Dockerfile`은 `ghcr.io/astral-sh/uv:0.12.9`에서 `uv` Binary만 복사하고,
+`uv export --locked --no-dev --no-emit-project --no-hashes`로 만든 전체 목록을
+`pip install "apache-airflow==${AIRFLOW_VERSION}" -r`로 설치한다. `--frozen`은 오래된 Lock을
+검사 없이 통과시켜(`pyproject.toml`에 의존성을 더해도 exit 0) `--locked`를 쓴다(architect 승인).
+`--no-hashes`는 Hash 없는 `apache-airflow` 인자와 함께 설치하기 위해서다.
+
+처음 빌드에서 Image 안 `pip check`가 2건 실패했다. Base Image에 미리 깔린 Package가
+`uv.lock`보다 낮은 상한을 요구했다.
+
+| Base Image Package | 요구 | 이전 `uv.lock` | Base Image |
+| ---- | ---- | ---- | ---- |
+| `aiobotocore 3.9.0` | `botocore<1.43.57` | `botocore 1.43.88` | `1.43.56` |
+| `litellm 1.85.7` (`apache-airflow-providers-google`) | `importlib-metadata<9.0` | `9.0.1` | `8.9.0` |
+
+`pyproject.toml`에 `[tool.uv] constraint-dependencies = ["botocore<1.43.57", "importlib-metadata<9"]`를
+더하고 `uv lock`을 다시 돌렸다(architect 승인). `uv lock` 전후로 버전이 내려간 Host 의존성:
+
+| Package | 이전 → 이후 |
+| ---- | ---- |
+| `botocore` | `1.43.88` → `1.43.56` |
+| `importlib-metadata` | `9.0.1` → `8.9.0` |
+
+확인 명령(Host에서):
+
+```bash
+docker compose --profile airflow build
+docker run --rm --entrypoint python commerce-data-platform-airflow:3.3.1 -m pip check
+docker run --rm --entrypoint python commerce-data-platform-airflow:3.3.1 -m pip freeze \
+  | tr -d '\r' | tr 'A-Z_' 'a-z-' | sort > /tmp/freeze.txt
+uv export --locked --no-dev --no-emit-project --no-hashes --format requirements-txt -q \
+  | grep -v '^ *#' | grep -v "sys_platform == 'win32'" | sed 's/ ;.*//' \
+  | tr 'A-Z_' 'a-z-' | sort > /tmp/lock.txt
+comm -23 /tmp/lock.txt /tmp/freeze.txt | wc -l   # Lock에 있는데 Image에 같은 버전이 없는 Package 수
+```
+
+`tzdata`는 `sys_platform == 'win32'` Marker라 Linux Image 비교에서 뺀다.
+
+- [x] `docker compose --profile airflow build` 성공.
+- [x] Image 안 `pip check`: `No broken requirements found.` (재잠금 전에는 위 2건으로 exit 1)
+- [x] `uv.lock` 대 Image `pip freeze`: Lock 69개 중 차이 `0`. `apache-airflow==3.3.1` 유지.
+- [x] Lock 미갱신 빌드 실패: 임시 Build Context에서 `pyproject.toml`에 `six==1.17.0`만 더하고 빌드하면
+  `error: The lockfile at uv.lock needs to be updated, but --locked was provided.`로 exit 1.
+- [x] 재잠금 뒤 Host `uv run pytest tests/`(2026-11-13, P1 코드 포함 Worktree): 857 passed, 154 skipped, 8 failed.
+  8건은 모두 `tests/test_doc_links.py`이고, 남은 링크는 Git 미추적 `PRD_v1.35.md`·ADR 023뿐이다
+  (계획 파일 링크 3건은 Code Span 경로로 바꿨다). 두 파일이 추적되기 전까지 이 8건은 실패한다.
+- DagRun 결과는 Phase 3 항목에 함께 적는다(같은 Image·Compose로 실행).
+
+### Phase 3. 관리자 DB 자격 증명을 Airflow에서 뺀다
+
+`PostgresSettings`에서 `admin_user`·`admin_password` 필드와 `POSTGRES_USER`·`POSTGRES_PASSWORD`
+필수 검사를 지웠다. 실행 코드는 역할별 계정만 쓴다. `compose.yaml`의 `airflow-common` 환경 변수에서
+두 줄을 지웠다(Postgres 서비스와 `.env.example`은 그대로). 이 문서 "1. Airflow Runtime" 검증 항목의
+2026-09-28 추가 사유(`from_environment()`가 두 값을 요구)는 더 이상 성립하지 않는다.
+관리자 계정이 필요한 Seed 통합 테스트 Fixture는 `environment_values()`에서 직접 읽는다.
+
+- [x] `rg -n "admin_user|admin_password" src airflow scripts`: 0건.
+- [x] `docker compose --profile airflow config`: `POSTGRES_USER`·`POSTGRES_PASSWORD`는 `postgres` 서비스에만 있다.
+- [x] 실행 중인 `airflow-scheduler` 컨테이너 `env`에 `POSTGRES_USER=`·`POSTGRES_PASSWORD=`: 0건.
+- [x] `RUN_POSTGRES_INTEGRATION=1 uv run pytest tests/integration/test_seed_integration.py`: 3 passed.
+- [x] `RUN_POSTGRES_INTEGRATION=1 RUN_SEAWEEDFS_INTEGRATION=1 uv run pytest tests/integration`: 기존 121 passed, 1 skipped.
+  (같은 실행의 실패 4건은 Phase 1에서 먼저 써 둔 재시도 테스트이며 이 작업과 무관하다.)
+- [x] 새 Image로 다시 띄운 Compose에서 `airflow dags test source_simulation_dag 2026-11-13T02:02:00+00:00`
+  `success` → 자동 트리거된 `warehouse_pipeline_dag` `manual__2026-11-13T02:02:00+00:00` `success`
+  (`publish_status=PUBLISHED`, `rows_loaded=52`). Run report `ok=false`의 사유는
+  `REPOINT_FAILED`·`PROBE_ERROR:freshness`(Metabase 컨테이너 미기동)와 `EXPORTS_COUNT_4`(감사 5번, Phase 5)다.
+  2026-11-11 실행과 같은 사유이고 이 변경과 무관하다.
+- 확인하지 못함: `RUN_AIRFLOW_SMOKE_TEST=1 -m airflow` 5건 중 3건 실패. 테스트가 고정한
+  `logical_date=2026-09-11`이 원천 DB의 최신 `customers.created_at`(2026-11-12)보다 이르러
+  Generator가 `SourceCursorRegressionError`로 거부한다. 변경 전 Image로 같은 테스트를 돌린 기준선은 없다.
+  실패 메시지는 원천 데이터의 Cursor 역행이며 Image·Compose 변경을 가리키지 않는다.
+
 ## 파일·폴더별 변경 요약
 
 수동 트리거 `logical_date` 대체값(2026-11-12):
@@ -645,3 +722,47 @@ Bronze 검증 경량화(2026-10-15):
 | `tests/test_airflow_dags.py`                    | 수정 | 원천 DAG의 환경 변수 미설정·빈 값·10분 cron 설정에 따른 예약 주기 선택을 검증하는 테스트를 추가했다. |
 | `tests/test_airflow_dags.py`                    | 수정 | Generator-Warehouse 트리거 순서, 중복 트리거 시 Warehouse DagRun 1개 유지, Generator 실패 시 Warehouse 미실행을 검증하는 테스트 3건을 `RUN_AIRFLOW_SMOKE_TEST=1` opt-in으로 추가했다. |
 | `docs/adr/010-use-metadata-backed-bronze-file-catalog.md`, `docs/adr/013-source-mutation-and-warehouse-extract-concurrency.md` | 생성 | DAG의 Catalog 입력 경계와 원천 변경·수집 동시성 결정을 ADR로 기록했다. |
+
+감사 보완 Phase 2·3(2026-11-13, 계획 `docs/superpowers/plans/2026-11-13-audit-remediation.md`):
+
+| 경로 | 변경 | 요약 |
+| --- | --- | --- |
+| `airflow/Dockerfile` | 수정 | `uv:0.12.9` Image에서 `uv`를 복사하고 `uv export --locked`로 `uv.lock` 전체 목록을 설치한다. Lock이 낡으면 빌드가 실패한다. |
+| `pyproject.toml` | 수정 | `[tool.uv] constraint-dependencies`로 `botocore<1.43.57`, `importlib-metadata<9`를 걸어 Base Image의 `aiobotocore`·`litellm`과 맞췄다. |
+| `uv.lock` | 수정 | 재잠금으로 `botocore` 1.43.88 → 1.43.56, `importlib-metadata` 9.0.1 → 8.9.0. |
+| `compose.yaml` | 수정 | `airflow-common` 환경 변수에서 `POSTGRES_USER`·`POSTGRES_PASSWORD`를 지웠다. |
+| `src/common/database.py` | 수정 | `PostgresSettings`의 `admin_user`·`admin_password` 필드와 필수 검사를 지웠다. |
+| `tests/integration/test_seed_integration.py` | 수정 | 관리자 계정을 `environment_values()`에서 직접 읽는다. |
+| `tests/serving/test_cli.py` | 수정 | `PostgresSettings(...)` 생성 인자에서 관리자 필드를 뺐다. |
+| `docs/phases/phase-04-airflow-orchestration.md` | 수정 | 이 절과 검증 증거, 변경 요약을 더했다. |
+
+## 감사 보완: 같은 배치 재시도 (2026-11-13)
+
+- [x] 업로드 전 테이블 잠금과 메타데이터 부재를 확인하고 자기 배치의 미확정 객체 네 개만 삭제하는 경로를 구현했다.
+- [x] Manifest PUT·Bronze PUT·메타데이터 커밋 실패 뒤 재시도와 커밋된 객체 보존 통합 테스트를 구현했다.
+- [x] 고아 객체 CLI와 단위 테스트를 구현했다. 목록 조회는 읽기 전용이고 재조정은 한 건으로 제한한다.
+- [x] 격리 환경에서 통합 125 passed / 1 skipped(403.71초), R-01~R-07 10 passed(6.15초)로 검증하고 R-02·R-03 관측을 갱신했다.
+- [x] 실제 Airflow 재시도에서 Manifest PUT 실패 뒤 같은 배치가 성공하는 증거를 기록했다. 진단 DAG 단일 태스크의 두 번째 시도 성공이며 정규 Warehouse DAG 전체 재실행은 아니다.
+
+### 파일·폴더별 변경 요약
+
+| 경로 | 변경 | 요약 |
+| --- | --- | --- |
+| `src/ingestion/bronze/storage.py` | 수정 | 지정한 미확정 객체 키만 삭제하며 없는 키는 건너뛰고 권한 오류는 전파한다. |
+| `src/ingestion/control/batch.py` | 수정 | 상태와 무관하게 배치·객체 키의 Bronze 메타데이터와 배치의 Quarantine 메타데이터 존재 여부를 확인한다. |
+| `src/ingestion/service.py` | 수정 | 업로드 전에 메타데이터 보호·테이블 잠금 확인 후 남은 미확정 객체를 정리하고 삭제 키를 기록한다. |
+| `src/ingestion/bronze/orphan.py` | 수정 | 후보 조회·단건 재조정 CLI를 추가했다. |
+| `tests/ingestion/test_storage.py`, `tests/ingestion/test_orphan.py` | 수정 | 제한된 삭제와 오류 전파, CLI 목록·선택·거부·없는 후보를 단위 검증한다. 두 파일 12건 통과. |
+| `tests/integration/test_orders_ingestion_service_integration.py` | 수정 | 부분 업로드·커밋 실패 재시도 3건과 커밋된 객체 보존을 검증한다. |
+| `tests/reliability/test_r01_r07_ingestion_commit.py` | 수정 | R-03 처리된 실패의 동일 배치 재시도 복구, R-06 CLI 목록·수용·거부 검증과 증적을 갱신한다. |
+| `docs/adr/023-same-batch-retry-clears-uncommitted-objects.md`, `docs/runbooks/r02-upload-failure.md`, `docs/runbooks/r03-metadata-failure.md`, `docs/runbooks/r06-orphan-object.md` | 수정 | 재시도 계약과 CLI 복구 절차를 구현에 맞췄다. 실제 통합·Airflow 관측과 검증 한계를 기록했다. |
+| `docs/troubleshooting/ingestion-errors.md`, `docs/troubleshooting/commit-and-lease.md` | 수정 | 부분 업로드 후 재시도 동작, 재조정 명령과 현재 모듈 경로를 기록한다. |
+
+
+### 실제 Airflow 재시도 관측 (2026-11-13)
+
+기존 Airflow 스케줄러·실행기에서 임시 진단 DAG `audit_retry_probe`의 단일 태스크 `manifest_retry`를 실행했다. `manual__2026-11-13T03:50:39.214680+00:00`은 최종 `success`, 태스크는 `try_number=2`로 성공했다. 같은 `ingest_table`을 호출하되 설정을 `commerce_source_it`·`pipeline_metadata_it`·`commerce-lake-it`으로 고정해 공유 데이터를 보호했다.
+
+첫 시도는 `data.parquet`의 HEAD 존재를 확인한 뒤 Manifest PUT에 HTTP 503을 주입해 `FAILED`·`OBJECT_STORAGE_ERROR`로 끝났다. 두 번째 실제 스케줄러 재시도는 같은 `batch_id=audit_retry_probe__20261113T035039Z`의 미확정 `data.parquet`를 삭제한 로그를 남기고 `SUCCESS`로 끝났으며, `COMMITTED`는 정확히 1행(99,881행 수집)이었다. 실행 증거 묶음의 `airflow-retry-proof.json`, `airflow-attempt-1.log`, `airflow-attempt-2.log`, 임시 DAG 원본 `audit_retry_probe.py`에 각각 메타데이터·시도별 로그·주입 코드가 남아 있다.
+
+이는 실제 Airflow 재시도와 같은 수집 함수를 검증한 결과다. 정규 `warehouse_pipeline_dag` 전체 처리·동적 매핑·후속 dbt 단계까지 재실행한 증거는 아니다. 신뢰성·Airflow 검증 전후 공유 원천과 실제 워터마크·Bronze 메타데이터 585행·저장 객체 1,177개 스냅샷은 완전히 일치했다.

@@ -1,7 +1,7 @@
 # Commit과 Lease 오류 유형
 
-`src/ingestion/metadata.py`의 `commit_table_run`(Watermark CAS·Table Lease Fencing)과
-`src/ingestion/orphan.py`의 `reconcile_orphan`이 낼 수 있는 예외를 원인·조치와 함께 정리한다.
+`src/ingestion/control/metadata.py`의 `commit_table_run`(Watermark CAS·Table Lease Fencing)과
+`src/ingestion/bronze/orphan.py`의 `reconcile_orphan`이 낼 수 있는 예외를 원인·조치와 함께 정리한다.
 관련 시나리오는 R-04(CAS 충돌), R-05(만료 Lease), R-06(Orphan Object), R-07(깨진 Manifest)이다.
 
 | 예외/코드 | 발생 지점 | 원인 | 조치 |
@@ -33,3 +33,7 @@ Commit이 성공하는 창이 있었다. `commit_table_run` Transaction 맨 앞�
 - [R-05 만료된 Lease](../runbooks/r05-expired-lease.md)
 - [R-06 Orphan Object](../runbooks/r06-orphan-object.md)
 - [R-07 Broken Manifest](../runbooks/r07-broken-manifest.md)
+
+## 고아 객체 조회·재조정 명령
+
+`uv run python -m src.ingestion.bronze.orphan`은 후보 목록만 JSON으로 출력한다. `--reconcile <object_key>`로 지정한 후보 한 건을 재조정하며 성공 시 종료 코드 0, 계약 불일치로 거부 시 1, 후보가 없으면 2를 반환한다. 전체 일괄 재조정은 지원하지 않는다.

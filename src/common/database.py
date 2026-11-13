@@ -17,8 +17,6 @@ class PostgresSettings:
 
     host: str
     port: int
-    admin_user: str
-    admin_password: str
     source_database: str
     source_user: str
     source_password: str
@@ -30,8 +28,6 @@ class PostgresSettings:
     def from_environment(cls) -> PostgresSettings:
         values = environment_values()
         required = (
-            "POSTGRES_USER",
-            "POSTGRES_PASSWORD",
             "POSTGRES_PORT",
             "COMMERCE_SOURCE_DB",
             "SOURCE_DB_USER",
@@ -47,8 +43,6 @@ class PostgresSettings:
         return cls(
             host=values.get("POSTGRES_HOST", "localhost"),
             port=int(values["POSTGRES_PORT"]),
-            admin_user=values["POSTGRES_USER"],
-            admin_password=values["POSTGRES_PASSWORD"],
             source_database=values["COMMERCE_SOURCE_DB"],
             source_user=values["SOURCE_DB_USER"],
             source_password=values["SOURCE_DB_PASSWORD"],

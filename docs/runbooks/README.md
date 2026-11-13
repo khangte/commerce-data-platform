@@ -2,12 +2,15 @@
 
 ## 공통 사전 조건
 
-PostgreSQL과 SeaweedFS가 포함된 Compose 서비스를 기동한 뒤 기존 통합 환경 플래그를 설정한다.
+PostgreSQL·SeaweedFS를 기동하고 Airflow와 다른 상태 변경 테스트를 멈춘 뒤 격리 DB·버킷을 만든다.
+스크립트는 기존 격리 데이터를 지우므로 테스트 실행 중에는 다시 실행하지 않는다.
+공유 DB는 Airflow 실행에만 쓰고 상태 변경 테스트는 한 담당자만 격리 환경에서 순서대로 실행한다.
 dbt를 실행하는 시나리오는 `RUN_DBT_PUBLISH_INTEGRATION=1`도 필요하다.
 
 ```bash
-docker compose up -d
-RUN_POSTGRES_INTEGRATION=1 RUN_SEAWEEDFS_INTEGRATION=1 uv run pytest tests/reliability -v
+docker compose up -d postgres seaweedfs
+./scripts/setup_test_isolation.sh
+COMMERCE_SOURCE_DB=commerce_source_it PIPELINE_METADATA_DB=pipeline_metadata_it SEAWEEDFS_BUCKET=commerce-lake-it RUN_POSTGRES_INTEGRATION=1 RUN_SEAWEEDFS_INTEGRATION=1 uv run pytest tests/reliability -v
 # 특정 시나리오: -k "r02 or r03 or r15"
 ```
 

@@ -7,7 +7,7 @@ VERIFIED Manifest와 실제 Object·Run 상태가 어긋나면 `reconcile_orphan
 
 ## 재현 조건과 명령
 
-`RUN_POSTGRES_INTEGRATION=1 RUN_SEAWEEDFS_INTEGRATION=1 uv run pytest tests/reliability/test_r01_r07_ingestion_commit.py -k r07 -v`를 실행한다.
+`COMMERCE_SOURCE_DB=commerce_source_it PIPELINE_METADATA_DB=pipeline_metadata_it SEAWEEDFS_BUCKET=commerce-lake-it RUN_POSTGRES_INTEGRATION=1 RUN_SEAWEEDFS_INTEGRATION=1 uv run pytest tests/reliability/test_r01_r07_ingestion_commit.py -k r07 -v`를 실행한다.
 각 변형은 `crash_metadata_commit`으로 VERIFIED Object와 Manifest만 게시한 뒤, `tests/reliability/faults.py`의
 `corrupt_manifest`로 Manifest 한 필드만 변조하고 `reconcile_orphan`을 호출한다.
 
@@ -23,7 +23,7 @@ VERIFIED Manifest와 실제 Object·Run 상태가 어긋나면 `reconcile_orphan
 
 `SCHEMA_VERSION` 변형은 AC-24(미지원 Version을 dbt 이전에 차단)를 담당한다. 차단 지점은
 `OrphanReconciliationError`가 아니라 `assert_supported_schema_version`(`src/ingestion/schema.py:12`)이고,
-오류 코드는 `SOURCE_CONTRACT_ERROR`다. `reconcile_orphan`(`src/ingestion/orphan.py:90`)이 Manifest를
+오류 코드는 `SOURCE_CONTRACT_ERROR`다. `reconcile_orphan`(`src/ingestion/bronze/orphan.py`)이 Manifest를
 검증하는 도중 이 계약 검사를 그대로 통과시켜 호출하기 때문이며, Orphan 재조정 전용 오류로 재포장하지
 않는다. 판정 근거는 [015](../architect-review/015_r07-schema-version-variant.md)를 따른다.
 
@@ -47,5 +47,5 @@ COMMITTED로 만들 수 없다.
 
 Evidence `r07-checksum`, `r07-row_range`, `r07-schema_version`에서 각 변형의 `refusal` 메시지와
 `watermarks_before == watermarks_after`를 확인하고, 위 pytest 명령과
-`RUN_POSTGRES_INTEGRATION=1 RUN_SEAWEEDFS_INTEGRATION=1 uv run pytest tests/reliability/test_r01_r07_ingestion_commit.py -v`
+`COMMERCE_SOURCE_DB=commerce_source_it PIPELINE_METADATA_DB=pipeline_metadata_it SEAWEEDFS_BUCKET=commerce-lake-it RUN_POSTGRES_INTEGRATION=1 RUN_SEAWEEDFS_INTEGRATION=1 uv run pytest tests/reliability/test_r01_r07_ingestion_commit.py -v`
 (전체 File Green) 통과를 확인한다.

@@ -44,6 +44,8 @@ step "ingestion"
 uv run python -m src.ingestion --dag-id clean_clone_verification --logical-date 2026-09-04T00:00:00Z --tables "${tables[@]}"
 step "publish"
 uv run python -m src.warehouse.publish --pipeline-name clean_clone_verification
+step "isolated integration environment"
+./scripts/setup_test_isolation.sh
 step "integration tests"
-RUN_POSTGRES_INTEGRATION=1 RUN_SEAWEEDFS_INTEGRATION=1 uv run pytest -m "integration and not airflow"
+COMMERCE_SOURCE_DB=commerce_source_it PIPELINE_METADATA_DB=pipeline_metadata_it SEAWEEDFS_BUCKET=commerce-lake-it RUN_POSTGRES_INTEGRATION=1 RUN_SEAWEEDFS_INTEGRATION=1 uv run pytest -m "integration and not airflow"
 echo "clean clone verification passed"

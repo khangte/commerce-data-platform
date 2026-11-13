@@ -9,7 +9,7 @@ import psycopg
 import pytest
 from psycopg import sql
 
-from src.common.database import PROJECT_ROOT, PostgresSettings
+from src.common.database import PROJECT_ROOT, PostgresSettings, environment_values
 from src.seed.loader import TARGET_COLUMNS, parse_seeded_at, run_seed
 
 pytestmark = pytest.mark.integration
@@ -19,24 +19,27 @@ pytestmark = pytest.mark.integration
 def isolated_seed_settings() -> Iterator[PostgresSettings]:
     """각 Seed 테스트에 별도 Source·Metadata DB를 만들고 종료 후 제거한다."""
     settings = PostgresSettings.from_environment()
+    values = environment_values()
+    admin_user = values["POSTGRES_USER"]
+    admin_password = values["POSTGRES_PASSWORD"]
     suffix = uuid.uuid4().hex
     source_database = f"test_seed_source_{suffix}"
     pipeline_database = f"test_seed_metadata_{suffix}"
     isolated = replace(
         settings,
         source_database=source_database,
-        source_user=settings.admin_user,
-        source_password=settings.admin_password,
+        source_user=admin_user,
+        source_password=admin_password,
         pipeline_database=pipeline_database,
-        pipeline_user=settings.admin_user,
-        pipeline_password=settings.admin_password,
+        pipeline_user=admin_user,
+        pipeline_password=admin_password,
     )
     with psycopg.connect(
         host=settings.host,
         port=settings.port,
         dbname="postgres",
-        user=settings.admin_user,
-        password=settings.admin_password,
+        user=admin_user,
+        password=admin_password,
         autocommit=True,
     ) as admin_connection:
         created_databases = []

@@ -8,7 +8,7 @@ Table Lease Fencing 메커니즘의 변형이라 별도 시나리오를 만들�
 
 ## 재현 조건과 명령
 
-`RUN_POSTGRES_INTEGRATION=1 RUN_SEAWEEDFS_INTEGRATION=1 uv run pytest tests/reliability/test_r01_r07_ingestion_commit.py -k r05 -v`를 실행한다.
+`COMMERCE_SOURCE_DB=commerce_source_it PIPELINE_METADATA_DB=pipeline_metadata_it SEAWEEDFS_BUCKET=commerce-lake-it RUN_POSTGRES_INTEGRATION=1 RUN_SEAWEEDFS_INTEGRATION=1 uv run pytest tests/reliability/test_r01_r07_ingestion_commit.py -k r05 -v`를 실행한다.
 Stale Owner가 Lease를 획득(TTL 30분) → 만료 → 새 Owner가 인수 → Stale Owner가 `assert_table_lease`와
 Commit 경로를 재시도하는 순서로 진행한다.
 

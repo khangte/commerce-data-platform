@@ -1,7 +1,7 @@
 # 데이터 흐름: Source → Data Lake → Data Warehouse → Serving
 
 > 상태: Reference
-> 기준 문서: [PRD v1.34](../../PRD_v1.34.md), [Phase 3](../phases/phase-03-incremental-ingestion.md), [Phase 4](../phases/phase-04-airflow-orchestration.md), [Phase 5](../phases/phase-05-bronze-catalog-and-staging.md), [Phase 7](../phases/phase-07-data-quality-publish.md), [Phase 10](../phases/phase-10-bi.md)
+> 기준 문서: [PRD v1.35](../../PRD_v1.35.md), [Phase 3](../phases/phase-03-incremental-ingestion.md), [Phase 4](../phases/phase-04-airflow-orchestration.md), [Phase 5](../phases/phase-05-bronze-catalog-and-staging.md), [Phase 7](../phases/phase-07-data-quality-publish.md), [Phase 10](../phases/phase-10-bi.md)
 
 이 문서는 하나의 주문 레코드가 PostgreSQL 원천에서 Metabase가 읽는 Serving 파일에 도달할 때까지의 전체 경로를 정리한다. 3-8절은 이름, 타입, 값, Grain이 어느 지점에서 왜 바뀌는지와, 그 변환을 다른 지점에서 했을 때 무엇이 깨지는지를 기록한다. 9-13절은 Mart가 만들어진 뒤 Build, Publish, Serving Export, Metabase 재지정, 운영 기록으로 이어지는 구간을 단계별 동작과 실패 시 동작 중심으로 정리한다. 이 구간에서는 데이터 값이 바뀌지 않는다. 바뀌는 것은 파일 위치와 가시성이다.
 
@@ -615,4 +615,4 @@ docker compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$PIPELINE_ME
 - [Warehouse Publish 오류 유형](../troubleshooting/warehouse-publish.md) — Publish Error Type별 원인과 조치
 - [Metabase Serving 연결](../../metabase/README.md) — Metabase 등록, 재지정 CLI, 최신성 확인
 - Architect 판정: [058 Publish 파일 Identity](../architect-review/058_publish-file-identity.md), [059 Serving 갱신 경로 단일화](../architect-review/059_serving-refresh-single-path.md), [060 Metabase 계층 정리](../architect-review/060_metabase-layer-cleanup.md), [061 Publish Heartbeat Lease](../architect-review/061_publish-heartbeat-lease.md)
-- [PRD v1.34](../../PRD_v1.34.md) — Section 7.1 상태 Mapping, Section 14 dbt Model, Section 15 이력 추적, Section 17 Data Quality와 Publish, Section 18 Observability
+- [PRD v1.35](../../PRD_v1.35.md) — Section 7.1 상태 Mapping, Section 14 dbt Model, Section 15 이력 추적, Section 17 Data Quality와 Publish, Section 18 Observability

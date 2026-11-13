@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
 from contextlib import suppress
 from dataclasses import dataclass
@@ -27,6 +28,7 @@ from src.ingestion.bronze.storage import (
     BRONZE_PREFIX,
     QUARANTINE_PREFIX,
     SeaweedFSSettings,
+    delete_objects_if_present,
     ensure_bucket,
     upload_new_bytes,
     upload_new_file,
@@ -39,6 +41,7 @@ from src.ingestion.control.batch import (
     TableBatchIdentity,
     assert_reusable_table_batch,
     get_committed_table_batch,
+    table_batch_has_metadata,
 )
 from src.ingestion.control.lease import (
     LeaseHeartbeat,
@@ -70,6 +73,8 @@ from src.ingestion.extraction.quarantine import (
 )
 from src.ingestion.extraction.references import find_broken_parent_references
 from src.ingestion.extraction.validation import ValidationPipeline
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -235,6 +240,9 @@ def ingest_table(
                 assert_source_mutation_lease(postgres, active_source_lease, now=current_time)
                 assert_table_lease(postgres, table_lease, now=current_time)
                 assert_reject_rate(total_rows=rows_extracted, rejected_rows=rows_rejected)
+                _clear_uncommitted_objects(
+                    postgres, storage, request, config, table_lease, current_time
+                )
                 quarantine_batch = _publish_quarantine(
                     storage, request, run, config, quarantine_artifact, current_time
                 )
@@ -309,6 +317,39 @@ def quarantine_object_keys(
     _assert_utc(logical_date, "logical_date")
     prefix = f"{QUARANTINE_PREFIX}/{source_table}/ingestion_date={logical_date.date().isoformat()}/batch_id={batch_id}"
     return f"{prefix}/records.parquet", f"{prefix}/manifest.json"
+
+
+def _clear_uncommitted_objects(
+    postgres: PostgresSettings,
+    storage: SeaweedFSSettings,
+    request: TableIngestionRequest,
+    config: TableConfig,
+    table_lease: TableLease,
+    current_time: datetime,
+) -> tuple[str, ...]:
+    """같은 Batch 이전 시도가 남긴 미확정 Object를 지운다(ADR 023).
+
+    Metadata 행이 하나라도 있으면 아무것도 지우지 않는다. Commit과 같은 Table Lease로
+    Fencing하므로 확인과 삭제 사이에 다른 실행이 Commit할 수 없다.
+    """
+    object_key, manifest_key = table_object_keys(
+        config.source_table, request.batch_id, request.logical_date
+    )
+    table_batch_id = _table_batch_identity(request, config).table_batch_id
+    if table_batch_has_metadata(postgres, table_batch_id, object_key):
+        return ()
+    assert_table_lease(postgres, table_lease, now=current_time)
+    deleted = delete_objects_if_present(
+        storage,
+        (
+            object_key,
+            manifest_key,
+            *quarantine_object_keys(config.source_table, request.batch_id, request.logical_date),
+        ),
+    )
+    if deleted:
+        logger.info("Cleared uncommitted objects for %s: %s", table_batch_id, ", ".join(deleted))
+    return deleted
 
 
 def _remove_local_artifacts(local_directory: Path, config: TableConfig, run_id: uuid.UUID) -> None:

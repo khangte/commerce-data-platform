@@ -8,7 +8,7 @@
 
 ## 재현 조건과 명령
 
-`RUN_POSTGRES_INTEGRATION=1 RUN_SEAWEEDFS_INTEGRATION=1 uv run pytest tests/reliability/test_r08_r10_late_and_history.py::test_r09_a_late_payment_pulls_the_linked_order_purchase_date_into_the_affected_range -v`를 실행한다.
+`COMMERCE_SOURCE_DB=commerce_source_it PIPELINE_METADATA_DB=pipeline_metadata_it SEAWEEDFS_BUCKET=commerce-lake-it RUN_POSTGRES_INTEGRATION=1 RUN_SEAWEEDFS_INTEGRATION=1 uv run pytest tests/reliability/test_r08_r10_late_and_history.py::test_r09_a_late_payment_pulls_the_linked_order_purchase_date_into_the_affected_range -v`를 실행한다.
 구매일이 10일 전인 주문을 결제 대기(`pending`) 상태로 수집·Build한 뒤, `delayed_payment_transition`으로
 그 결제를 완료(`completed`)로 전이시키고 `order_payments`만 `sequence=2`로 재수집해 두 번째
 `dbt build`를 실행한다.

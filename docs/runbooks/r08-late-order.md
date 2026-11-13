@@ -9,7 +9,7 @@ Business Time이 현재 처리 창보다 며칠 앞선(과거) 주문이 새 Mut
 
 ## 재현 조건과 명령
 
-`RUN_POSTGRES_INTEGRATION=1 RUN_SEAWEEDFS_INTEGRATION=1 uv run pytest tests/reliability/test_r08_r10_late_and_history.py::test_r08_a_late_order_updates_the_past_business_date_mart_once -v`를 실행한다.
+`COMMERCE_SOURCE_DB=commerce_source_it PIPELINE_METADATA_DB=pipeline_metadata_it SEAWEEDFS_BUCKET=commerce-lake-it RUN_POSTGRES_INTEGRATION=1 RUN_SEAWEEDFS_INTEGRATION=1 uv run pytest tests/reliability/test_r08_r10_late_and_history.py::test_r08_a_late_order_updates_the_past_business_date_mart_once -v`를 실행한다.
 기준 주문 하나를 정상 수집·Build한 뒤(`sequence=1`), 구매일이 3일 전인 Late Order를
 `late_order_bundle`로 만들어 `sequence=2`로 `orders`/`order_items`/`order_payments`만 재수집하고
 두 번째 `dbt build`(`--full-refresh` 없이)를 실행한다.

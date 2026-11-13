@@ -267,6 +267,25 @@ Generator 실행 이력에 의존하지 않는다. Source 열 구성 테스트�
 - 변경 테스트 파일의 Ruff 검사·포맷 검사와 `git diff --check`: 통과.
 - 운영 공유 DB를 대상으로 한 검증 실행은 하지 않았다.
 
+## 감사 보완: 관리자 자격 증명 제거 (2026-11-13)
+
+감사 보완 계획(`docs/superpowers/plans/2026-11-13-audit-remediation.md`) Phase 3.
+`PostgresSettings`는 더 이상 `POSTGRES_USER`·`POSTGRES_PASSWORD`를 읽거나 요구하지 않는다.
+실행 코드는 역할별 계정(`SOURCE_DB_*`, `PIPELINE_DB_*`)만 쓴다. 관리자 계정은 Postgres 컨테이너와
+Seed 통합 테스트 Fixture만 쓰며, Fixture는 `environment_values()`에서 직접 읽는다.
+Airflow 쪽 변경과 DagRun 검증은 [Phase 4 문서](phase-04-airflow-orchestration.md)에 있다.
+
+- [x] `rg -n "admin_user|admin_password" src airflow scripts`: 0건.
+- [x] `RUN_POSTGRES_INTEGRATION=1 uv run pytest tests/integration/test_seed_integration.py`: 3 passed.
+- [x] 통합 테스트 전체(`RUN_POSTGRES_INTEGRATION=1 RUN_SEAWEEDFS_INTEGRATION=1`): 기존 121 passed.
+
+| 경로 | 변경 | 요약 |
+| --- | --- | --- |
+| `src/common/database.py` | 수정 | `admin_user`·`admin_password` 필드와 `POSTGRES_USER`·`POSTGRES_PASSWORD` 필수 검사를 지웠다. |
+| `tests/integration/test_seed_integration.py` | 수정 | 임시 DB Fixture가 관리자 계정을 `environment_values()`에서 읽는다. |
+| `tests/serving/test_cli.py` | 수정 | `PostgresSettings(...)` 생성 인자에서 관리자 필드를 뺐다. |
+| `docs/phases/phase-01-source-environment.md` | 수정 | 이 절을 더했다. |
+
 ## Portfolio Evidence
 
 - Raw Header와 Source Schema Allowlist 비교
@@ -283,3 +302,86 @@ feat: build raw-compatible postgres source
 ## 다음 Phase 인계
 
 Phase 2는 Seed가 끝난 Source Snapshot을 기준점으로 사용한다. Generator가 변경하는 모든 Mutable Row는 이 Phase에서 정의한 `updated_at`과 제약조건을 준수해야 한다.
+
+
+## 감사 보완: 상태 변경 테스트 격리 (2026-11-13)
+
+통합 테스트가 공유 원천 DB의 실제 시뮬레이션 행을 진행시키는 문제가 확인됐다.
+상태 변경 테스트는 `_it`로 끝나는 원천·메타데이터 DB와 `-it`로 끝나는 버킷에서만 실행한다.
+공유 DB는 Airflow 실행에 사용한다. 과거 검증 증적의 명령은 당시 기록이며, 새 실행에는 아래 명령을 쓴다.
+
+```bash
+# Airflow와 다른 상태 변경 테스트를 멈춘 뒤 한 담당자가 실행한다.
+# 기존 격리 데이터를 지우고, 복구가 끝난 공유 DB의 사본을 만든다.
+./scripts/setup_test_isolation.sh
+COMMERCE_SOURCE_DB=commerce_source_it PIPELINE_METADATA_DB=pipeline_metadata_it SEAWEEDFS_BUCKET=commerce-lake-it RUN_POSTGRES_INTEGRATION=1 RUN_SEAWEEDFS_INTEGRATION=1 uv run pytest tests/integration
+```
+
+사본의 수집·발행 카탈로그는 비워 새 버킷에 없는 객체를 참조하지 않게 하고,
+원천 기준선과 연결되는 Seed·Generator 이력은 보존한다. 같은 격리 환경의 테스트도 동시에 실행하지 않는다.
+`tests/conftest.py`는 상태 변경 플래그가 켜졌을 때 세 격리 이름을 수집 전에 확인하며 우회 옵션은 없다.
+
+- [x] 격리 DB·버킷만 재생성하는 준비 스크립트 추가.
+- [x] 테스트 수집 전 공유 환경 차단 6건과 준비 스크립트의 안전한 이름 검사 5건, 총 11건 통과.
+- [x] README·Runbook·새 Clone 검증 명령을 격리 실행으로 갱신.
+- [x] 복구 완료 후 준비 스크립트 두 번 실행과 공유 데이터 불변 확인.
+- [x] 격리 통합 테스트 125건 통과와 공유 데이터 불변 증거 기록.
+- [x] R-01~R-07 복구 시나리오의 격리 실행: `10 passed in 6.15s`.
+
+
+### 격리 검증 결과 (2026-11-13, lead 실행)
+
+준비 스크립트의 첫 통합 실행은 사본 DB가 관리자 소유여서 `public` 스키마의 생성 권한을
+얻지 못했다. 원본처럼 원천·메타데이터 실행 역할을 사본 DB의 소유자로 지정한 뒤 재검증했다.
+
+- 준비 스크립트 연속 2회 성공. 공유 원천 테이블별 행 수와 생성·수정 시각 최댓값,
+  생성기 커밋 72행의 해시, 실제 워터마크 9행, Bronze 카탈로그 585행, 공유 객체 1,177개가
+  준비 전·후와 통합 테스트 후에 모두 같았다.
+- 비격리 환경의 `RUN_POSTGRES_INTEGRATION=1 uv run pytest --collect-only tests/integration`은
+  공유 환경 사용 오류로 종료 코드 4를 반환했다. 테스트 수집과 DB 접속 전에 차단됐다.
+- 격리 `tests/integration`: `125 passed, 1 skipped in 403.71s`.
+  기존 오염으로 실패하던 12건을 포함해 실패 0건이다.
+- 기본 전체 테스트: `883 passed, 154 skipped in 119.82s`. 새 문서 파일을 임시 Git 인덱스에만
+  등록해 문서 링크도 검사했으며 실제 인덱스는 바꾸지 않았다.
+- 격리 안전 검사: `11 passed`.
+- 격리 R-01~R-07 복구 시나리오: `10 passed in 6.15s`. 격리 단계의 완료조건을 모두 충족했다.
+
+증거는 저장소 밖 `/tmp/commerce-audit-lead/`의 `shared-before.json`,
+`shared-after-setup.json`, `shared-after-integration.json`, `integration.log`, `full-suite.log`,
+`reliability.log`에 남겼다.
+
+### 파일·폴더별 변경 요약
+
+| 경로 | 변경 | 내용 |
+| --- | --- | --- |
+| `scripts/setup_test_isolation.sh` | 생성 | 공유 DB를 역할별 소유권을 가진 격리 사본으로 복사하고 수집 카탈로그 초기화, 테스트 버킷 재생성. 공유 대상 이름은 거부. |
+| `tests/conftest.py` | 생성 | 상태 변경 테스트의 원천·메타데이터 DB와 버킷 이름을 수집 전에 검사. |
+| `tests/test_integration_safety.py` | 생성 | 공유 대상 조합 6건의 수집 전 차단과 잘못된 준비 대상 5건의 접속 전 거부 검증. |
+| `scripts/verify_clean_clone.sh` | 수정 | 새 Clone에서도 격리 사본을 준비한 뒤 통합 테스트 실행. |
+| `README.md`, `docs/runbooks/*.md` | 수정 | 격리 준비·실행 명령과 단독 실행 규칙 기록. |
+| `docs/phases/phase-01-source-environment.md`, `docs/phases/phase-03-incremental-ingestion.md` | 수정 | 격리 동작·진행 체크리스트·검증·파일 요약 동기화. |
+
+
+## 감사 보완: 공유 DB 복구 (2026-11-13)
+
+동시에 실행된 통합 테스트가 실제 시뮬레이션 주문·구독을 2100년으로 진행시켰다.
+Airflow와 두 DAG를 정지한 뒤, 검증된 백업을 확보하고 커밋된 Bronze 원본으로 복구했다.
+상태 변경 테스트는 공유 DB에서 실행하지 않고 조회로 복구를 검증했다.
+상세 행 식별자와 원인·백업·명령은 [공유 DB 테스트 오염](../troubleshooting/shared-db-test-contamination.md)에 기록했다.
+
+- [x] 원천·메타데이터 덤프 두 개를 임시 DB에 실제 복원하여 전체 테이블 행 수 일치 확인.
+- [x] 기존 원천 15행의 모든 열을 커밋된 Bronze 원본으로 복원하고 21개 주문 상세의 동일성 확인.
+- [x] 테스트가 새로 만든 결제 4행, 누출 카탈로그 3행과 객체 6개만 정확히 지정해 삭제.
+- [x] 원천 `created_at`·`updated_at`의 2099년 이후 값 0건 확인.
+- [x] 실제 워터마크 9행·생성기 커밋 72행의 내용 해시와 나머지 테이블 행 수 보존 확인.
+- [x] 이번 사고와 무관한 9월 테스트 워터마크는 참조 관계를 조사하고 보존.
+
+### 파일·폴더별 변경 요약
+
+| 경로 | 변경 | 내용 |
+| --- | --- | --- |
+| `~/commerce-data-platform-backups/2026-11-13/` | 생성(저장소 밖) | DB 덤프, 복원검증 스크립트·결과, 객체 백업, 정확한 복구 계획·실행 스크립트·검증 JSON 보존. |
+| `docs/troubleshooting/shared-db-test-contamination.md` | 생성 | 사고 원인과 복구 대상·명령·백업 해시·검증 증거 기록. |
+| `docs/troubleshooting/README.md` | 수정 | 사고 기록 링크 추가. |
+| `docs/phases/phase-01-source-environment.md` | 수정 | 복구 완료 체크리스트와 파일·폴더 요약 동기화. |
+| 공유 원천 DB·메타데이터 DB·객체 버킷 | 데이터 복구 | 15행 복원, 테스트 생성 4행과 누출 배치 3건만 제거. 스키마 변경 없음. |

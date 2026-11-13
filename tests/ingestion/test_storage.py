@@ -79,3 +79,42 @@ def test_upload_sends_sha256_checksum_and_preserves_head_checks(
     assert stored.content_sha256 == digest.hex()
     assert client.head_object.call_count == 2
     client.get_object.assert_not_called()
+
+
+def test_delete_uncommitted_objects_skips_missing_keys_and_limits_deletes(monkeypatch) -> None:
+    """미확정 객체 정리는 지정된 키만 삭제하고 없는 키는 건너뛴다."""
+    from src.ingestion.bronze.storage import delete_objects_if_present
+
+    client = Mock()
+    client.head_object.side_effect = [
+        {},
+        ClientError({"Error": {"Code": "NoSuchKey"}}, "HeadObject"),
+        {},
+    ]
+    monkeypatch.setattr(
+        "src.ingestion.bronze.storage.seaweedfs_s3_client", Mock(return_value=client)
+    )
+    settings = SeaweedFSSettings("localhost", 8333, "access", "secret", "lake")
+    assert delete_objects_if_present(settings, ("data", "missing", "manifest")) == (
+        "data", "manifest"
+    )
+    assert [call.kwargs for call in client.delete_object.call_args_list] == [
+        {"Bucket": "lake", "Key": "data"},
+        {"Bucket": "lake", "Key": "manifest"},
+    ]
+    client.list_objects_v2.assert_not_called()
+
+
+def test_delete_uncommitted_objects_does_not_ignore_permission_failures(monkeypatch) -> None:
+    """HEAD 권한 오류는 객체 부재로 취급하지 않고 삭제 전에 전파한다."""
+    from src.ingestion.bronze.storage import delete_objects_if_present
+
+    client = Mock()
+    client.head_object.side_effect = ClientError({"Error": {"Code": "AccessDenied"}}, "HeadObject")
+    monkeypatch.setattr(
+        "src.ingestion.bronze.storage.seaweedfs_s3_client", Mock(return_value=client)
+    )
+    settings = SeaweedFSSettings("localhost", 8333, "access", "secret", "lake")
+    with pytest.raises(ClientError, match="AccessDenied"):
+        delete_objects_if_present(settings, ("data",))
+    client.delete_object.assert_not_called()

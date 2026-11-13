@@ -13,7 +13,7 @@
 > **증분 수집 → Bronze(Parquet) → dbt Star Schema → 품질 Gate → Dashboard**까지 이어지는
 > 배치 파이프라인의 **신뢰성**과 **분석 모델 정합성**을 설계·검증한 프로젝트다.
 
-기준 문서: [PRD v1.34](PRD_v1.34.md) · 단계별 기록: [`docs/phases/`](docs/phases/ROADMAP.md)
+기준 문서: [PRD v1.35](PRD_v1.35.md) · 단계별 기록: [`docs/phases/`](docs/phases/ROADMAP.md)
 
 ---
 
@@ -366,6 +366,11 @@ Airflow UI에서 `source_simulation_dag`(`@hourly`)를 활성화하면 Generator
 ```bash
 uv run ruff check .
 uv run pytest
+
+# 통합 테스트: Airflow와 다른 상태 변경 테스트를 멈춘 뒤 격리 사본을 준비한다.
+# 다시 실행하면 기존 격리 DB·버킷의 테스트 데이터가 삭제된다.
+./scripts/setup_test_isolation.sh
+COMMERCE_SOURCE_DB=commerce_source_it PIPELINE_METADATA_DB=pipeline_metadata_it SEAWEEDFS_BUCKET=commerce-lake-it RUN_POSTGRES_INTEGRATION=1 RUN_SEAWEEDFS_INTEGRATION=1 uv run pytest tests/integration
 
 # 새 Clone 기준 Seed → Generator → Ingestion → Publish → Integration (메인 Stack 먼저 down)
 docker compose down

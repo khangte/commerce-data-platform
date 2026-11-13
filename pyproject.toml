@@ -21,6 +21,10 @@ dev = [
     "ruff==0.16.5",
 ]
 
+[tool.uv]
+# apache/airflow:3.3.1 Image에 미리 깔린 aiobotocore·litellm과 맞춘다. Base Image를 올리면 다시 본다.
+constraint-dependencies = ["botocore<1.43.57", "importlib-metadata<9"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]

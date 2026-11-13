@@ -17,7 +17,7 @@ Source는 성공했으나 Warehouse가 실행되지 못한 경우에는 다음 W
 
 ## 재현 조건과 명령
 
-`RUN_POSTGRES_INTEGRATION=1 RUN_SEAWEEDFS_INTEGRATION=1 RUN_DBT_PUBLISH_INTEGRATION=1 uv run pytest tests/reliability/test_r11_r15_reprocess_and_source.py -k r11 -v`를 실행한다.
+`COMMERCE_SOURCE_DB=commerce_source_it PIPELINE_METADATA_DB=pipeline_metadata_it SEAWEEDFS_BUCKET=commerce-lake-it RUN_POSTGRES_INTEGRATION=1 RUN_SEAWEEDFS_INTEGRATION=1 RUN_DBT_PUBLISH_INTEGRATION=1 uv run pytest tests/reliability/test_r11_r15_reprocess_and_source.py -k r11 -v`를 실행한다.
 윈도 A 실행 → 윈도 B 데이터만 삽입하고 Ingest 생략 → 윈도 C 데이터 삽입 후 실행 → Mart Hash를
 건너뛴 적 없는 Full Refresh Control과 비교 → `rewind_tables`로 B 직전까지 되감고 B의 `logical_date`로
 명시 Batch 실행 순서로 진행한다.

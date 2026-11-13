@@ -173,7 +173,7 @@ def test_status_database_connect_failure_is_one_line(monkeypatch, capsys) -> Non
     monkeypatch.setenv("METABASE_API_KEY", "cli-test-api-secret")
     monkeypatch.setenv("METABASE_SERVING_DATABASE_ID", "2")
     settings = cli.PostgresSettings(
-        host="db.test", port=5432, admin_user="admin", admin_password="unused",
+        host="db.test", port=5432,
         source_database="source", source_user="source", source_password="unused",
         pipeline_database="metadata", pipeline_user="pipeline", pipeline_password="unused",
     )

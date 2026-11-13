@@ -6,9 +6,11 @@ import os
 import uuid
 from datetime import UTC, datetime
 
+import psycopg
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
+from botocore.exceptions import ClientError
 from psycopg.types.json import Jsonb
 
 from src.common.database import PostgresSettings
@@ -24,8 +26,10 @@ from src.ingestion.bronze.orphan import (
     find_orphan_candidates,
     reconcile_orphan,
 )
-from src.ingestion.bronze.storage import SeaweedFSSettings, ensure_bucket, seaweedfs_s3_client
+from src.ingestion.bronze.storage import SeaweedFSSettings, seaweedfs_s3_client
+from src.ingestion.contract.tables import table_config
 from src.ingestion.control.batch import BatchIdentityConflictError
+from src.ingestion.control.lease import acquire_table_lease, release_table_lease
 from src.ingestion.control.metadata import CursorPosition, get_or_create_watermark
 from src.ingestion.extraction.corruption import INVALID_STATUS, CorruptionPlan
 from src.ingestion.service import (
@@ -36,6 +40,12 @@ from src.ingestion.service import (
 )
 
 pytestmark = pytest.mark.integration
+
+_REQUIRES_INFRA = pytest.mark.skipif(
+    os.environ.get("RUN_POSTGRES_INTEGRATION") != "1"
+    or os.environ.get("RUN_SEAWEEDFS_INTEGRATION") != "1",
+    reason="Set PostgreSQL and SeaweedFS integration environment flags after starting containers.",
+)
 
 
 class _CrashAfterFinalObject(BaseException):
@@ -112,57 +122,139 @@ def test_orders_service_commits_verified_manifest_object_run_and_watermark(tmp_p
         _delete_test_rows_and_objects(postgres, storage, pipeline_name, request)
 
 
-@pytest.mark.skipif(
-    os.environ.get("RUN_POSTGRES_INTEGRATION") != "1"
-    or os.environ.get("RUN_SEAWEEDFS_INTEGRATION") != "1",
-    reason="Set PostgreSQL and SeaweedFS integration environment flags after starting containers.",
-)
-def test_orders_service_keeps_watermark_when_final_object_already_exists(tmp_path) -> None:
-    """Final Key 충돌 실패는 Object를 덮어쓰지 않고 Watermark를 유지한 채 Run을 실패시킨다."""
+@_REQUIRES_INFRA
+def test_committed_batch_objects_are_never_cleared(tmp_path) -> None:
+    """COMMITTED Batch는 재실행도, 정리 함수 직접 호출도 Object Byte를 바꾸지 않는다(ADR 023)."""
     postgres = PostgresSettings.from_environment()
     storage = SeaweedFSSettings.from_environment()
     now = datetime(2026, 9, 7, tzinfo=UTC)
-    pipeline_name = f"test_orders_failure_{uuid.uuid4().hex}"
+    pipeline_name = f"test_orders_committed_keep_{uuid.uuid4().hex}"
+    request = _orders_request(pipeline_name, now)
+    _set_watermark(postgres, pipeline_name, _lower_bound_before_five_latest_rows(postgres), now)
+    client = seaweedfs_s3_client(storage)
+    keys = table_object_keys("orders", request.batch_id, request.logical_date)
+    table_lease = None
+    try:
+        assert ingest_table(
+            postgres, storage, request, local_directory=tmp_path, now=now
+        ).status == ("SUCCESS")
+        before = {key: _object_bytes(client, storage, key) for key in keys}
+
+        rerun = ingest_table(postgres, storage, request, local_directory=tmp_path, now=now)
+        table_lease = acquire_table_lease(
+            postgres,
+            pipeline_name=pipeline_name,
+            source_table="orders",
+            owner_id=uuid.uuid4(),
+            now=now,
+        )
+        cleared = ingestion_service._clear_uncommitted_objects(
+            postgres, storage, request, table_config("orders"), table_lease, now
+        )
+
+        assert rerun.status == "SKIPPED_ALREADY_COMMITTED"
+        assert cleared == ()
+        assert {key: _object_bytes(client, storage, key) for key in keys} == before
+    finally:
+        if table_lease is not None:
+            release_table_lease(postgres, table_lease, now=now)
+        _delete_test_rows_and_objects(postgres, storage, pipeline_name, request)
+
+
+@_REQUIRES_INFRA
+def test_retry_after_manifest_put_failure_clears_data_object_and_commits(
+    monkeypatch, tmp_path
+) -> None:
+    """data.parquet 게시 뒤 Manifest PUT 503이면 같은 요청 재시도가 남은 Object를 지우고 Commit한다."""
+    postgres = PostgresSettings.from_environment()
+    storage = SeaweedFSSettings.from_environment()
+    now = datetime(2026, 9, 7, tzinfo=UTC)
+    pipeline_name = f"test_orders_retry_manifest_{uuid.uuid4().hex}"
+    request = _orders_request(pipeline_name, now)
+    lower_bound = _lower_bound_before_five_latest_rows(postgres)
+    _set_watermark(postgres, pipeline_name, lower_bound, now)
+    object_key, manifest_key = table_object_keys("orders", request.batch_id, request.logical_date)
+    _fail_once(monkeypatch, "upload_new_bytes", manifest_key, _s3_unavailable())
+    try:
+        with pytest.raises(ClientError):
+            ingest_table(postgres, storage, request, local_directory=tmp_path, now=now)
+        assert _bucket_keys(storage, object_key) == {object_key}
+
+        result = ingest_table(postgres, storage, request, local_directory=tmp_path, now=now)
+
+        _assert_retry_committed(postgres, pipeline_name, request, result, lower_bound)
+    finally:
+        _delete_test_rows_and_objects(postgres, storage, pipeline_name, request)
+
+
+@_REQUIRES_INFRA
+def test_retry_after_bronze_put_failure_clears_quarantine_objects_and_commits(
+    monkeypatch, tmp_path
+) -> None:
+    """Quarantine 게시 뒤 Bronze PUT 503이면 재시도가 Quarantine Object를 지우고 다시 Commit한다."""
+    postgres = PostgresSettings.from_environment()
+    storage = SeaweedFSSettings.from_environment()
+    now = datetime(2026, 9, 7, tzinfo=UTC)
+    pipeline_name = f"test_orders_retry_quarantine_{uuid.uuid4().hex}"
     request = TableIngestionRequest.for_dag_run(
         source_table="orders",
         dag_id=f"warehouse_{uuid.uuid4().hex}",
         logical_date=now,
         pipeline_name=pipeline_name,
-        page_size=2,
+        page_size=7,
+        corruption_plan=CorruptionPlan({0: INVALID_STATUS}),
     )
-    lower_bound = _lower_bound_before_five_latest_rows(postgres)
+    lower_bound = _lower_bound_before_twenty_latest_rows(postgres)
     _set_watermark(postgres, pipeline_name, lower_bound, now)
     object_key, _ = table_object_keys("orders", request.batch_id, request.logical_date)
-    ensure_bucket(storage)
-    client = seaweedfs_s3_client(storage)
-    client.put_object(Bucket=storage.bucket, Key=object_key, Body=b"must-not-be-overwritten")
-
+    quarantine_key, quarantine_manifest_key = quarantine_object_keys(
+        "orders", request.batch_id, request.logical_date
+    )
+    _fail_once(monkeypatch, "upload_new_file", object_key, _s3_unavailable())
     try:
-        with pytest.raises(FileExistsError):
+        with pytest.raises(ClientError):
             ingest_table(postgres, storage, request, local_directory=tmp_path, now=now)
+        assert _bucket_keys(storage, quarantine_key.rsplit("/", 1)[0]) == {
+            quarantine_key,
+            quarantine_manifest_key,
+        }
 
-        assert (
-            client.get_object(Bucket=storage.bucket, Key=object_key)["Body"].read()
-            == b"must-not-be-overwritten"
-        )
+        result = ingest_table(postgres, storage, request, local_directory=tmp_path, now=now)
+
+        assert result.rows_rejected == 1
+        _assert_retry_committed(postgres, pipeline_name, request, result, lower_bound)
         with postgres.pipeline_connection() as connection:
-            watermark_row = connection.execute(
-                """
-                SELECT watermark_timestamp, watermark_keys, version
-                FROM watermarks WHERE pipeline_name = %s AND source_table = 'orders'
-                """,
-                (pipeline_name,),
+            quarantine_rows = connection.execute(
+                "SELECT count(*) FROM quarantine_batches WHERE table_batch_id = %s",
+                (f"{request.batch_id}__orders",),
             ).fetchone()
-            run_row = connection.execute(
-                """
-                SELECT status, error_type FROM pipeline_runs
-                WHERE pipeline_name = %s AND source_table = 'orders'
-                """,
-                (pipeline_name,),
-            ).fetchone()
+        assert quarantine_rows == (1,)
+    finally:
+        _delete_test_rows_and_objects(postgres, storage, pipeline_name, request)
 
-        assert watermark_row == (lower_bound.timestamp, lower_bound.as_json(), 0)
-        assert run_row == ("FAILED", "UNKNOWN_ERROR")
+
+@_REQUIRES_INFRA
+def test_retry_after_metadata_commit_failure_clears_objects_and_commits(
+    monkeypatch, tmp_path
+) -> None:
+    """업로드는 끝나고 Commit이 OperationalError로 실패해도(1b) 재시도가 다시 올려 Commit한다."""
+    postgres = PostgresSettings.from_environment()
+    storage = SeaweedFSSettings.from_environment()
+    now = datetime(2026, 9, 7, tzinfo=UTC)
+    pipeline_name = f"test_orders_retry_commit_{uuid.uuid4().hex}"
+    request = _orders_request(pipeline_name, now)
+    lower_bound = _lower_bound_before_five_latest_rows(postgres)
+    _set_watermark(postgres, pipeline_name, lower_bound, now)
+    object_key, manifest_key = table_object_keys("orders", request.batch_id, request.logical_date)
+    _fail_once(monkeypatch, "commit_table_run", None, psycopg.OperationalError("injected"))
+    try:
+        with pytest.raises(psycopg.OperationalError):
+            ingest_table(postgres, storage, request, local_directory=tmp_path, now=now)
+        assert _bucket_keys(storage, object_key.rsplit("/", 1)[0]) == {object_key, manifest_key}
+
+        result = ingest_table(postgres, storage, request, local_directory=tmp_path, now=now)
+
+        _assert_retry_committed(postgres, pipeline_name, request, result, lower_bound)
     finally:
         _delete_test_rows_and_objects(postgres, storage, pipeline_name, request)
 
@@ -655,3 +747,79 @@ def _delete_test_rows_and_objects(
             (pipeline_name,),
         )
         connection.commit()
+
+
+def _orders_request(pipeline_name: str, now: datetime) -> TableIngestionRequest:
+    """테스트마다 고유한 DAG ID로 다섯 Row `orders` 요청을 만든다."""
+    return TableIngestionRequest.for_dag_run(
+        source_table="orders",
+        dag_id=f"warehouse_{uuid.uuid4().hex}",
+        logical_date=now,
+        pipeline_name=pipeline_name,
+        page_size=2,
+    )
+
+
+def _s3_unavailable() -> ClientError:
+    """SeaweedFS PUT 503 응답을 재현한다."""
+    return ClientError(
+        {"Error": {"Code": "ServiceUnavailable"}, "ResponseMetadata": {"HTTPStatusCode": 503}},
+        "PutObject",
+    )
+
+
+def _fail_once(monkeypatch, name: str, key: str | None, error: Exception) -> None:
+    """`service`의 `name` 호출 중 Key가 일치하는 첫 호출만 실패시키고 이후는 원래대로 둔다."""
+    original = getattr(ingestion_service, name)
+    state = {"failed": False}
+
+    def _wrapper(*args: object, **kwargs: object) -> object:
+        if not state["failed"] and (key is None or key in args):
+            state["failed"] = True
+            raise error
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(ingestion_service, name, _wrapper)
+
+
+def _object_bytes(client, storage: SeaweedFSSettings, key: str) -> bytes:
+    """지정 Object의 전체 Byte를 읽는다."""
+    return client.get_object(Bucket=storage.bucket, Key=key)["Body"].read()
+
+
+def _assert_retry_committed(
+    postgres: PostgresSettings,
+    pipeline_name: str,
+    request: TableIngestionRequest,
+    result,
+    lower_bound: CursorPosition,
+) -> None:
+    """재시도가 SUCCESS, COMMITTED 1행, Watermark 전진으로 끝났는지 확인한다."""
+    assert result.status == "SUCCESS"
+    with postgres.pipeline_connection() as connection:
+        objects = connection.execute(
+            "SELECT status FROM bronze_objects WHERE table_batch_id = %s",
+            (f"{request.batch_id}__orders",),
+        ).fetchall()
+        runs = connection.execute(
+            """
+            SELECT status FROM pipeline_runs
+            WHERE pipeline_name = %s AND source_table = 'orders'
+            """,
+            (pipeline_name,),
+        ).fetchall()
+        watermark = connection.execute(
+            """
+            SELECT watermark_timestamp, watermark_keys, version
+            FROM watermarks WHERE pipeline_name = %s AND source_table = 'orders'
+            """,
+            (pipeline_name,),
+        ).fetchone()
+    assert objects == [("COMMITTED",)]
+    assert sorted(row[0] for row in runs) == ["FAILED", "SUCCESS"]
+    assert watermark == (
+        result.run.extract_upper_bound.timestamp,
+        result.run.extract_upper_bound.as_json(),
+        1,
+    )
+    assert watermark[:2] != (lower_bound.timestamp, lower_bound.as_json())

@@ -95,6 +95,24 @@ def get_committed_table_batch(
     )
 
 
+def table_batch_has_metadata(
+    settings: PostgresSettings, table_batch_id: str, object_key: str
+) -> bool:
+    """상태와 무관하게 Bronze·Quarantine Metadata가 하나라도 있으면 참이다.
+
+    `reconcile_orphan`과 같은 조건이다. 참이면 남은 Object를 지우면 안 된다.
+    """
+    with settings.pipeline_connection() as connection:
+        bronze = connection.execute(
+            "SELECT 1 FROM bronze_objects WHERE table_batch_id = %s OR object_key = %s",
+            (table_batch_id, object_key),
+        ).fetchone()
+        quarantine = connection.execute(
+            "SELECT 1 FROM quarantine_batches WHERE table_batch_id = %s", (table_batch_id,)
+        ).fetchone()
+    return bronze is not None or quarantine is not None
+
+
 def assert_reusable_table_batch(
     existing: CommittedTableBatch,
     *,

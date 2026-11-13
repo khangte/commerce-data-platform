@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import argparse
 import hashlib
-from dataclasses import dataclass
+import json
+import sys
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from typing import Any, cast
 
@@ -226,3 +229,31 @@ def _utc_now(value: datetime | None) -> datetime:
     if offset is None or offset.total_seconds() != 0:
         raise ValueError("Reconciliation time must be normalized to UTC")
     return result
+
+
+def main(argv: list[str] | None = None) -> int:
+    """고아 객체 후보를 조회하거나 지정한 후보 한 건을 보수적으로 재조정한다."""
+    parser = argparse.ArgumentParser(description="고아 Bronze 객체를 조회하고 한 건씩 재조정합니다.")
+    parser.add_argument("--reconcile", metavar="OBJECT_KEY", help="재조정할 후보 객체의 정확한 키")
+    args = parser.parse_args(argv)
+    postgres = PostgresSettings.from_environment()
+    storage = SeaweedFSSettings.from_environment()
+    candidates = find_orphan_candidates(postgres, storage)
+    if args.reconcile is None:
+        print(json.dumps([asdict(candidate) for candidate in candidates], sort_keys=True))
+        return 0
+    candidate = next((item for item in candidates if item.object_key == args.reconcile), None)
+    if candidate is None:
+        print(f"고아 객체 후보를 찾을 수 없습니다: {args.reconcile}", file=sys.stderr)
+        return 2
+    try:
+        reconcile_orphan(postgres, storage, candidate)
+    except OrphanReconciliationError as error:
+        print(f"재조정 거부: {error}", file=sys.stderr)
+        return 1
+    print(json.dumps({"object_key": candidate.object_key, "status": "COMMITTED"}, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

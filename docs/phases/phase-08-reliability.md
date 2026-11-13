@@ -222,3 +222,42 @@ test: document reliability and recovery scenarios
 ## 다음 Phase 인계
 
 Phase 9는 Reliability Harness의 고정 Dataset, Scenario, Hash, 환경 Metadata 형식을 재사용해 성능 실험의 재현성을 확보한다.
+
+## 감사 보완: 재시도 복구와 고아 객체 실행 진입점 (2026-11-13)
+
+감사 보완 계획 `docs/superpowers/plans/2026-11-13-audit-remediation.md`의 Phase 1·4에 해당한다.
+
+- [x] R-03 처리된 커밋 실패 뒤 자동 재조정 거부와 같은 배치 재시도 성공을 함께 검증하도록 수정했다.
+- [x] R-06 후보 목록과 단건 재조정을 실제 CLI `main` 경유로 검증하도록 수정했다. Quarantine 존재 시 실패 종료 코드와 메타데이터 불변을 확인한다.
+- [x] 고아 객체 CLI·삭제 경계 단위 테스트 12건 통과.
+- [x] 격리 환경에서 R-01~R-07 10 passed(6.15초)로 재검증하고 `data/reliability/` 증적을 갱신했다.
+
+### 파일·폴더별 변경 요약
+
+| 경로 | 변경 | 요약 |
+| --- | --- | --- |
+| `src/ingestion/bronze/orphan.py` | 수정 | 읽기 전용 후보 목록과 `--reconcile` 단건 실행을 제공한다. |
+| `tests/reliability/test_r01_r07_ingestion_commit.py` | 수정 | R-03 재시도 복구 증거와 R-06 CLI 수용·거부 검증을 추가한다. |
+| `tests/ingestion/test_orphan.py`, `tests/ingestion/test_storage.py` | 수정 | CLI 종료 코드와 제한된 삭제의 오류 경계를 검증한다. |
+| `docs/runbooks/r02-upload-failure.md`, `docs/runbooks/r03-metadata-failure.md`, `docs/runbooks/r06-orphan-object.md` | 수정 | 부분 업로드 재시도 계약과 고아 객체 CLI 절차를 기록한다. |
+| `docs/troubleshooting/commit-and-lease.md`, `docs/troubleshooting/ingestion-errors.md`, `docs/adr/023-same-batch-retry-clears-uncommitted-objects.md` | 수정 | 현재 모듈 경로와 같은 배치 재시도 복구·구현 상태를 반영한다. |
+| `docs/runbooks/r07-broken-manifest.md` | 수정 | 재조정 함수의 이동 후 모듈 경로를 바로잡았다. |
+| `docs/phases/phase-08-reliability.md` | 수정 | 이 체크리스트와 변경 요약을 추가했다. |
+
+재검증은 `scripts/setup_test_isolation.sh`로 격리 환경을 준비한 뒤 다음 명령으로 실행한다. 과거 실행 증거의 명령과 달리 공유 DB를 테스트 대상으로 사용하지 않는다.
+
+```bash
+COMMERCE_SOURCE_DB=commerce_source_it PIPELINE_METADATA_DB=pipeline_metadata_it SEAWEEDFS_BUCKET=commerce-lake-it RUN_POSTGRES_INTEGRATION=1 RUN_SEAWEEDFS_INTEGRATION=1 uv run pytest tests/reliability/test_r01_r07_ingestion_commit.py -v
+```
+
+
+### 감사 보완 실제 관측 (2026-11-13, lead 실행)
+
+- 격리 환경 통합 테스트: 125 passed / 1 skipped(403.71초). 부분 업로드 재시도·커밋 실패 재시도·커밋된 객체 바이트 보존 시나리오가 모두 통과했다.
+- R-02 `data/reliability/r02/20261113T034853349061Z.json`: `OBJECT_STORAGE_ERROR`, 503, 재시도 가능, 실패 전후 워터마크 동일.
+- R-03 `data/reliability/r03/20261113T034854794449Z.json`: 처리된 실패의 고아 재조정은 거부되고, 동일 배치 재시도는 `SUCCESS`·`COMMITTED`, 재시도 후 고아 후보 0건과 워터마크 전진을 확인했다. Crash 재조정도 `20261113T034853915767Z.json`에 기록했다.
+- R-06 `data/reliability/r06/20261113T034851139833Z.json`: CLI 목록에 후보가 나타나고 수용 후보는 종료 코드 0·`COMMITTED`, Quarantine 후보는 종료 코드 1로 거부됐다. 거부 뒤 메타데이터·워터마크는 불변이다.
+- 위 결과는 격리된 `commerce_source_it`·`pipeline_metadata_it`·`commerce-lake-it` 대상이며 공유 운영 데이터에는 신뢰성 테스트를 실행하지 않았다.
+
+- 실제 Airflow 진단 DAG `audit_retry_probe`·태스크 `manifest_retry`도 Manifest PUT 503 뒤 같은 배치의 두 번째 시도가 `SUCCESS`가 됐다(`manual__2026-11-13T03:50:39.214680+00:00`). 커밋 1행, 수집 99,881행이며 첫 시도는 `FAILED`·`OBJECT_STORAGE_ERROR`였다. 같은 수집 함수를 호출하는 단일 태스크 검증으로, 정규 Warehouse DAG 전체 실행 검증은 아니다. 세부 증거는 [Phase 4](phase-04-airflow-orchestration.md)에 기록했다.
+- 기본 전체 테스트 883 passed / 154 skipped(119.82초). 임시 Git 인덱스를 통한 문서 추적 대상 검사이며 실제 인덱스는 변경하지 않았다.

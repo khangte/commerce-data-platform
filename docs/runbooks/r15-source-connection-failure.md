@@ -8,7 +8,7 @@ Watermark를 전진시키지 않은 채 재시도 가능한 상태로 끝나야 
 
 ## 재현 조건과 명령
 
-`RUN_POSTGRES_INTEGRATION=1 RUN_SEAWEEDFS_INTEGRATION=1 uv run pytest tests/reliability/test_r11_r15_reprocess_and_source.py -k r15 -v`를 실행한다.
+`COMMERCE_SOURCE_DB=commerce_source_it PIPELINE_METADATA_DB=pipeline_metadata_it SEAWEEDFS_BUCKET=commerce-lake-it RUN_POSTGRES_INTEGRATION=1 RUN_SEAWEEDFS_INTEGRATION=1 uv run pytest tests/reliability/test_r11_r15_reprocess_and_source.py -k r15 -v`를 실행한다.
 `tests/reliability/faults.py`의 `fail_source_connection`으로 `PostgresSettings.source_connection`을
 `psycopg.OperationalError`를 던지는 함수로 바꾼 뒤 `ingest_orders`를 한 번 호출하고, 같은 `batch_id`로
 결함 없이 즉시 재시도한다.

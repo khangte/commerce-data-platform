@@ -9,7 +9,7 @@ Bronze Object를 건드리지 않으면서 새 식별자로 남는지 확인한�
 
 ## 재현 조건과 명령
 
-`RUN_POSTGRES_INTEGRATION=1 RUN_SEAWEEDFS_INTEGRATION=1 uv run pytest tests/reliability/test_r11_r15_reprocess_and_source.py -v`를 실행한다.
+`COMMERCE_SOURCE_DB=commerce_source_it PIPELINE_METADATA_DB=pipeline_metadata_it SEAWEEDFS_BUCKET=commerce-lake-it RUN_POSTGRES_INTEGRATION=1 RUN_SEAWEEDFS_INTEGRATION=1 uv run pytest tests/reliability/test_r11_r15_reprocess_and_source.py -v`를 실행한다.
 `subscription_payments`에 결제 하나를 넣고 원본 수집(`sequence=1`)을 한 뒤, `rewind_tables`로 그
 결제 직전까지 되감고 새 `sequence=2`로 재수집한다.
 

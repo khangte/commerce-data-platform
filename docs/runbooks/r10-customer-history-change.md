@@ -9,7 +9,7 @@ SCD2 Version을 정확히 하나 열고 이전 Version을 겹침 없이 닫는�
 
 ## 재현 조건과 명령
 
-`RUN_POSTGRES_INTEGRATION=1 RUN_SEAWEEDFS_INTEGRATION=1 RUN_DBT_PUBLISH_INTEGRATION=1 uv run pytest tests/reliability/test_r08_r10_late_and_history.py::test_r10_a_subscription_or_tier_change_opens_a_new_version_and_rebinds_events -v`를
+`COMMERCE_SOURCE_DB=commerce_source_it PIPELINE_METADATA_DB=pipeline_metadata_it SEAWEEDFS_BUCKET=commerce-lake-it RUN_POSTGRES_INTEGRATION=1 RUN_SEAWEEDFS_INTEGRATION=1 RUN_DBT_PUBLISH_INTEGRATION=1 uv run pytest tests/reliability/test_r08_r10_late_and_history.py::test_r10_a_subscription_or_tier_change_opens_a_new_version_and_rebinds_events -v`를
 실행한다. 기준 주문·구독 결제를 정상 수집·Build한 뒤(`sequence=1`), `membership_change_scenario`로
 등급을 BRONZE→SILVER로, `subscription_transition_scenario`로 구독 상태를 ACTIVE→PAYMENT_FAILED로
 전이시키고, 그 이후 시각의 두 번째 주문·구독 결제를 더해 `customer_membership_tiers`/
