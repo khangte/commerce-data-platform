@@ -230,10 +230,14 @@ __marimo__/
 # AI-setup
 .team/
 team/
+.team-logs/
 
 # Claude
 CLAUDE.md
 .claudeignore
+.claude/
+.claude-logs/
+.gstack/
 
 # Codex
 AGENTS.md
